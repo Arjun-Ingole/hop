@@ -26,6 +26,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
         Set-Stage 2
         $iso = Read-Iso $IsoPath
         $plan = Get-Plan $LinuxGB $iso.InstallerGB
+        Use-Esp { param($root) Assert-EspRoom $root "$($iso.Letter):\EFI\BOOT" }
 
         Set-Stage 3
         $state = [pscustomobject]@{

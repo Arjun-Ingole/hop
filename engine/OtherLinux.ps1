@@ -11,9 +11,15 @@ $LinuxPartitionTypes = @(
     '{a19d880f-05fc-4d3b-a006-743f0f84911e}'   # Linux RAID
 )
 
+# The partitions a Linux on this drive might start from, including an EFI partition on another disk.
+function Get-DiskGuids {
+    Get-Partition -DiskNumber (Get-WindowsPartition).DiskNumber | ForEach-Object { $_.Guid }
+    try { (Get-WindowsEsp).Guid } catch { }
+}
+
 # Startup entries for a Linux boot loader on the Windows drive, other than hop's own.
 function Get-LinuxLoaders {
-    $onDisk = @(Get-Partition -DiskNumber (Get-WindowsPartition).DiskNumber | ForEach-Object { $_.Guid })
+    $onDisk = @(Get-DiskGuids)
     $entries = @(try { [Hop.Firmware]::ListEntries() } catch { Write-Log "Could not read startup entries: $($_.Exception.Message)" })
     @($entries | Where-Object {
             $_.PartitionGuid -and $onDisk -contains $_.PartitionGuid -and $_.Path -and
@@ -37,7 +43,7 @@ function Get-LinuxPartitions($Partitions) {
 # separate EFI partition if that Linux made its own. Windows' EFI partition is never included.
 function Get-OtherSystem {
     $partitions = @(Get-Partition -DiskNumber (Get-WindowsPartition).DiskNumber)
-    $onDisk = @($partitions | ForEach-Object { $_.Guid })
+    $onDisk = @(Get-DiskGuids)
     $entries = @(try { [Hop.Firmware]::ListEntries() } catch { Write-Log "Could not read startup entries: $($_.Exception.Message)" })
     $windowsEsp = ($entries | Where-Object { $_.Path -like '\EFI\Microsoft\*' } | Select-Object -First 1).PartitionGuid
     $loaders = @(Get-LinuxLoaders)

@@ -12,20 +12,35 @@ function Use-Esp([scriptblock]$Action) {
     if (-not $letter) { throw 'Every drive letter is in use, so the EFI system partition cannot be opened. Remove a network drive or USB drive and try again.' }
     & mountvol.exe "$($letter):" /s | Out-Null
     if (-not (Test-Path "$($letter):\EFI")) {
-        & mountvol.exe "$($letter):" /d 2>$null | Out-Null
+        # Under 'Stop', a native program's stderr would replace this message.
+        try { & mountvol.exe "$($letter):" /d 2>$null | Out-Null } catch { }
         throw 'Could not open the EFI system partition.'
     }
     try { & $Action "$($letter):\" } finally { & mountvol.exe "$($letter):" /d | Out-Null }
 }
 
+# Looks on every disk: Windows on a second drive often starts from the first drive's EFI partition.
 function Get-WindowsEsp {
-    $partitions = @(Get-Partition -DiskNumber (Get-WindowsPartition).DiskNumber | Where-Object GptType -eq $EspType)
+    $partitions = @(Get-Partition | Where-Object GptType -eq $EspType)
     $windows = @(try { [Hop.Firmware]::ListEntries() } catch { @() }) |
         Where-Object { $_.Path -like '\EFI\Microsoft\*' } | Select-Object -First 1
     $esp = if ($windows) { $partitions | Where-Object Guid -eq $windows.PartitionGuid | Select-Object -First 1 }
-    if (-not $esp) { $esp = $partitions | Select-Object -First 1 }
+    if (-not $esp) { $esp = $partitions | Where-Object IsSystem | Select-Object -First 1 }
+    if (-not $esp) {
+        $disk = (Get-WindowsPartition).DiskNumber
+        $esp = $partitions | Where-Object DiskNumber -eq $disk | Select-Object -First 1
+    }
     if (-not $esp) { throw 'Could not find the EFI system partition.' }
     $esp
+}
+
+# Windows' EFI partition is small, and other systems may have filled it.
+function Assert-EspRoom([string]$Root, [string]$Source) {
+    $needed = (Get-ChildItem -LiteralPath $Source -Filter '*.efi' -Force | Measure-Object -Property Length -Sum).Sum + 1MB
+    $free = ([IO.DriveInfo]$Root).AvailableFreeSpace
+    if ($free -lt $needed) {
+        throw ('The EFI system partition is too full: the boot loader needs {0:N0} MB and {1:N0} MB is free. Remove boot files from other systems and try again.' -f ($needed / 1MB), ($free / 1MB))
+    }
 }
 
 # Puts the installer in the startup menu. Many firmwares (MSI's included) only start
@@ -41,14 +56,9 @@ function Register-Installer([string]$Name) {
         throw 'The installer partition is missing or incomplete. Undo the changes and install again.'
     }
     $source = "$($letter):\EFI\BOOT"
-    $needed = (Get-ChildItem -LiteralPath $source -Filter '*.efi' -Force | Measure-Object -Property Length -Sum).Sum + 1MB
     Use-Esp {
         param($root)
-        # Windows' EFI partition is small, and other systems may have filled it.
-        $free = ([IO.DriveInfo]$root).AvailableFreeSpace
-        if ($free -lt $needed) {
-            throw ('The EFI system partition is too full: the boot loader needs {0:N0} MB and {1:N0} MB is free. Remove boot files from other systems and try again.' -f ($needed / 1MB), ($free / 1MB))
-        }
+        Assert-EspRoom $root $source
         foreach ($old in $EspFolders -ne $EspFolder) {
             $path = Join-Path $root $old
             if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }

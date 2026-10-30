@@ -247,6 +247,28 @@ Describe 'Firmware' {
     }
 }
 
+Describe 'Get-WindowsEsp' {
+    BeforeEach {
+        Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 1 } }
+        Mock Get-Partition {
+            [pscustomobject]@{ Guid = '{other}'; DiskNumber = 1; GptType = $EspType; IsSystem = $false }
+            [pscustomobject]@{ Guid = '{first}'; DiskNumber = 0; GptType = $EspType; IsSystem = $true }
+            [pscustomobject]@{ Guid = '{data}'; DiskNumber = 1; GptType = $BasicDataType; IsSystem = $false }
+        }
+    }
+    It 'finds the one Windows starts from, even on another disk' {
+        (Get-WindowsEsp).Guid | Should -Be '{first}'
+    }
+    It 'falls back to the Windows disk' {
+        Mock Get-Partition { [pscustomobject]@{ Guid = '{other}'; DiskNumber = 1; GptType = $EspType; IsSystem = $false } }
+        (Get-WindowsEsp).Guid | Should -Be '{other}'
+    }
+    It 'says so when there is none' {
+        Mock Get-Partition { }
+        { Get-WindowsEsp } | Should -Throw '*EFI system partition*'
+    }
+}
+
 Describe 'Invoke-Cleanup' {
     BeforeEach {
         $script:removed = @()
