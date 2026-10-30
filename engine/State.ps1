@@ -27,6 +27,7 @@ function Get-BcdEntries {
 }
 
 # 'ready'    an installer is in place and set up to start
+# 'installed' the installer is still here, and Linux has been installed from it
 # 'leftover' something from an earlier attempt is left behind
 # 'none'     nothing from hop on this PC
 function Get-InstallStatus {
@@ -34,23 +35,53 @@ function Get-InstallStatus {
     $partitions = @(Get-HopPartitions)
     $entries = @(Get-FirmwareEntries)
     $installer = $partitions | Where-Object { $_.Label -in $InstallerLabels } | Select-Object -First 1
-    # The startup entry itself isn't required: some firmwares delete entries, and
-    # Restart now makes a fresh one.
-    $hasBootNumber = $state -and ($state.PSObject.Properties.Name -contains 'BootNumber') -and $null -ne $state.BootNumber
-    if ($hasBootNumber -and $installer -and $installer.Letter -and
-        (Test-Path -LiteralPath "$($installer.Letter):\EFI\BOOT\BOOTX64.EFI")) {
-        return 'ready'
+    # Finished copying is what counts. The startup entry isn't required: some firmwares
+    # delete entries, and Restart now makes a fresh one. Builds before Copied existed only
+    # set BootNumber once the copy was done.
+    $copied = $state -and ($state.Copied -or $null -ne $state.BootNumber)
+    if ($copied -and $installer) {
+        # Windows doesn't always give the partition its letter back after a restart.
+        $letter = if ($installer.Letter) { $installer.Letter } else { try { Get-DriveLetter $installer.Partition } catch { $null } }
+        if ($letter -and (Test-Path -LiteralPath "$($letter):\EFI\BOOT\BOOTX64.EFI")) {
+            if (Test-LinuxInstalled $state) { return 'installed' }
+            return 'ready'
+        }
     }
     if ($state -or $partitions.Count -or $entries.Count -or @(Get-BcdEntries).Count) { return 'leftover' }
     'none'
 }
 
+# A Linux boot loader that wasn't in the startup menu when the install began.
+function Test-LinuxInstalled($State) {
+    if ($State.PSObject.Properties.Name -notcontains 'LoadersBefore') { return $false }
+    @(Get-LinuxLoaders | Where-Object { $_.Path -notin @($State.LoadersBefore) }).Count -gt 0
+}
+
+# Partitions hop recorded but may not have got as far as labelling, for example when
+# formatting failed. Anything holding a real file system by now isn't touched.
+function Get-RecordedPartitions($State, [string[]]$Roles) {
+    $recorded = @($State.Partitions | Where-Object { $_.Role -in $Roles })
+    if (-not $recorded.Count) { return }
+    foreach ($partition in Get-Partition -DiskNumber (Get-WindowsPartition).DiskNumber) {
+        $match = $recorded | Where-Object { [int64]$_.Offset -eq [int64]$partition.Offset -and [int64]$_.Size -eq [int64]$partition.Size }
+        if (-not $match -or $partition.IsSystem -or $partition.IsBoot -or (Test-LinuxSignature $partition)) { continue }
+        $volume = try { $partition | Get-Volume -ErrorAction SilentlyContinue } catch { $null }
+        if (-not $volume -or -not $volume.FileSystemType -or $volume.FileSystemType -eq 'Unknown') { $partition }
+    }
+}
+
 function Save-State($State) {
     if (-not (Test-Path $StateDir)) { New-Item -ItemType Directory -Path $StateDir | Out-Null }
-    $State | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $StatePath -Encoding UTF8
+    # Write then swap, so losing power mid-write can't leave half a file. Move-Item -Force
+    # replaces it in one step on the same drive.
+    $temporary = "$StatePath.tmp"
+    $State | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $temporary -Encoding UTF8
+    Move-Item -LiteralPath $temporary -Destination $StatePath -Force
 }
 
 function Read-State {
     $path = @($StatePath, $LegacyStatePath) | Where-Object { Test-Path $_ } | Select-Object -First 1
-    if ($path) { Get-Content -LiteralPath $path -Raw | ConvertFrom-Json }
+    if (-not $path) { return }
+    try { Get-Content -LiteralPath $path -Raw | ConvertFrom-Json }
+    catch { Write-Log "Ignoring a damaged state file: $($_.Exception.Message)" }
 }

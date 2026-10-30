@@ -9,8 +9,12 @@ function Invoke-Bcdedit {
 # Opens Windows' EFI system partition for a moment.
 function Use-Esp([scriptblock]$Action) {
     $letter = [char[]](90..68) | Where-Object { -not (Test-Path "$($_):\") } | Select-Object -First 1
+    if (-not $letter) { throw 'Every drive letter is in use, so the EFI system partition cannot be opened. Remove a network drive or USB drive and try again.' }
     & mountvol.exe "$($letter):" /s | Out-Null
-    if (-not (Test-Path "$($letter):\EFI")) { throw 'Could not open the EFI system partition.' }
+    if (-not (Test-Path "$($letter):\EFI")) {
+        & mountvol.exe "$($letter):" /d 2>$null | Out-Null
+        throw 'Could not open the EFI system partition.'
+    }
     try { & $Action "$($letter):\" } finally { & mountvol.exe "$($letter):" /d | Out-Null }
 }
 
@@ -32,12 +36,19 @@ function Get-WindowsEsp {
 function Register-Installer([string]$Name) {
     Set-Status 'Adding the installer to the startup menu...'
     $installer = Get-HopPartitions | Where-Object { $_.Label -in $InstallerLabels } | Select-Object -First 1
-    if (-not $installer -or -not $installer.Letter -or -not (Test-Path -LiteralPath "$($installer.Letter):\EFI\BOOT\BOOTX64.EFI")) {
+    $letter = if (-not $installer) { $null } elseif ($installer.Letter) { $installer.Letter } else { Get-DriveLetter $installer.Partition }
+    if (-not $letter -or -not (Test-Path -LiteralPath "$($letter):\EFI\BOOT\BOOTX64.EFI")) {
         throw 'The installer partition is missing or incomplete. Undo the changes and install again.'
     }
-    $source = "$($installer.Letter):\EFI\BOOT"
+    $source = "$($letter):\EFI\BOOT"
+    $needed = (Get-ChildItem -LiteralPath $source -Filter '*.efi' -Force | Measure-Object -Property Length -Sum).Sum + 1MB
     Use-Esp {
         param($root)
+        # Windows' EFI partition is small, and other systems may have filled it.
+        $free = ([IO.DriveInfo]$root).AvailableFreeSpace
+        if ($free -lt $needed) {
+            throw ('The EFI system partition is too full: the boot loader needs {0:N0} MB and {1:N0} MB is free. Remove boot files from other systems and try again.' -f ($needed / 1MB), ($free / 1MB))
+        }
         foreach ($old in $EspFolders -ne $EspFolder) {
             $path = Join-Path $root $old
             if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }

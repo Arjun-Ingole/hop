@@ -16,11 +16,29 @@ function Suspend-BitLockerForSetup {
         Write-Log 'BitLocker is on; pausing it for the next 3 restarts.'
         & manage-bde.exe -protectors -disable $env:SystemDrive -RebootCount 3 | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'Could not pause BitLocker. Turn off "Device encryption" in Settings and try again.' }
+        return $true
     }
+    $false
+}
+
+function Resume-BitLockerAfterUndo {
+    & manage-bde.exe -protectors -enable $env:SystemDrive | Out-Null
+    if ($LASTEXITCODE -eq 0) { Write-Log 'Turned BitLocker back on.' } else { Write-Log 'Could not turn BitLocker back on; Windows does so itself after a few restarts.' }
+}
+
+$PowerKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power'
+
+function Get-FastStartup {
+    (Get-ItemProperty -Path $PowerKey -Name HiberbootEnabled -ErrorAction SilentlyContinue).HiberbootEnabled
 }
 
 function Disable-FastStartup {
     # Fast Startup leaves Windows half-asleep, which confuses Linux installers.
-    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power' -Name HiberbootEnabled -Value 0 -Type DWord
+    Set-ItemProperty -Path $PowerKey -Name HiberbootEnabled -Value 0 -Type DWord
     Write-Log 'Turned off Windows Fast Startup.'
+}
+
+function Restore-FastStartup {
+    Set-ItemProperty -Path $PowerKey -Name HiberbootEnabled -Value 1 -Type DWord
+    Write-Log 'Turned Windows Fast Startup back on.'
 }

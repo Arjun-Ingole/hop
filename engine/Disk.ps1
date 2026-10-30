@@ -57,9 +57,11 @@ function Get-DriveLetter($Partition) {
     for ($i = 0; $i -lt 20; $i++) {
         $letter = (Get-Partition -DiskNumber $Partition.DiskNumber -PartitionNumber $Partition.PartitionNumber).DriveLetter
         if ($letter -and $letter -ne [char]0) { return [string]$letter }
+        # Asking while Windows is already on it fails harmlessly.
+        if ($i % 4 -eq 0) { try { Add-PartitionAccessPath -DiskNumber $Partition.DiskNumber -PartitionNumber $Partition.PartitionNumber -AssignDriveLetter } catch { } }
         Start-Sleep -Milliseconds 500
     }
-    throw 'Windows did not give the new partition a drive letter.'
+    throw 'Windows did not give the installer partition a drive letter. If every letter is in use, remove a network drive or USB drive and try again.'
 }
 
 function Remove-DriveLetter($Partition) {
@@ -75,7 +77,8 @@ function New-LinuxSpace($Plan, [string]$Strategy, $State) {
         try {
             Resize-Partition -DiskNumber $Plan.DiskNumber -PartitionNumber $Plan.PartitionNumber -Size $Plan.NewWindowsSize
         } catch {
-            throw "Windows could not shrink C: that far ($($_.Exception.Message)). Try a smaller Linux size."
+            # Hibernation, paging and restore point files can't be moved, so they limit the shrink.
+            throw "Windows could not shrink C: that far ($($_.Exception.Message)). Try a smaller Linux size. If that doesn't help, run powercfg /h off in an administrator terminal, restart, and try again."
         }
         $State.WindowsShrunk = $true
         Save-State $State
@@ -106,8 +109,6 @@ function New-LinuxSpace($Plan, [string]$Strategy, $State) {
     $State.Partitions += [pscustomobject]@{ Role = 'installer'; Offset = $installer.Offset; Size = $installer.Size }
     Save-State $State
     Format-Volume -Partition $installer -FileSystem FAT32 -NewFileSystemLabel $InstallerLabel -Confirm:$false -Force | Out-Null
-    # Windows sometimes assigns a letter by itself; asking again then fails harmlessly.
-    try { Add-PartitionAccessPath -DiskNumber $installer.DiskNumber -PartitionNumber $installer.PartitionNumber -AssignDriveLetter } catch { }
     $installer
 }
 

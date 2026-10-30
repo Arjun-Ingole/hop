@@ -24,24 +24,25 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
         $plan = Get-Plan $LinuxGB $iso.InstallerGB
 
         Set-Stage 3
-        Suspend-BitLockerForSetup
-        Disable-FastStartup
         $state = [pscustomobject]@{
             Distro = $distro.Name; DistroId = $distro.Id; Strategy = $distro.Strategy; LinuxGB = $LinuxGB
             DiskNumber = $plan.DiskNumber; WindowsShrunk = $false; Partitions = @(); BootNumber = $null
-            IsoPath = $IsoPath; Created = (Get-Date).ToString('s')
+            IsoPath = $IsoPath; Created = (Get-Date).ToString('s'); Copied = $false; RestartedAt = $null
+            LoadersBefore = @(Get-LinuxLoaders | ForEach-Object { $_.Path })
+            FastStartupWasOn = (Get-FastStartup) -eq 1; BitLockerPaused = $false
         }
         $diskChanged = $true
+        Save-State $state
+        $state.BitLockerPaused = Suspend-BitLockerForSetup
+        Disable-FastStartup
+        Save-State $state
         $installer = New-LinuxSpace $plan $distro.Strategy $state | Select-Object -Last 1
         $letter = Get-DriveLetter $installer
 
         Set-Stage 4
         Copy-Installer $iso $letter
-
-        Set-Stage 5
-        $state.BootNumber = Register-Installer $distro.Name
+        $state.Copied = $true
         Save-State $state
-        Set-BootOnce $state.BootNumber
     } catch {
         # Leave the PC as it was: a half-made installer is worse than none.
         if ($diskChanged) {
@@ -52,6 +53,17 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
         throw
     } finally {
         try { Dismount-DiskImage -ImagePath $IsoPath | Out-Null } catch { }
+    }
+
+    # From here a failure doesn't undo anything: the installer is complete, and Restart
+    # now tries the startup menu again and reports the problem if it persists.
+    Set-Stage 5
+    try {
+        $state.BootNumber = Register-Installer $distro.Name
+        Save-State $state
+        Set-BootOnce $state.BootNumber
+    } catch {
+        Write-Log "Could not add the installer to the startup menu yet: $($_.Exception.Message)"
     }
 
     Set-Stage 6
@@ -78,7 +90,10 @@ function Get-StartupInfo {
 
 function Get-StateSteps {
     $state = Read-State
-    Get-Steps (Get-Distro $state.DistroId $state.IsoPath) $state.LinuxGB
+    # A system removed from the catalog since the install still needs its steps.
+    $distro = Get-Distro $state.DistroId $state.IsoPath
+    if (-not $distro) { $distro = Get-Distro 'custom' "$($state.Distro).iso" }
+    Get-Steps $distro $state.LinuxGB
 }
 
 function Restart-IntoInstaller {
@@ -93,6 +108,7 @@ function Restart-IntoInstaller {
 # description and labels, so this also works when an earlier attempt failed half way.
 # With -InstallerOnly, Linux and its partitions stay.
 function Invoke-Cleanup([switch]$InstallerOnly) {
+    $state = Read-State
     Set-Status 'Removing hop from the startup menu...'
     foreach ($id in @(Get-BcdEntries)) {
         try { Invoke-Bcdedit /delete $id | Out-Null; Write-Log "Removed startup entry $id." } catch { Write-Log "Could not remove $id." }
@@ -116,6 +132,11 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
         Set-Status "Removing the $($found.Label) partition..."
         Remove-Partition -DiskNumber $found.Partition.DiskNumber -PartitionNumber $found.Partition.PartitionNumber -Confirm:$false
     }
+    $roles = if ($InstallerOnly) { @('installer') } else { @('installer', 'root', 'boot') }
+    foreach ($partition in @(Get-RecordedPartitions $state $roles)) {
+        Set-Status 'Removing an unfinished partition...'
+        Remove-Partition -DiskNumber $partition.DiskNumber -PartitionNumber $partition.PartitionNumber -Confirm:$false
+    }
 
     if (-not $InstallerOnly) {
         $c = Get-WindowsPartition
@@ -124,6 +145,12 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
             Set-Status 'Giving the space back to Windows...'
             Resize-Partition -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber -Size $max
         }
+    }
+
+    # Only without Linux: Fast Startup stays off for a dual boot, because it locks the Windows drive.
+    if (-not $InstallerOnly) {
+        if ($state.FastStartupWasOn) { Restore-FastStartup }
+        if ($state.BitLockerPaused) { Resume-BitLockerAfterUndo }
     }
 
     foreach ($path in @($StatePath, $LegacyStatePath)) { if (Test-Path $path) { Remove-Item -LiteralPath $path -Force } }
