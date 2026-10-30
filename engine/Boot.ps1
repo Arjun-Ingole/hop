@@ -14,7 +14,7 @@ function Use-Esp([scriptblock]$Action) {
     if (-not (Test-Path "$($letter):\EFI")) {
         # Under 'Stop', a native program's stderr would replace this message.
         try { & mountvol.exe "$($letter):" /d 2>$null | Out-Null } catch { }
-        throw 'Could not open the EFI system partition.'
+        throw 'Could not open the EFI system partition. Security software may be blocking it: turn that off for a moment and try again.'
     }
     try { & $Action "$($letter):\" } finally { & mountvol.exe "$($letter):" /d | Out-Null }
 }
@@ -40,6 +40,17 @@ function Assert-EspRoom([string]$Root, [string]$Source) {
     $free = ([IO.DriveInfo]$Root).AvailableFreeSpace
     if ($free -lt $needed) {
         throw ('The EFI system partition is too full: the boot loader needs {0:N0} MB and {1:N0} MB is free. Remove boot files from other systems and try again.' -f ($needed / 1MB), ($free / 1MB))
+    }
+}
+
+# Security software can block this partition. Finding out now costs nothing; after the disk has changed it costs a lot.
+function Assert-EspWritable([string]$Root) {
+    $probe = Join-Path $Root 'EFI\hop-write-test.tmp'
+    try {
+        Set-Content -LiteralPath $probe -Value 'hop'
+        Remove-Item -LiteralPath $probe -Force
+    } catch {
+        throw "Couldn't write to the EFI system partition ($($_.Exception.Message)). Security software may be blocking it: turn that off for a moment and try again."
     }
 }
 

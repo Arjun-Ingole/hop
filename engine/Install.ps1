@@ -27,7 +27,11 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
         Set-Stage 2
         $iso = Read-Iso $IsoPath
         $plan = Get-Plan $LinuxGB $iso.InstallerGB
-        Use-Esp { param($root) Assert-EspRoom $root "$($iso.Letter):\EFI\BOOT" }
+        Use-Esp {
+            param($root)
+            Assert-EspRoom $root "$($iso.Letter):\EFI\BOOT"
+            Assert-EspWritable $root
+        }
 
         Set-Stage 3
         if (-not $Sync.Gate.EnterDiskStage()) { throw 'Cancelled.' }

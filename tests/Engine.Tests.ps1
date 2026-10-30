@@ -547,6 +547,21 @@ Describe 'Get-Blockers' {
     }
 }
 
+Describe 'Assert-EspWritable' {
+    BeforeEach {
+        $root = Join-Path $TestDrive 'esp'
+        New-Item -ItemType Directory -Path "$root\EFI" -Force | Out-Null
+    }
+    It 'leaves nothing behind' {
+        Assert-EspWritable $root
+        @(Get-ChildItem "$root\EFI").Count | Should -Be 0
+    }
+    It 'names security software when a write is refused' {
+        Mock Set-Content { throw 'Access denied' }
+        { Assert-EspWritable $root } | Should -Throw '*Security software*'
+    }
+}
+
 Describe 'Get-OtherInstallers' {
     BeforeEach {
         $usbStick = Join-Path $TestDrive 'usb\'
