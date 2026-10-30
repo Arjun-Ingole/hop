@@ -64,12 +64,13 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
     }
 
     # From here a failure doesn't undo anything: the installer is complete, and Restart
-    # now tries the startup menu again and reports the problem if it persists.
+    # now tries the startup menu again and reports the problem if it persists. The one-time
+    # start waits for Restart now: set here, a Windows Update restart would take it, however
+    # long after someone clicked Later.
     Set-Stage 5
     try {
         $state.BootNumber = Register-Installer $distro.Name
         Save-State $state
-        Set-BootOnce $state.BootNumber
     } catch {
         Write-Log "Could not add the installer to the startup menu yet: $($_.Exception.Message)"
     }

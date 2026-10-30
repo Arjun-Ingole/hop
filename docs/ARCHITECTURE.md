@@ -61,6 +61,7 @@ in a runspace and calls their functions one at a time. Progress comes back throu
 5. Shrink C: if needed, and make the partitions. Each is recorded before it's formatted.
 6. Copy the files and compare them one by one, then mark `Copied`.
 7. Add the startup entry. A failure here is kept, not rolled back, and Restart now tries again.
+8. On **Restart now**, and not before, set the one-time start. Other restarts still go to Windows.
 
 A failure in steps 4 to 6 runs `Invoke-Cleanup`, which puts everything back.
 
