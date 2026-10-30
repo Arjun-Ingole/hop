@@ -100,7 +100,9 @@ function Get-CurlProxy([string]$Url) {
 
 function Get-CurlMessage([int]$Code) {
     switch ($Code) {
-        { $_ -in 5, 6, 7 } { return "Couldn't reach the download server. Check the internet connection and click Install again; it will pick up where it left off." }
+        5 { return "Couldn't reach the proxy set in Windows. Check its settings, or try another network, and click Install again; it will pick up where it left off." }
+        { $_ -in 6, 7 } { return "Couldn't reach the download server. Check the internet connection and click Install again; it will pick up where it left off." }
+        56 { return "The connection dropped, or a work network's proxy refused it. Try another network, or download the ISO yourself and pick ""Use an ISO file""." }
         23 { return "Couldn't save the download. Check the drive has free space and click Install again." }
         28 { return 'The download stalled. Check the internet connection and click Install again; it will pick up where it left off.' }
         { $_ -in 35, 60 } { return "A secure connection to the download server failed. Check this PC's date and time are correct, then click Install again." }
@@ -116,7 +118,8 @@ function Invoke-Curl([string]$Url, [string]$Part, [int64]$Total, [string]$Name) 
         '--connect-timeout', '30', '--speed-limit', '1024', '--speed-time', '120',
         '-C', '-', '-o', "`"$Part`"", "`"$Url`"")
     $proxy = Get-CurlProxy $Url
-    if ($proxy) { $curlArgs = @('--proxy', "`"$proxy`"") + $curlArgs }
+    # An empty -U : means sign in to the proxy as the current Windows user.
+    if ($proxy) { $curlArgs = @('--proxy', "`"$proxy`"", '--proxy-anyauth', '-U', ':') + $curlArgs }
     $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
     $proc = Start-Process -FilePath $curl -ArgumentList $curlArgs -PassThru -WindowStyle Hidden
     $null = $proc.Handle   # keeps ExitCode readable after the process exits

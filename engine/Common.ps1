@@ -36,6 +36,8 @@ $WindowsReserve = 8GB    # free space Windows keeps on top of what it already us
 $MinLinuxGB = 25
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+# Work proxies usually want the Windows sign-in, which isn't sent unless asked for.
+try { [Net.WebRequest]::DefaultWebProxy.Credentials = [Net.CredentialCache]::DefaultNetworkCredentials } catch { }
 
 # --- Progress reporting -------------------------------------------------
 # Stages match the checklist in the app: 0 check PC, 1 download, 2 check
