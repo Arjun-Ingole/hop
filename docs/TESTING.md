@@ -31,6 +31,9 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 **When it goes wrong**
 
 - [ ] Secure Boot on: the installer starts, or the "didn't start" screen appears on reopening
+- [ ] Secure Boot on, Pop!_OS: refused before the download, with what to do
+- [ ] Secure Boot on, third-party certificate off: refused before the disk changes
+- [ ] Windows on a second drive, EFI partition on the first: the startup entry is added to the first
 - [ ] Cancel during the download, then install again: it resumes
 - [ ] Disconnect the network during the download: the error says what to do
 - [ ] Close the window during the download, then reopen

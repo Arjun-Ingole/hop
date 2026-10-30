@@ -12,9 +12,25 @@
 - A screen for when Linux has been installed, offering to remove the installer.
 - Logs in `C:\ProgramData\hop\logs`, and "Copy a bug report" on failure screens.
 - Only one copy of hop can run at a time. Crashes are written to the log.
+- Before the disk changes, hop checks Secure Boot will start the system: that the PC trusts the
+  certificate behind its boot loader, and that its kernel is signed. Pop!_OS, whose kernel isn't, is
+  stopped before the download.
+- The "didn't start" screen can tell when the firmware ignored the request to start the installer.
+  Bug reports include the boot order and trusted certificates.
 
 ### Fixed
 
+- Undo could remove the wrong partition, even Windows' recovery partition, if partition numbers
+  shifted while it worked. It now finds each by where it starts.
+- Undo could remove the partition Linux starts from if the firmware had dropped its startup entry.
+  hop now also notices Linux by its partitions.
+- Windows on a second drive, starting from the first drive's EFI partition, failed after the disk had changed.
+- A full EFI partition is now caught before the disk changes.
+- A problem that stops new installs, such as damage reported on C:, also hid Undo.
+- BitLocker's pause could run out before the BIOS trip to turn off Secure Boot. Each restart now renews it.
+- A server error while resuming deleted the partly downloaded file.
+- Undo grew C: over free space it had never taken from it.
+- The check for Legacy BIOS now asks Windows directly.
 - Removing another Linux could select a locked BitLocker drive, because it looked for partitions
   Windows couldn't read. It now reads each partition's own signature.
 - A failure while adding the startup entry threw away a finished copy. The installer is now kept and

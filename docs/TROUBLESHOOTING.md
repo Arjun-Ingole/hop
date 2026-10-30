@@ -5,12 +5,13 @@ If you need more help, open an issue and paste the report from **Copy a bug repo
 
 ## The PC went back to Windows after restarting
 
-Reopen hop. It shows what to try for your PC. In short:
+Reopen hop. It shows what to try for your PC, and leads with the boot menu if the firmware ignored
+hop's request. In short:
 
-1. **Turn off Secure Boot.** Click **Open BIOS** in hop, find **Secure Boot** (usually under Security or
-   Boot), set it to **Disabled**, then save and exit.
-2. **Pick it by hand.** Restart and keep tapping the boot menu key as the PC powers on, then choose the
+1. **Pick it by hand.** Restart and keep tapping the boot menu key as the PC powers on, then choose the
    entry ending in **(hop)**.
+2. **Turn off Secure Boot.** Click **Open BIOS** in hop, find **Secure Boot** (usually under Security or
+   Boot), set it to **Disabled**, then save and exit.
 
 | Maker | Boot menu key |
 | --- | --- |
@@ -20,6 +21,24 @@ Reopen hop. It shows what to try for your PC. In short:
 | Acer, Dell, Lenovo, Gigabyte, Toshiba, Razer | F12 |
 
 If the entry isn't listed, your firmware removed it, and clicking **Restart now** in hop adds it again.
+
+## "Secure Boot doesn't trust this ISO's boot loader"
+
+Your PC's list of trusted certificates doesn't include the one that signed this system's boot loader.
+Some PCs, including Secured-core ones, come with Microsoft's third-party certificate turned off. In the
+BIOS it's called something like **Allow Microsoft 3rd Party UEFI CA**, under Secure Boot. Newer PCs may
+only have the 2023 certificate, and today's ISOs are signed with the 2011 one. In either case, turning
+off Secure Boot works.
+
+## "Verifying shim SBAT data failed: Security Policy Violation"
+
+The PC has blocked this boot loader as out of date. This can happen with an older ISO, or one that uses
+an older shim. Use a newer ISO, or turn off Secure Boot.
+
+## The installer doesn't offer to install alongside Windows
+
+Ubuntu's installer hides this while drive C: is encrypted with BitLocker. Pausing isn't enough for it.
+Use the manual option hop lists instead, which leaves Windows encrypted, or turn off BitLocker first.
 
 ## The installer can't see the drive
 

@@ -41,6 +41,7 @@ in a runspace and calls their functions one at a time. Progress comes back throu
 | `Catalog.ps1` | The list of systems |
 | `Download.ps1` | Finds the official ISO, downloads and verifies it |
 | `Iso.ps1` | Mounts an ISO and checks hop can use it |
+| `SecureBoot.ps1` | Works out whether Secure Boot will let the ISO start |
 | `Disk.ps1` | Plans the space, makes partitions, copies files |
 | `Boot.ps1` | The EFI partition and the startup entry |
 | `State.ps1` | What hop left on this PC, and `state.json` |
@@ -53,7 +54,8 @@ in a runspace and calls their functions one at a time. Progress comes back throu
 
 1. Check the PC (`Get-Blockers`).
 2. Download and verify, or take the user's ISO.
-3. Mount and check the ISO, and plan the space. **Nothing on the disk has changed yet.**
+3. Mount and check the ISO, check Secure Boot will start it and the EFI partition has room, and plan
+   the space. **Nothing on the disk has changed yet.**
 4. Save the state, pause BitLocker, turn off Fast Startup.
 5. Shrink C: if needed, and make the partitions. Each is recorded before it's formatted.
 6. Copy the files and compare them one by one, then mark `Copied`.
@@ -73,6 +75,25 @@ A failure in steps 4 to 6 runs `Invoke-Cleanup`, which puts everything back.
 
 Clean-up works from these, not just the state file, so it works after a crash. Builds named LinuxHop
 used `LINUXHOP`, `\EFI\linuxhop` and `(LinuxHop)`, which are still recognised.
+
+## How the installer starts
+
+Read from the boot files of the ISOs in the catalog (October 2026):
+
+1. The firmware starts `\EFI\hop\BOOTX64.EFI`, which is shim. Its signature must chain to a
+   certificate in the PC's Secure Boot list. All of them are signed by Microsoft's UEFI CA 2011 only.
+2. Shim starts `grubx64.efi` from the same folder, signed by Canonical.
+3. GRUB's built-in config looks for `/boot/grub` on the EFI partition. It isn't there, so GRUB searches
+   every partition for `/.disk/info`, finds the installer partition and loads its `/boot/grub/grub.cfg`.
+   The modules for FAT and GPT are built in.
+4. GRUB starts `/casper/vmlinuz` from there. With Secure Boot on, the kernel must be signed. Pop!_OS's isn't.
+5. Casper searches the partitions of every disk, NVMe included, for its files. It accepts FAT and
+   matches the ID in `.disk/casper-uuid-*` where the ISO has one.
+
+A problem from step 3 onwards stops at GRUB or the Linux console. **Coming straight back to Windows
+means step 1 or 2 failed, or the firmware never tried:** firmware moves on to the next startup entry
+when a loader is refused or exits. Firmware clears `BootNext` as it starts, so one still set after
+coming back means it never tried, which is what `Test-BootNextIgnored` looks for.
 
 ## Why the startup entry is written directly
 
