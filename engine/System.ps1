@@ -56,10 +56,6 @@ function Test-BitLockerOn {
     [bool]($volume -and $volume.ProtectionStatus -eq 1)
 }
 
-function Test-SecureBoot {
-    try { [bool](Confirm-SecureBootUEFI) } catch { $false }
-}
-
 # The key that opens the one-time boot menu, by maker.
 function Get-BootMenuKey {
     $maker = try { (Get-CimInstance Win32_ComputerSystem).Manufacturer } catch { '' }

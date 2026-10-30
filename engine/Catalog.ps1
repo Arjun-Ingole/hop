@@ -7,7 +7,7 @@
 function New-Entry([string]$Id, [string]$Name, [string]$Note, [string]$Source, [string]$Color, [string]$Logo, [hashtable]$More) {
     $entry = [ordered]@{
         Id = $Id; Name = $Name; Version = $null; Note = $Note; Source = $Source; Color = $Color; Logo = $Logo
-        Strategy = 'freespace'; Kind = $null; Base = $null; Prefix = $null; Edition = $null
+        Strategy = 'freespace'; SecureBootOff = $false; Kind = $null; Base = $null; Prefix = $null; Edition = $null
         Mode = $null; Alongside = $null; Manual = $null; ManualExtra = $null
     }
     foreach ($key in $More.Keys) { $entry[$key] = $More[$key] }
@@ -29,6 +29,7 @@ function New-MintEdition([string]$Edition, [string]$Name, [string]$Note) {
 
 # Color is the project's brand color, used for its part of the drive in the app.
 # Logo names an embedded image (assets/logos/<Logo>.png).
+# SecureBootOff: its kernel isn't signed, as in Pop!_OS 24.04's ISO, so it can't start with Secure Boot on.
 # Kubuntu is missing on purpose: its ISO has a file over 4 GB, which FAT32 cannot hold.
 function Get-Catalog {
     @(
@@ -37,7 +38,7 @@ function Get-Catalog {
         New-UbuntuFlavor 'ubuntu' 'Ubuntu' 'Most popular' '#E95420'
         New-MintEdition 'cinnamon' 'Linux Mint' 'Windows-like'
         New-Entry 'pop' 'Pop!_OS' 'Gaming' 'pop-os.org' '#48B9C7' 'pop' @{
-            Kind = 'pop'; Version = '24.04'; Strategy = 'prepared'; Mode = 'Custom (Advanced)' }
+            Kind = 'pop'; Version = '24.04'; Strategy = 'prepared'; Mode = 'Custom (Advanced)'; SecureBootOff = $true }
         New-UbuntuFlavor 'ubuntu-budgie' 'Ubuntu Budgie' 'Dock at the bottom' '#404552'
         New-UbuntuFlavor 'xubuntu' 'Xubuntu' 'Lightweight' '#0044AA'
         New-UbuntuFlavor 'lubuntu' 'Lubuntu' 'Lightest' '#0068C8' @{

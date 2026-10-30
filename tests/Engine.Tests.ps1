@@ -357,6 +357,84 @@ Describe 'Remove-PartitionAt' {
     }
 }
 
+Describe 'Secure Boot' {
+    BeforeAll {
+        # A minimal 64-bit EFI program, with a signature table holding the given text.
+        function New-Efi([string]$Path, [string]$Signature) {
+            $text = [Text.Encoding]::ASCII.GetBytes($Signature)
+            $bytes = New-Object byte[] (1024 + $text.Length)
+            $bytes[0] = 0x4D; $bytes[1] = 0x5A
+            [BitConverter]::GetBytes([int]0x80).CopyTo($bytes, 0x3C)
+            $header = 0x80 + 24
+            [BitConverter]::GetBytes([uint16]0x20B).CopyTo($bytes, $header)
+            if ($text.Length) {
+                [BitConverter]::GetBytes([uint32]1024).CopyTo($bytes, $header + 112 + 32)
+                [BitConverter]::GetBytes([uint32]$text.Length).CopyTo($bytes, $header + 112 + 36)
+                $text.CopyTo($bytes, 1024)
+            }
+            [IO.File]::WriteAllBytes($Path, $bytes)
+        }
+        function New-Iso([string]$Loader, [string]$Kernel) {
+            New-Item -ItemType Directory -Path 'TestDrive:\iso\EFI\BOOT', 'TestDrive:\iso\boot\grub', 'TestDrive:\iso\casper' -Force | Out-Null
+            $root = (Resolve-Path 'TestDrive:\iso').ProviderPath
+            New-Efi (Join-Path $root 'EFI\BOOT\BOOTX64.EFI') $Loader
+            New-Efi (Join-Path $root 'casper\vmlinuz') $Kernel
+            Set-Content -LiteralPath (Join-Path $root 'boot\grub\grub.cfg') -Value @('menuentry "Try" {', '    linux  /casper/vmlinuz  --- quiet', '}')
+            $root
+        }
+        $ca2011 = 'Microsoft Corporation UEFI CA 2011'
+    }
+    BeforeEach {
+        Mock Test-SecureBoot { $true }
+        Mock Test-BitLockerOn { $false }
+        Mock Get-SecureBootDb { "xx$ca2011 yy" }
+    }
+    It 'reads certificate names from a signed program, and nothing from an unsigned one' {
+        $root = New-Iso $ca2011 ''
+        Get-EfiSignature (Join-Path $root 'EFI\BOOT\BOOTX64.EFI') | Should -BeLike "*$ca2011*"
+        Get-EfiSignature (Join-Path $root 'casper\vmlinuz') | Should -BeNullOrEmpty
+    }
+    It 'knows both third-party certificates, and not the Windows or option ROM ones' {
+        Get-UefiAuthorities "$ca2011 Microsoft UEFI CA 2023 Microsoft Option ROM UEFI CA 2023 Windows UEFI CA 2023" |
+            Should -Be @($ca2011, 'Microsoft UEFI CA 2023')
+    }
+    It 'has nothing to say about an ISO this PC will start' {
+        Get-SecureBootProblem (New-Iso $ca2011 'Canonical') | Should -BeNullOrEmpty
+    }
+    It 'does not look when Secure Boot is off' {
+        Mock Test-SecureBoot { $false }
+        Get-SecureBootProblem (New-Iso '' '') | Should -BeNullOrEmpty
+    }
+    It 'spots a boot loader this PC does not trust, such as a PC with only the 2023 certificate' {
+        Mock Get-SecureBootDb { 'Microsoft UEFI CA 2023' }
+        Get-SecureBootProblem (New-Iso $ca2011 'Canonical') | Should -BeLike "*doesn't trust*"
+    }
+    It 'accepts a boot loader signed by two authorities when one is trusted' {
+        Mock Get-SecureBootDb { 'Microsoft UEFI CA 2023' }
+        Get-SecureBootProblem (New-Iso "$ca2011 Microsoft UEFI CA 2023" 'Canonical') | Should -BeNullOrEmpty
+    }
+    It 'does not guess when the firmware will not share its list' {
+        Mock Get-SecureBootDb { $null }
+        Get-SecureBootProblem (New-Iso $ca2011 'Canonical') | Should -BeNullOrEmpty
+    }
+    It 'spots an unsigned boot loader' {
+        Get-SecureBootProblem (New-Iso '' 'Canonical') | Should -BeLike "*boot loader isn't signed*"
+    }
+    It 'spots an unsigned kernel, as on Pop!_OS' {
+        Get-SecureBootProblem (New-Iso $ca2011 '') | Should -BeLike "*kernel isn't signed*"
+    }
+    It 'mentions the recovery key when BitLocker is on' {
+        Mock Test-BitLockerOn { $true }
+        Get-SecureBootProblem (New-Iso '' '') | Should -BeLike '*recovery key*'
+    }
+    It 'stops Pop!_OS before the download' {
+        { Assert-SecureBootAllows (Get-Catalog | Where-Object Id -eq 'pop') } | Should -Throw '*Secure Boot*'
+    }
+    It 'lets other systems through to the ISO check' {
+        { Assert-SecureBootAllows (Get-Catalog | Where-Object Id -eq 'ubuntu') } | Should -Not -Throw
+    }
+}
+
 Describe 'Get-Blockers' {
     BeforeEach {
         Mock Test-Uefi { $true }

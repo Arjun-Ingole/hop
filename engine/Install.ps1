@@ -6,6 +6,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
     Test-System
     if ((Get-InstallStatus) -ne 'none') { throw 'hop found changes from an earlier attempt. Clean them up first.' }
     $distro = Get-Distro $DistroId $IsoPath
+    Assert-SecureBootAllows $distro
     $diskChanged = $false
 
     if (-not $IsoPath) {

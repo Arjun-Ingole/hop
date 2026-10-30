@@ -44,6 +44,9 @@ function Read-Iso([string]$Path) {
         throw "This ISO contains a file larger than 4 GB ($($big.Name)), which cannot be copied to the installer partition. Try a different system."
     }
 
+    $stopped = Get-SecureBootProblem $root
+    if ($stopped) { throw $stopped }
+
     $bytes = ($files | Measure-Object -Property Length -Sum).Sum
     $installerGB = [int][math]::Max([double]4, [math]::Ceiling(($bytes + 512MB) / 1GB))
     # Windows can't format a FAT32 partition larger than 32 GB.
