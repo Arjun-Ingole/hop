@@ -70,7 +70,7 @@ namespace Hop
             var found = new List<int>();
             for (int number = 0; number <= 0xFF; number++)
             {
-                var data = Read(EntryName(number));
+                var data = TryRead(EntryName(number));
                 if (data != null && Description(data).Contains(text)) found.Add(number);
             }
             return found.ToArray();
@@ -83,7 +83,7 @@ namespace Hop
             var entries = new List<BootEntry>();
             for (int number = 0; number <= 0xFF; number++)
             {
-                var data = Read(EntryName(number));
+                var data = TryRead(EntryName(number));
                 if (data == null || data.Length < 8) continue;
                 var entry = new BootEntry { Number = number, Description = Description(data) };
                 int pathLength = BitConverter.ToUInt16(data, 4);
@@ -136,7 +136,7 @@ namespace Hop
         }
 
         // EFI_LOAD_OPTION: attributes, device path length, description, device path.
-        static byte[] LoadOption(string description, int partitionNumber, long startLba, long sizeLba, Guid partition, string path)
+        public static byte[] LoadOption(string description, int partitionNumber, long startLba, long sizeLba, Guid partition, string path)
         {
             byte[] devicePath = Concat(HardDriveNode(partitionNumber, startLba, sizeLba, partition), FilePathNode(path), new byte[] { 0x7F, 0xFF, 0x04, 0x00 });
             using (var stream = new MemoryStream())
@@ -211,6 +211,13 @@ namespace Hop
             var data = new byte[length];
             Array.Copy(buffer, data, length);
             return data;
+        }
+
+        // For listing: one variable the firmware won't hand over shouldn't hide the others.
+        static byte[] TryRead(string name)
+        {
+            try { return Read(name); }
+            catch (Win32Exception) { return null; }
         }
 
         /// <summary>Writes a variable; null deletes it.</summary>

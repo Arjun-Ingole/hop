@@ -11,6 +11,17 @@ $LinuxPartitionTypes = @(
     '{a19d880f-05fc-4d3b-a006-743f0f84911e}'   # Linux RAID
 )
 
+# Startup entries for a Linux boot loader on the Windows drive, other than hop's own.
+function Get-LinuxLoaders {
+    $onDisk = @(Get-Partition -DiskNumber (Get-WindowsPartition).DiskNumber | ForEach-Object { $_.Guid })
+    $entries = @(try { [Hop.Firmware]::ListEntries() } catch { Write-Log "Could not read startup entries: $($_.Exception.Message)" })
+    @($entries | Where-Object {
+            $_.PartitionGuid -and $onDisk -contains $_.PartitionGuid -and $_.Path -and
+            $_.Path -notlike '\EFI\Microsoft\*' -and $_.Description -notmatch $EntryPattern -and
+            $_.Path -match '(shim|grub|systemd-boot|refind)[^\\]*\.efi$'
+        })
+}
+
 # Linux partitions on the Windows drive, the startup entries that boot them, and a
 # separate EFI partition if that Linux made its own. Windows' EFI partition is never included.
 function Get-OtherSystem {
@@ -18,22 +29,15 @@ function Get-OtherSystem {
     $onDisk = @($partitions | ForEach-Object { $_.Guid })
     $entries = @(try { [Hop.Firmware]::ListEntries() } catch { Write-Log "Could not read startup entries: $($_.Exception.Message)" })
     $windowsEsp = ($entries | Where-Object { $_.Path -like '\EFI\Microsoft\*' } | Select-Object -First 1).PartitionGuid
-    $loaders = @($entries | Where-Object {
-            $_.PartitionGuid -and $onDisk -contains $_.PartitionGuid -and $_.Path -and
-            $_.Path -notlike '\EFI\Microsoft\*' -and $_.Description -notmatch $EntryPattern -and
-            $_.Path -match '(shim|grub|systemd-boot|refind)[^\\]*\.efi$'
-        })
+    $loaders = @(Get-LinuxLoaders)
 
     $linux = @($partitions | Where-Object { $_.GptType -in $LinuxPartitionTypes })
-    if ($loaders.Count) {
-        # Installers that run on Windows (Pond's does) may leave the generic "basic data" type on
-        # their partitions. To Windows those look like a basic data partition with no file
-        # system it can read and no drive letter.
-        $linux += @($partitions | Where-Object {
-                $_.GptType -eq $BasicDataType -and (-not $_.DriveLetter -or $_.DriveLetter -eq [char]0) -and $linux.Guid -notcontains $_.Guid -and
-                (Get-UnreadableVolume $_)
-            })
-    }
+    # Installers that run on Windows (Pond's does) may leave the generic "basic data" type on
+    # their partitions, so also look at what is actually on those with no drive letter.
+    $linux += @($partitions | Where-Object {
+            $_.GptType -eq $BasicDataType -and (-not $_.DriveLetter -or $_.DriveLetter -eq [char]0) -and $linux.Guid -notcontains $_.Guid -and
+            (Test-LinuxSignature $_)
+        })
     if (-not $linux.Count) { return $null }
     $removing = @($linux | ForEach-Object { $_.Guid })
 
@@ -61,13 +65,15 @@ function Get-OtherSystem {
     }
 }
 
-# True when Windows can't read the partition's file system (ext4, btrfs and the like),
-# and it isn't one of hop's own.
-function Get-UnreadableVolume($Partition) {
-    $volume = try { $Partition | Get-Volume -ErrorAction SilentlyContinue } catch { $null }
-    if (-not $volume) { return $true }
-    $volume.FileSystemType -notin @('NTFS', 'FAT', 'FAT32', 'exFAT', 'ReFS', 'CSVFS') -and
-        $volume.FileSystemLabel -notin ($InstallerLabels + $BootLabel, $RootLabel)
+# True only when the partition's own first bytes say it holds a Linux file system. Being
+# unreadable to Windows isn't enough: a locked BitLocker drive is unreadable too.
+function Test-LinuxSignature($Partition) {
+    if ($Partition.IsSystem -or $Partition.IsBoot) { return $false }
+    $found = try { [Hop.DiskProbe]::ReadSignature($Partition.DiskNumber, [int64]$Partition.Offset) } catch {
+        Write-Log "Could not read partition $($Partition.PartitionNumber): $($_.Exception.Message)"
+        $null
+    }
+    $found -in $LinuxSignatures
 }
 
 function Remove-PartitionByGuid([string]$Guid) {
@@ -101,15 +107,12 @@ function Remove-OtherSystem {
     $folders = @($other.Entries | Where-Object { $_.PartitionGuid -eq $other.WindowsEsp } |
         ForEach-Object { ($_.Path -split '\\')[2] } | Where-Object { $_ -and $_ -notin @('Microsoft', 'Boot') } | Sort-Object -Unique)
     if ($folders.Count) {
-        $letter = [char[]](90..68) | Where-Object { -not (Test-Path "$($_):\") } | Select-Object -First 1
-        & mountvol.exe "$($letter):" /s | Out-Null
-        try {
+        Use-Esp {
+            param($root)
             foreach ($folder in $folders) {
-                $path = "$($letter):\EFI\$folder"
-                if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force; Write-Log "Removed $path." }
+                $path = Join-Path $root "EFI\$folder"
+                if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force; Write-Log "Removed \EFI\$folder." }
             }
-        } finally {
-            & mountvol.exe "$($letter):" /d | Out-Null
         }
     }
 

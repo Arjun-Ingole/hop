@@ -62,5 +62,6 @@ function Set-ByteProgress([int64]$Done, [int64]$Total) {
     $Sync.Percent = if ($Total -gt 0) { [int][math]::Min([double]100, 100.0 * $Done / $Total) } else { -1 }
 }
 
+$LinuxSignatures = @('ext', 'btrfs', 'xfs', 'luks', 'lvm', 'swap')   # from [Hop.DiskProbe]
 $EspType = '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}'
 $BasicDataType = '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}'
