@@ -644,10 +644,17 @@ Describe 'Get-ReturnedHelp' {
         Mock Get-BootMenuKey { 'F11' }
         Mock Test-SecureBoot { $true }
         Mock Test-BootNextIgnored { $false }
+        Mock Test-EntryDropped { $false }
     }
     It 'points at the boot menu when the firmware ignored the one-time start' {
         Mock Test-BootNextIgnored { $true }
         (Get-ReturnedHelp).Steps -join ' ' | Should -BeLike '*ignored*F11*'
+    }
+    It 'says when the firmware removed the entry, not to change Secure Boot' {
+        Mock Test-EntryDropped { $true }
+        $steps = (Get-ReturnedHelp).Steps -join ' '
+        $steps | Should -BeLike '*Boot Order Lock*'
+        $steps | Should -Not -BeLike '*Secure Boot*'
     }
     It 'points at Secure Boot when the firmware tried and it is on' {
         (Get-ReturnedHelp).Steps -join ' ' | Should -BeLike '*Secure Boot may have*'
