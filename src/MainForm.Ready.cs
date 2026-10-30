@@ -84,8 +84,8 @@ namespace Hop
             Arrange(new[]
             {
                 new[] { new Run { Text = prepared.Name, Color = Ink, Logo = Logo(prepared.Logo) }, Run.Gray("is installed.") },
-            }, "The installer is still on this drive and isn't needed any more. Removing it takes a moment. Linux stays.", Secondary, null, 0);
-            Footer(null, null, "Remove the installer", () => _ = CleanupAsync(true, () => ShowRemoved(true)), "Later", Close);
+            }, "The installer is still on this drive and isn't needed any more. Remove it to free the space. Linux stays.", Secondary, null, 0);
+            Footer(null, null, "Remove the installer", () => { int before = startup.WindowsGB; _ = CleanupAsync(true, () => ShowRemoved(true, before)); }, "Later", Close);
         }
 
         // --- Undo ----------------------------------------------------------------------------
@@ -105,13 +105,17 @@ namespace Hop
             removeInstaller.Selected = row == removeInstaller;
             bool installerOnly = row == removeInstaller;
             primary.Enabled = true;
-            onPrimary = () => _ = CleanupAsync(installerOnly, () => ShowRemoved(installerOnly));
+            onPrimary = () => { int before = startup.WindowsGB; _ = CleanupAsync(installerOnly, () => ShowRemoved(installerOnly, before)); };
         }
 
-        void ShowRemoved(bool installerOnly)
+        /// <summary>Says what actually happened: C: may have grown, or the space may just be free.</summary>
+        void ShowRemoved(bool installerOnly, int windowsGBBefore)
         {
-            Arrange(new[] { new[] { Run.Black("Changes removed.") } },
-                installerOnly ? "The installer and its startup entry are gone." : "Everything hop made is gone, and drive C: has its space back.", Secondary, null, 0);
+            int grew = startup.WindowsGB - windowsGBBefore;
+            string result = grew > 0 ? $"Drive C: is {grew} GB bigger."
+                : installerOnly ? "The space it used is free, but Windows can't reach it from here."
+                : "The space is free on this drive.";
+            Arrange(new[] { new[] { Run.Black("Changes removed.") } }, result, Secondary, null, 0);
             Footer("Start over", ShowChoose, "Close", Close);
         }
 
