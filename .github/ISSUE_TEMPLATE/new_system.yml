@@ -1,0 +1,25 @@
+name: Add a Linux system
+description: Ask for a system to be added to the list
+labels: [catalog]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Which system?
+    validations:
+      required: true
+  - type: input
+    id: url
+    attributes:
+      label: Official download page
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: hop can only install systems that meet these
+      description: Tick what you've checked. It's fine if you don't know yet.
+      options:
+        - label: It's based on Ubuntu (the ISO has a casper folder and a .disk/info file)
+        - label: No single file in the ISO is 4 GB or larger
+        - label: The project publishes a checksum

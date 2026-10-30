@@ -15,7 +15,20 @@ warn about it because it isn't code-signed: click **More info → Run anyway**.
 
 Early. hop resizes partitions and changes startup entries, so back up anything you care about
 first. The full route from Windows into the Linux installer has not yet been confirmed on real
-hardware, and Secure Boot may need to be turned off. Reports from different PCs are very welcome.
+hardware, and Secure Boot may need to be turned off. Reports from different PCs are very welcome:
+see [Troubleshooting](docs/TROUBLESHOOTING.md) if something goes wrong.
+
+## Features
+
+- **One click, official sources.** Pick a system, and hop downloads it from the project's own server
+  and verifies its checksum. Or use an ISO you already have.
+- **Checks first.** It refuses PCs it can't work on and warns about battery power, RAID mode, pending
+  updates and BitLocker before anything on the disk changes.
+- **Picks up where it left off.** Interrupted downloads resume, and failures part way put the disk back.
+- **Gets you unstuck.** If the PC comes back to Windows, reopening hop says why and offers to restart
+  straight into the BIOS.
+- **Removes itself.** Undo gives the space back, and once Linux is installed it offers to remove the
+  installer. It can also remove another Linux that's on the drive, like Pond.
 
 ## What it does
 
@@ -62,15 +75,18 @@ Linux installer, and undo.
 
 | Path | What it is |
 | --- | --- |
-| `engine/Engine.ps1` | Download, disk and boot-entry logic, embedded in the exe |
-| `src/MainForm.cs` | The window and its states (choose, confirm, preparing, ready, undo) |
-| `src/Firmware.cs` | UEFI boot entries, written directly |
+| `engine/` | Download, disk and boot-entry logic in PowerShell, embedded in the exe |
+| `src/MainForm*.cs` | The window, with one file per group of screens |
+| `src/Engine.cs` | Runs the engine and passes its results to the window |
+| `src/Firmware.cs`, `src/DiskProbe.cs` | UEFI boot entries, and identifying what's on a partition |
 | `src/Sentence.cs`, `src/DriveBar.cs`, `src/Picker.cs`, `src/Controls.cs` | Custom-drawn controls |
 | `src/Theme.cs`, `src/Text.cs` | Colours, the embedded Instrument Sans font, text layout |
 | `assets/brand/` | The hop frog and wordmark |
 | `assets/logos/` | Each project's logo (see `SOURCES.md`) |
 | `assets/fonts/` | Instrument Sans, SIL Open Font License (`OFL.txt`) |
 | `tools/make_icon.py` | Draws `assets/hop.ico` and the brand PNGs |
+| `tests/` | Unit tests, and a check that every download still resolves |
+| `docs/` | [How it works](docs/ARCHITECTURE.md), [testing](docs/TESTING.md), [troubleshooting](docs/TROUBLESHOOTING.md) |
 | `app.manifest` | Administrator rights and high-DPI support |
 
 The app hosts the engine in Windows' built-in PowerShell 5.1 and shows its progress.
@@ -82,6 +98,11 @@ Needs the .NET SDK (any OS). Produces `bin/Release/hop.exe`.
 ```
 dotnet build -c Release
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), including how to add a Linux system. To report a security
+problem, see [SECURITY.md](SECURITY.md).
 
 ## License
 

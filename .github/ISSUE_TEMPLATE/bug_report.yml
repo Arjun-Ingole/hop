@@ -1,0 +1,41 @@
+name: Something went wrong
+description: hop failed, or the PC did something unexpected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you clicked, what you expected, and what you got instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: How far did it get?
+      options:
+        - It wouldn't start or showed "hop can't continue"
+        - The download failed
+        - Preparing failed (making room or copying)
+        - The PC came back to Windows after restarting
+        - The installer started but failed
+        - Linux installed, but something is wrong afterwards
+        - Undo or clean-up failed
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Which system were you installing?
+      placeholder: elementary OS
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Bug report from hop
+      description: >
+        On a failure screen, click "Copy a bug report" and paste it here. It lists the PC model, the
+        disk layout, the startup menu and the log, with your user and computer names taken out.
+        Otherwise attach the newest file from C:\ProgramData\hop\logs. Please read it before posting.
+      render: text
