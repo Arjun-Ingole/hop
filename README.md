@@ -12,10 +12,6 @@
 </p>
 <p align="center"><sub>A render of the main window, drawn to the app's layout. Not yet a capture from Windows.</sub></p>
 
-> [!WARNING]
-> hop is early. It resizes partitions and changes startup entries, and the full route into the Linux
-> installer hasn't been confirmed on real hardware yet. Back up anything you care about first.
-
 ## What it is
 
 hop is a single Windows app that installs Linux alongside Windows. Pick a system, drag to choose how
