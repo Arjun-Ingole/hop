@@ -247,6 +247,28 @@ Describe 'Firmware' {
     }
 }
 
+Describe 'Get-StartupInfo' {
+    BeforeEach {
+        Mock Test-System { throw 'blocked' }
+        Mock Read-State { $null }
+        Mock Test-CameBack { $false }
+        Mock Test-SecureBoot { $false }
+        Mock Get-BootMenuKey { 'F12' }
+        Mock Get-OtherSystem { $null }
+        Mock Get-SpaceInfo { [pscustomobject]@{ UsableGB = 100; TailFree = 0; Partition = [pscustomobject]@{ DiskNumber = 0; Size = [int64]200GB } } }
+        Mock Get-Volume { [pscustomobject]@{ Size = [int64]200GB; SizeRemaining = [int64]100GB } }
+        Mock Get-Disk { [pscustomobject]@{ FriendlyName = 'Disk' } }
+    }
+    It 'stops a new install on a PC with a blocker' {
+        Mock Get-InstallStatus { 'none' }
+        { Get-StartupInfo } | Should -Throw 'blocked'
+    }
+    It 'still lets someone undo on that PC' {
+        Mock Get-InstallStatus { 'leftover' }
+        (Get-StartupInfo).Status | Should -Be 'leftover'
+    }
+}
+
 Describe 'Get-WindowsEsp' {
     BeforeEach {
         Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 1 } }

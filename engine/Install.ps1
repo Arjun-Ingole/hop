@@ -78,8 +78,9 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
 }
 
 function Get-StartupInfo {
-    Test-System
     $status = Get-InstallStatus
+    # Only for a new install: what stops an install must not stop someone undoing one.
+    if ($status -eq 'none') { Test-System }
     $state = Read-State
     $space = Get-SpaceInfo
     $volume = Get-Volume -DriveLetter $env:SystemDrive.TrimEnd(':')
