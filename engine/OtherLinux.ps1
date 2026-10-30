@@ -22,6 +22,17 @@ function Get-LinuxLoaders {
         })
 }
 
+function Get-LinuxPartitions($Partitions) {
+    $linux = @($Partitions | Where-Object { $_.GptType -in $LinuxPartitionTypes })
+    # Installers that run on Windows (Pond's does) may leave the generic "basic data" type on
+    # their partitions, so also look at what is actually on those with no drive letter.
+    $linux += @($Partitions | Where-Object {
+            $_.GptType -eq $BasicDataType -and (-not $_.DriveLetter -or $_.DriveLetter -eq [char]0) -and $linux.Guid -notcontains $_.Guid -and
+            (Test-LinuxSignature $_)
+        })
+    $linux
+}
+
 # Linux partitions on the Windows drive, the startup entries that boot them, and a
 # separate EFI partition if that Linux made its own. Windows' EFI partition is never included.
 function Get-OtherSystem {
@@ -31,13 +42,7 @@ function Get-OtherSystem {
     $windowsEsp = ($entries | Where-Object { $_.Path -like '\EFI\Microsoft\*' } | Select-Object -First 1).PartitionGuid
     $loaders = @(Get-LinuxLoaders)
 
-    $linux = @($partitions | Where-Object { $_.GptType -in $LinuxPartitionTypes })
-    # Installers that run on Windows (Pond's does) may leave the generic "basic data" type on
-    # their partitions, so also look at what is actually on those with no drive letter.
-    $linux += @($partitions | Where-Object {
-            $_.GptType -eq $BasicDataType -and (-not $_.DriveLetter -or $_.DriveLetter -eq [char]0) -and $linux.Guid -notcontains $_.Guid -and
-            (Test-LinuxSignature $_)
-        })
+    $linux = @(Get-LinuxPartitions $partitions)
     if (-not $linux.Count) { return $null }
     $removing = @($linux | ForEach-Object { $_.Guid })
 

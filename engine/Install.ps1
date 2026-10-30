@@ -33,6 +33,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
             DiskNumber = $plan.DiskNumber; WindowsShrunk = $false; Partitions = @(); BootNumber = $null
             IsoPath = $IsoPath; Created = (Get-Date).ToString('s'); Copied = $false; RestartedAt = $null
             LoadersBefore = @(Get-LinuxLoaders | ForEach-Object { $_.Path })
+            LinuxBefore = @(Get-LinuxPartitions @(Get-Partition -DiskNumber $plan.DiskNumber) | ForEach-Object { $_.Guid })
             FastStartupWasOn = (Get-FastStartup) -eq 1; BitLockerPaused = $false
         }
         $diskChanged = $true
@@ -142,6 +143,11 @@ function Invoke-Shutdown([string[]]$Arguments) {
 # With -InstallerOnly, Linux and its partitions stay.
 function Invoke-Cleanup([switch]$InstallerOnly) {
     $state = Read-State
+    # Choosing "Linux isn't installed yet" by mistake must not take its boot partition with it.
+    if (-not $InstallerOnly -and $state -and (Test-LinuxInstalled $state)) {
+        Write-Log 'Linux is installed, so only the installer will be removed.'
+        $InstallerOnly = [switch]$true
+    }
     Set-Status 'Removing hop from the startup menu...'
     foreach ($id in @(Get-BcdEntries)) {
         try { Invoke-Bcdedit /delete $id | Out-Null; Write-Log "Removed startup entry $id." } catch { Write-Log "Could not remove $id." }

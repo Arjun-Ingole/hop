@@ -51,10 +51,15 @@ function Get-InstallStatus {
     'none'
 }
 
-# A Linux boot loader that wasn't in the startup menu when the install began.
+# A Linux boot loader or partition that wasn't there when the install began. Partitions
+# count too because firmware can drop a startup entry, and Linux must not look absent then.
 function Test-LinuxInstalled($State) {
-    if ($State.PSObject.Properties.Name -notcontains 'LoadersBefore') { return $false }
-    @(Get-LinuxLoaders | Where-Object { $_.Path -notin @($State.LoadersBefore) }).Count -gt 0
+    $names = $State.PSObject.Properties.Name
+    if ($names -notcontains 'LoadersBefore') { return $false }
+    if (@(Get-LinuxLoaders | Where-Object { $_.Path -notin @($State.LoadersBefore) }).Count) { return $true }
+    if ($names -notcontains 'LinuxBefore') { return $false }
+    $partitions = @(Get-Partition -DiskNumber (Get-WindowsPartition).DiskNumber)
+    @(Get-LinuxPartitions $partitions | Where-Object { $_.Guid -notin @($State.LinuxBefore) }).Count -gt 0
 }
 
 # Partitions hop recorded but may not have got as far as labelling, for example when

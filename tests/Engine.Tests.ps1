@@ -187,6 +187,23 @@ Describe 'Test-LinuxInstalled' {
         Mock Get-LinuxLoaders { [pscustomobject]@{ Path = '\EFI\ubuntu\shimx64.efi' } }
         Test-LinuxInstalled ([pscustomobject]@{ LoadersBefore = @() }) | Should -BeTrue
     }
+    Context 'when the firmware has dropped the startup entry' {
+        BeforeEach {
+            Mock Get-LinuxLoaders { }
+            Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } }
+            Mock Get-Partition { }
+            Mock Get-LinuxPartitions { [pscustomobject]@{ Guid = '{new}' } }
+        }
+        It 'notices a new Linux partition' {
+            Test-LinuxInstalled ([pscustomobject]@{ LoadersBefore = @(); LinuxBefore = @('{old}') }) | Should -BeTrue
+        }
+        It 'ignores a partition that was already there' {
+            Test-LinuxInstalled ([pscustomobject]@{ LoadersBefore = @(); LinuxBefore = @('{new}') }) | Should -BeFalse
+        }
+        It 'does not guess for a setup made before partitions were recorded' {
+            Test-LinuxInstalled ([pscustomobject]@{ LoadersBefore = @() }) | Should -BeFalse
+        }
+    }
 }
 
 Describe 'Test-LinuxSignature' {
@@ -227,6 +244,35 @@ Describe 'Get-RecordedPartitions' {
 Describe 'Firmware' {
     It 'can tell how this PC started' {
         [Hop.Firmware]::IsUefi() | Should -BeOfType [bool]
+    }
+}
+
+Describe 'Invoke-Cleanup' {
+    BeforeEach {
+        $script:removed = @()
+        $state = [pscustomobject]@{ Partitions = @(); WindowsShrunk = $true; FastStartupWasOn = $false; BitLockerPaused = $false }
+        Mock Read-State { $state }
+        Mock Get-BcdEntries { }
+        Mock Get-FirmwareEntries { }
+        Mock Use-Esp { }
+        Mock Get-RecordedPartitions { }
+        Mock Remove-PartitionAt { $script:removed += $Offset }
+        Mock Get-HopPartitions {
+            [pscustomobject]@{ Label = 'LINUXBOOT'; Partition = [pscustomobject]@{ DiskNumber = 0; Offset = [int64]100GB } }
+            [pscustomobject]@{ Label = 'HOPINSTALL'; Partition = [pscustomobject]@{ DiskNumber = 0; Offset = [int64]160GB } }
+        }
+        Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0; PartitionNumber = 3; Size = [int64]100GB } }
+        Mock Get-PartitionSupportedSize { [pscustomobject]@{ SizeMax = [int64]100GB } }
+    }
+    It 'removes every partition hop made when Linux is not installed' {
+        Mock Test-LinuxInstalled { $false }
+        Invoke-Cleanup
+        $script:removed | Should -Be @([int64]100GB, [int64]160GB)
+    }
+    It 'only removes the installer when Linux turns out to be installed' {
+        Mock Test-LinuxInstalled { $true }
+        Invoke-Cleanup
+        $script:removed | Should -Be @([int64]160GB)
     }
 }
 
