@@ -31,6 +31,25 @@ namespace Hop
         /// <summary>True when Windows started through UEFI rather than Legacy BIOS.</summary>
         public static bool IsUefi() => GetFirmwareType(out uint type) && type == FirmwareTypeUefi;
 
+        /// <summary>The entry set to start once, or null. Firmware clears this as it starts up, so one still set was never acted on.</summary>
+        public static int? BootNext() => ReadNumber("BootNext");
+
+        /// <summary>The entry this start used, or null.</summary>
+        public static int? BootCurrent() => ReadNumber("BootCurrent");
+
+        public static int[] BootOrderNumbers()
+        {
+            EnablePrivilege();
+            return Array.ConvertAll(BootOrder(), number => (int)number);
+        }
+
+        static int? ReadNumber(string name)
+        {
+            EnablePrivilege();
+            var data = TryRead(name);
+            return data != null && data.Length >= 2 ? BitConverter.ToUInt16(data, 0) : (int?)null;
+        }
+
         /// <summary>Adds an entry that starts <paramref name="path"/> on a GPT partition. Returns its number.</summary>
         public static int CreateBootEntry(string description, int partitionNumber, long startLba, long sizeLba,
             string partitionGuid, string path)

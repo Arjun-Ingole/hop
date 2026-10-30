@@ -524,6 +524,29 @@ Describe 'Get-BootMenuKey' {
     }
 }
 
+Describe 'Get-ReturnedHelp' {
+    BeforeEach {
+        Mock Read-State { [pscustomobject]@{ Distro = 'Ubuntu'; BootNumber = 7 } }
+        Mock Get-BootMenuKey { 'F11' }
+        Mock Test-SecureBoot { $true }
+        Mock Test-BootNextIgnored { $false }
+    }
+    It 'points at the boot menu when the firmware ignored the one-time start' {
+        Mock Test-BootNextIgnored { $true }
+        (Get-ReturnedHelp).Steps -join ' ' | Should -BeLike '*ignored*F11*'
+    }
+    It 'points at Secure Boot when the firmware tried and it is on' {
+        (Get-ReturnedHelp).Steps -join ' ' | Should -BeLike '*Secure Boot may have*'
+    }
+    It 'points at the boot menu when Secure Boot is off' {
+        Mock Test-SecureBoot { $false }
+        (Get-ReturnedHelp).Steps -join ' ' | Should -BeLike '*F11*'
+    }
+    It 'copes with a setup that has no startup entry yet' {
+        Test-BootNextIgnored ([pscustomobject]@{ BootNumber = $null }) | Should -BeFalse
+    }
+}
+
 Describe 'Get-Steps' {
     It 'names the partitions hop made for a prepared system' {
         $steps = (Get-Steps (Get-Catalog | Where-Object Id -eq 'elementary') 60).Steps -join ' '

@@ -42,7 +42,13 @@ function Get-Report {
             '{0,2}  {1,8:N1} GB at {2,8:N1} GB  {3}  {4} {5} {6}' -f $p.PartitionNumber, ($p.Size / 1GB), ($p.Offset / 1GB), $p.GptType, $volume.FileSystemType, $volume.FileSystemLabel, $signature
         }
     }
+    Add-ReportSection $lines 'Secure Boot' {
+        "Trusted: $((Get-UefiAuthorities (Get-SecureBootDb)) -join ', ')"
+    }
     Add-ReportSection $lines 'Startup menu' {
+        $order = ([Hop.Firmware]::BootOrderNumbers() | ForEach-Object { '{0:X4}' -f $_ }) -join ' '
+        $next = [Hop.Firmware]::BootNext()
+        "BootCurrent $('{0:X4}' -f [Hop.Firmware]::BootCurrent()), BootNext $(if ($null -eq $next) { 'not set' } else { '{0:X4}' -f $next }), BootOrder $order"
         foreach ($entry in [Hop.Firmware]::ListEntries()) {
             'Boot{0:X4}  {1}  {2}' -f $entry.Number, $entry.Description, $entry.Path
         }

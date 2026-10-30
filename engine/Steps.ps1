@@ -1,11 +1,24 @@
+# The one-time start is still set, so the firmware never acted on it.
+function Test-BootNextIgnored($State) {
+    if ($null -eq $State.BootNumber) { return $false }
+    $next = try { [Hop.Firmware]::BootNext() } catch { $null }
+    $null -ne $next -and $next -eq [int]$State.BootNumber
+}
+
 # When the PC came back to Windows instead of starting the installer.
 function Get-ReturnedHelp {
     $state = Read-State
     $entry = "$($state.Distro) installer $EntryMarker"
     $key = Get-BootMenuKey
-    if (Test-SecureBoot) {
+    if (Test-BootNextIgnored $state) {
         $steps = @(
-            'Secure Boot is on, which is the most common reason. Click **Open BIOS** and the PC restarts into its settings.'
+            "This PC ignored hop's request to start the installer. Restart and keep tapping **$key** as the PC powers on, which opens its boot menu."
+            "Choose **$entry**."
+        )
+        $notes = @("If it isn't listed, this PC's firmware removed it. Click **Try again** and hop adds it back.")
+    } elseif (Test-SecureBoot) {
+        $steps = @(
+            'Secure Boot may have stopped it. Click **Open BIOS** and the PC restarts into its settings.'
             'Find **Secure Boot**, usually under Security or Boot, and set it to **Disabled**.'
             'Save and exit. The installer should start.'
         )
