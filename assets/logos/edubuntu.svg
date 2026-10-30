@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   id="Layer_1"
+   data-name="Layer 1"
+   viewBox="0 0 158.93 158.27"
+   version="1.1"
+   sodipodi:docname="edubuntu-logo.svg"
+   width="158.92999"
+   height="158.26999"
+   inkscape:version="1.1.2 (0a00cf5339, 2022-02-04)"
+   inkscape:export-filename="/home/erich/Desktop/Edbuntu-logo-2022_RGB.png"
+   inkscape:export-xdpi="154.83"
+   inkscape:export-ydpi="154.83"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview33"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:pageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     showgrid="false"
+     width="1314.2975px"
+     inkscape:zoom="1.0988945"
+     inkscape:cx="210.66627"
+     inkscape:cy="281.64669"
+     inkscape:window-width="1564"
+     inkscape:window-height="966"
+     inkscape:window-x="180"
+     inkscape:window-y="27"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="g929" />
+  <defs
+     id="defs4">
+    <style
+       id="style2">.cls-1{fill:#e95420;}.cls-2{fill:#fff;}.cls-3{fill:#111;}</style>
+  </defs>
+  <circle
+     style="fill:#a30b00;fill-opacity:1;stroke-width:0"
+     id="path1082"
+     cx="79.320747"
+     cy="79.675774"
+     r="75.759171" />
+  <g
+     inkscape:groupmode="layer"
+     id="layer1"
+     inkscape:label="Layer 1" />
+  <g
+     inkscape:groupmode="layer"
+     id="g929"
+     inkscape:label="Layer 1 copy">
+    <g
+       id="g927"
+       style="fill:#ffffff"
+       transform="matrix(0.57037239,0,0,0.57037239,11.515852,-52.432193)">
+      <circle
+         class="cls-2"
+         cx="51.02"
+         cy="237.8"
+         r="24.549999"
+         id="circle913"
+         style="fill:#ffffff" />
+      <circle
+         class="cls-2"
+         cx="153.25999"
+         cy="183.97"
+         r="24.549999"
+         id="circle915"
+         style="fill:#ffffff" />
+      <path
+         class="cls-2"
+         d="m 106.39,301 a 59.81,59.81 0 0 1 -40.77,-31.1 35.3,35.3 0 0 1 -21,2.58 80.36,80.36 0 0 0 75,50 35.14,35.14 0 0 1 -7.21,-20.48 60.85,60.85 0 0 1 -6.02,-1 z"
+         id="path917"
+         style="fill:#ffffff" />
+      <circle
+         class="cls-2"
+         cx="147.73"
+         cy="301.10999"
+         r="24.549999"
+         id="circle919"
+         style="fill:#ffffff" />
+      <path
+         class="cls-2"
+         d="m 181.89,292.1 a 80.32,80.32 0 0 0 4,-94.24 35.44,35.44 0 0 1 -13.78,16.14 60.23,60.23 0 0 1 -2,59.78 35.17,35.17 0 0 1 11.78,18.32 z"
+         id="path921"
+         style="fill:#ffffff" />
+      <path
+         class="cls-2"
+         d="m 49.259495,203.29668 c 0.65156,0.003 -0.662068,0 0,0 6.909611,0.006 14.052466,1.90173 18.891146,5.49097 5.625916,-8.43996 14.037855,-15.8492 19.558758,-18.54041 -0.04909,-7.81894 0.92867,-17.09789 3.593356,-23.2867 -18.746968,5.35613 -36.44387,24.77677 -42.04326,36.33614 z"
+         id="path923"
+         style="display:inline;fill:#ffffff;stroke-width:1.00348"
+         sodipodi:nodetypes="cccccc" />
+      <path
+         class="cls-2"
+         d="m 97.262487,173.71044 c 0,0 -0.862136,2.45581 -1.124844,12.11061 0,0 10.073427,-3.69632 23.082397,-4.1364 2.28781,-32.61003 32.20608,-47.53668 45.74147,-55.67037 0,0 -15.72546,20.34515 0,0 -31.60685,-2.25932 -61.28606,16.09295 -67.283914,45.6505 z"
+         id="path925"
+         style="fill:#ffffff;stroke-width:1.22759"
+         sodipodi:nodetypes="cccccsc" />
+    </g>
+  </g>
+</svg>
