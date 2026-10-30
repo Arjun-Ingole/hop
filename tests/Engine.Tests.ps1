@@ -331,6 +331,21 @@ Describe 'Invoke-Cleanup' {
         Invoke-Cleanup
         $script:removed | Should -Be @([int64]100GB, [int64]160GB)
     }
+    It 'gives space back to C: when hop shrank it' {
+        Mock Test-LinuxInstalled { $false }
+        Mock Get-PartitionSupportedSize { [pscustomobject]@{ SizeMax = [int64]160GB } }
+        Mock Resize-Partition { }
+        Invoke-Cleanup
+        Should -Invoke Resize-Partition -Times 1
+    }
+    It 'leaves free space alone when hop never shrank C:' {
+        Mock Test-LinuxInstalled { $false }
+        Mock Read-State { [pscustomobject]@{ Partitions = @(); WindowsShrunk = $false } }
+        Mock Get-PartitionSupportedSize { [pscustomobject]@{ SizeMax = [int64]160GB } }
+        Mock Resize-Partition { }
+        Invoke-Cleanup
+        Should -Invoke Resize-Partition -Times 0
+    }
     It 'only removes the installer when Linux turns out to be installed' {
         Mock Test-LinuxInstalled { $true }
         Invoke-Cleanup

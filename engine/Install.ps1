@@ -181,7 +181,8 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
         Remove-PartitionAt $partition.DiskNumber $partition.Offset
     }
 
-    if (-not $InstallerOnly) {
+    # Free space that was next to C: before hop started stays free, unless C: was shrunk.
+    if (-not $InstallerOnly -and ($null -eq $state -or $state.WindowsShrunk -ne $false)) {
         $c = Get-WindowsPartition
         $max = (Get-PartitionSupportedSize -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber).SizeMax
         if ($max -gt $c.Size + 1MB) {

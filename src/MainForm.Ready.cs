@@ -111,7 +111,7 @@ namespace Hop
         void ShowRemoved(bool installerOnly)
         {
             Arrange(new[] { new[] { Run.Black("Changes removed.") } },
-                installerOnly ? "The installer and its startup entry are gone." : "The space is back on drive C:.", Secondary, null, 0);
+                installerOnly ? "The installer and its startup entry are gone." : "Everything hop made is gone, and drive C: has its space back.", Secondary, null, 0);
             Footer("Start over", ShowChoose, "Close", Close);
         }
 
