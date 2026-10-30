@@ -11,10 +11,14 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
     if (-not $IsoPath) {
         Set-Stage 1
         Set-Status "Finding the latest $($distro.Name) on $($distro.Source)..."
-        $download = Resolve-Download $distro
+        $download = try { Resolve-Download $distro } catch {
+            throw "Couldn't find the download on $($distro.Source): $($_.Exception.Message) Check the internet connection, or download the ISO yourself and pick ""Use an ISO file""."
+        }
         Write-Log "Official download: $($download.Url)"
-        $IsoPath = Join-Path (Join-Path $env:USERPROFILE 'Downloads') $download.FileName
+        $IsoPath = Join-Path (Get-DownloadFolder) $download.FileName
         Get-Iso $download $IsoPath
+    } elseif (-not (Test-Path -LiteralPath $IsoPath)) {
+        throw "Can't find $IsoPath. Pick the ISO file again."
     }
 
     try {

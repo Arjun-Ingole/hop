@@ -1,8 +1,17 @@
 # --- ISO -----------------------------------------------------------------
 
 function Mount-Iso([string]$Path) {
-    $image = Get-DiskImage -ImagePath $Path
-    if (-not $image.Attached) { $image = Mount-DiskImage -ImagePath $Path -PassThru }
+    # Windows refuses to mount sparse files, which some download tools create.
+    if ((Get-Item -LiteralPath $Path).Attributes -band [IO.FileAttributes]::SparseFile) {
+        & fsutil.exe sparse setflag $Path 0 | Out-Null
+        Write-Log 'Cleared the sparse flag on the ISO.'
+    }
+    try {
+        $image = Get-DiskImage -ImagePath $Path
+        if (-not $image.Attached) { $image = Mount-DiskImage -ImagePath $Path -PassThru }
+    } catch {
+        throw "Windows could not open the ISO file ($($_.Exception.Message)). It may be damaged, or stored on a network or cloud folder. Copy it to a folder on this PC and try again."
+    }
     for ($i = 0; $i -lt 20; $i++) {
         $letter = ($image | Get-Volume -ErrorAction SilentlyContinue).DriveLetter
         if ($letter) { return [string]$letter }
@@ -20,6 +29,10 @@ function Read-Iso([string]$Path) {
     if (-not (Test-Path -LiteralPath (Join-Path $root 'EFI\BOOT\BOOTX64.EFI'))) {
         throw 'This ISO cannot start on a modern (UEFI) PC.'
     }
+    # The boot loader finds the installer partition by this file.
+    if (-not (Test-Path -LiteralPath (Join-Path $root '.disk\info'))) {
+        throw 'This ISO is not an Ubuntu-style live system. hop only supports Ubuntu-based systems (Ubuntu, Mint, elementary, Pop!_OS, Zorin...).'
+    }
     $live = Get-ChildItem -LiteralPath $root -Directory -Force | Where-Object {
         $_.Name -like 'casper*' -and (Get-ChildItem -LiteralPath $_.FullName -Filter '*.squashfs' -Force)
     }
@@ -32,9 +45,12 @@ function Read-Iso([string]$Path) {
     }
 
     $bytes = ($files | Measure-Object -Property Length -Sum).Sum
+    $installerGB = [int][math]::Max([double]4, [math]::Ceiling(($bytes + 512MB) / 1GB))
+    # Windows can't format a FAT32 partition larger than 32 GB.
+    if ($installerGB -gt 32) { throw "This ISO is too big: its $installerGB GB won't fit on a FAT32 installer partition." }
     [pscustomobject]@{
         Letter      = $letter
         Bytes       = [int64]$bytes
-        InstallerGB = [int][math]::Max([double]4, [math]::Ceiling(($bytes + 512MB) / 1GB))
+        InstallerGB = $installerGB
     }
 }
