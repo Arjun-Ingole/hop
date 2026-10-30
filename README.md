@@ -10,7 +10,6 @@
 <p align="center">
   <img src="docs/screenshot.png" alt="The hop window: install elementary OS next to Windows, with 120 GB, above a bar showing drive C: split between Windows and Linux" width="760">
 </p>
-<p align="center"><sub>A render of the main window, drawn to the app's layout. Not yet a capture from Windows.</sub></p>
 
 ## What it is
 
