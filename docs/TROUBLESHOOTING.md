@@ -37,8 +37,9 @@ an older shim. Use a newer ISO, or turn off Secure Boot.
 
 ## The installer doesn't offer to install alongside Windows
 
-Ubuntu's installer hides this while drive C: is encrypted with BitLocker. Pausing isn't enough for it.
-Use the manual option hop lists instead, which leaves Windows encrypted, or turn off BitLocker first.
+Ubuntu 24.04's installer is [reported](https://bugs.launchpad.net/ubuntu-desktop-provision/+bug/2068915)
+to ask for BitLocker to be turned off before offering this. If yours does, use the manual option hop
+lists, or turn off BitLocker first.
 
 ## The installer can't see the drive
 

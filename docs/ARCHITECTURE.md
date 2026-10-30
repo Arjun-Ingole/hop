@@ -88,7 +88,8 @@ Read from the boot files of the ISOs in the catalog (October 2026):
    The modules for FAT and GPT are built in.
 4. GRUB starts `/casper/vmlinuz` from there. With Secure Boot on, the kernel must be signed. Pop!_OS's isn't.
 5. Casper searches the partitions of every disk, NVMe included, for its files. It accepts FAT and
-   matches the ID in `.disk/casper-uuid-*` where the ISO has one.
+   matches the ID in `.disk/casper-uuid-*` where the ISO has one. (Read in Ubuntu 26.04.1, Mint 22.3
+   and elementary OS 8.1.)
 
 A problem from step 3 onwards stops at GRUB or the Linux console. **Coming straight back to Windows
 means step 1 or 2 failed, or the firmware never tried:** firmware moves on to the next startup entry
