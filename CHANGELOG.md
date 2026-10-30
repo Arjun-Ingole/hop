@@ -48,6 +48,13 @@
 - Cancel could land just as the disk started changing. Now either Cancel wins or the install does.
 - The message after Undo says what actually happened to the space.
 
+- The next restart only goes to the installer after **Restart now**. Before, a Windows Update restart could
+  start it after you clicked **Later**.
+- If the firmware removes hop's startup entry, hop says so, and no longer suggests turning off Secure Boot.
+- A blocked EFI partition is now found before the disk changes, not after.
+- Work proxies that need a Windows sign-in now work for downloads.
+- ISOs whose kernel depends on a link are refused before the disk changes.
+
 ### Changed
 
 - The installer now sits next to C:, so removing it after installing Linux gives its space to Windows.

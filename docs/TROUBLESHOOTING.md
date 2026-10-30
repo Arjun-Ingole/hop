@@ -54,13 +54,37 @@ it:** Windows may stop starting until it's prepared. Search for the steps for yo
 ## "Windows could not shrink C: that far"
 
 Hibernation, paging and restore point files can't be moved, so they limit the shrink. Try a smaller
-size, then in an administrator terminal run `powercfg /h off`, restart, and try again.
+size. If that doesn't help, turn these off, restart, and try again. You can turn them back on afterwards.
+
+- **Hibernation:** run `powercfg /h off` in an administrator terminal.
+- **The paging file:** in System > About > Advanced system settings > Performance > Advanced > Virtual memory.
+- **System Protection:** in the same Advanced system settings, on the System Protection tab, for C:.
 
 ## Windows asks for a BitLocker recovery key
 
 hop pauses BitLocker for three restarts, but changes to startup can still trigger this. The key is at
 [account.microsoft.com/devices/recoverykey](https://account.microsoft.com/devices/recoverykey). Get it
 **before** you start.
+
+## The firmware keeps removing the startup entry
+
+Some firmwares reset their boot list. On Lenovo PCs, turn off **Boot Order Lock** in the BIOS. hop adds the
+entry back each time you click **Restart now**.
+
+## The Windows drive is read-only in Linux
+
+Windows may be hibernating, and laptops can do that by themselves. Restart Windows fully, not shut down or
+sleep, and then open the drive in Linux. Don't force it to mount: that can damage your files.
+
+## The clock is wrong after switching systems
+
+Windows and Linux read the PC's clock differently. In Linux, run `timedatectl set-local-rtc 1`.
+
+## A Windows recovery update fails
+
+Windows keeps its recovery partition straight after C:, and hop puts Linux after C: too. If an update fails
+with event 4502 because that partition is too small, Windows can't grow it past Linux. Microsoft's steps are
+in [KB5028997](https://support.microsoft.com/en-us/topic/kb5028997-instructions-to-manually-resize-your-partition-to-install-the-winre-update-400faa27-9343-461c-ada9-24c8229763bf).
 
 ## Windows doesn't appear in the Linux boot menu
 

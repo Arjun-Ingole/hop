@@ -41,6 +41,9 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] Fill C: until there isn't room: the window says how much to free
 - [ ] Pick an ISO that isn't Ubuntu-based, and one with a file over 4 GB: both refused before the disk changes
 - [ ] Open a second copy of hop: refused
+- [ ] Click **Later**, then restart Windows yourself: Windows starts, not the installer
+- [ ] Turn on Controlled Folder Access: making partitions still works, or the error explains why
+- [ ] Linux Mint's installer works when run from the installer partition
 - [ ] Plug in a USB stick with an Ubuntu ISO written to it: warned before starting, refused at restart
 - [ ] Click Cancel as "Making room" begins: either it cancels with the disk untouched, or the install carries on
 
