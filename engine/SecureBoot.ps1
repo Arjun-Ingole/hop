@@ -54,7 +54,8 @@ function Get-SecureBootProblem([string]$Root) {
 
     $authorities = @(Get-UefiAuthorities $signature)
     $db = Get-SecureBootDb
-    if ($authorities.Count -and $db -and -not @($authorities | Where-Object { $db.Contains($_) }).Count) {
+    # Only a list that names Microsoft is one this was able to read. Stopping an install on anything less would be a guess.
+    if ($authorities.Count -and $db -and $db.Contains('Microsoft') -and -not @($authorities | Where-Object { $db.Contains($_) }).Count) {
         return "This PC's Secure Boot doesn't trust this ISO's boot loader, which is signed by $($authorities -join ' and '). Some BIOS settings have an option to allow Microsoft's third-party certificate; turn it on if yours does. Otherwise: $(Get-SecureBootAdvice)"
     }
 

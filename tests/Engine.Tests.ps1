@@ -484,6 +484,10 @@ Describe 'Secure Boot' {
         Mock Test-SecureBoot { $false }
         Get-SecureBootProblem (New-Iso '' '') | Should -BeNullOrEmpty
     }
+    It 'does not stop an install on a list it could not make sense of' {
+        Mock Get-SecureBootDb { 'unreadable bytes' }
+        Get-SecureBootProblem (New-Iso $ca2011 'Canonical') | Should -BeNullOrEmpty
+    }
     It 'spots a boot loader this PC does not trust, such as a PC with only the 2023 certificate' {
         Mock Get-SecureBootDb { 'Microsoft UEFI CA 2023' }
         Get-SecureBootProblem (New-Iso $ca2011 'Canonical') | Should -BeLike "*doesn't trust*"
