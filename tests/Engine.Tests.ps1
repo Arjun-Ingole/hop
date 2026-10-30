@@ -417,6 +417,24 @@ Describe 'Get-Warnings' {
     }
 }
 
+Describe 'Suspend-BitLockerForRestart' {
+    BeforeEach {
+        Mock Suspend-BitLockerForSetup { $true }
+        Mock Test-BitLockerOn { $false }
+    }
+    It 'pauses BitLocker that has come back on, and remembers' {
+        Mock Test-BitLockerOn { $true }
+        $state = [pscustomobject]@{ BitLockerPaused = $false }
+        Suspend-BitLockerForRestart $state
+        Should -Invoke Suspend-BitLockerForSetup -Times 1
+        $state.BitLockerPaused | Should -BeTrue
+    }
+    It 'leaves a PC without BitLocker alone' {
+        Suspend-BitLockerForRestart ([pscustomobject]@{ BitLockerPaused = $false })
+        Should -Invoke Suspend-BitLockerForSetup -Times 0
+    }
+}
+
 Describe 'Get-BootMenuKey' {
     It 'knows MSI, the laptop this was built on' {
         Mock Get-CimInstance { [pscustomobject]@{ Manufacturer = 'Micro-Star International Co., Ltd.' } }

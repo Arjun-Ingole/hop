@@ -83,6 +83,18 @@ function Suspend-BitLockerForSetup {
     $false
 }
 
+# hop can restart many times, and turning off Secure Boot makes BitLocker ask for the
+# recovery key unless it's paused at that moment. So each restart starts a fresh count.
+function Suspend-BitLockerForRestart($State) {
+    if (Test-BitLockerOn) {
+        [void](Suspend-BitLockerForSetup)
+        $State | Add-Member -NotePropertyName BitLockerPaused -NotePropertyValue $true -Force
+    } elseif ($State.BitLockerPaused) {
+        & manage-bde.exe -protectors -disable $env:SystemDrive -RebootCount 3 | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Log 'Could not extend the BitLocker pause.' }
+    }
+}
+
 function Resume-BitLockerAfterUndo {
     & manage-bde.exe -protectors -enable $env:SystemDrive | Out-Null
     if ($LASTEXITCODE -eq 0) { Write-Log 'Turned BitLocker back on.' } else { Write-Log 'Could not turn BitLocker back on; Windows does so itself after a few restarts.' }

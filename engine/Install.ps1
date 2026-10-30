@@ -127,6 +127,7 @@ function Restart-IntoFirmware {
 
 function Set-InstallerForNextStart {
     $state = Read-State
+    Suspend-BitLockerForRestart $state
     $state.BootNumber = Register-Installer $state.Distro
     Set-BootOnce ([int]$state.BootNumber)
     # Builds before this one didn't have the field, so it may need adding.
