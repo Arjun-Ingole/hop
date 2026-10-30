@@ -30,6 +30,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
         Use-Esp { param($root) Assert-EspRoom $root "$($iso.Letter):\EFI\BOOT" }
 
         Set-Stage 3
+        if (-not $Sync.Gate.EnterDiskStage()) { throw 'Cancelled.' }
         $state = [pscustomobject]@{
             Distro = $distro.Name; DistroId = $distro.Id; Strategy = $distro.Strategy; LinuxGB = $LinuxGB
             DiskNumber = $plan.DiskNumber; WindowsShrunk = $false; Partitions = @(); BootNumber = $null

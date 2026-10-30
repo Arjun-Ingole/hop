@@ -123,6 +123,8 @@ namespace Hop
 
         void CancelInstall()
         {
+            // Too late if the disk is already changing, and the button goes on the next update.
+            if (!engine.TryCancel()) return;
             cancelling = true;
             StopDownload();
             engine.Stop();

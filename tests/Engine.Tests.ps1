@@ -714,6 +714,19 @@ Describe 'DiskProbe' {
     }
 }
 
+Describe 'CancelGate' {
+    It 'lets Cancel win before the disk stage, and stops the disk stage' {
+        $gate = New-Object Hop.CancelGate
+        $gate.TryCancel() | Should -BeTrue
+        $gate.EnterDiskStage() | Should -BeFalse
+    }
+    It 'refuses Cancel once the disk is changing' {
+        $gate = New-Object Hop.CancelGate
+        $gate.EnterDiskStage() | Should -BeTrue
+        $gate.TryCancel() | Should -BeFalse
+    }
+}
+
 Describe 'Firmware load option' {
     It 'lays the entry out the way UEFI expects' {
         $guid = [guid]'11111111-2222-3333-4444-555555555555'

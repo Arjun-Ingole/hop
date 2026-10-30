@@ -46,6 +46,34 @@ namespace Hop
     }
 
     /// <summary>
+    /// Decides the race between Cancel and the first change to the disk: exactly one of them
+    /// wins, so a stop can never land in the middle of making partitions.
+    /// </summary>
+    public sealed class CancelGate
+    {
+        readonly object gate = new object();
+        bool cancelled, diskChanging;
+
+        public bool TryCancel()
+        {
+            lock (gate)
+            {
+                if (diskChanging) return false;
+                return cancelled = true;
+            }
+        }
+
+        public bool EnterDiskStage()
+        {
+            lock (gate)
+            {
+                if (cancelled) return false;
+                return diskChanging = true;
+            }
+        }
+    }
+
+    /// <summary>
     /// Runs the engine\ scripts in an in-process PowerShell runspace. Calls are
     /// serialized; progress is shared through <see cref="Sync"/>.
     /// </summary>
@@ -93,6 +121,7 @@ namespace Hop
 
         public void ResetProgress()
         {
+            Sync["Gate"] = new CancelGate();
             Sync["Status"] = "";
             Sync["Percent"] = -1;
             Sync["Stage"] = 0;
@@ -200,6 +229,9 @@ namespace Hop
         public Task RemoveOtherSystemAsync() => InvokeAsync("Remove-OtherSystem");
 
         public Task ExpandWindowsAsync() => InvokeAsync("Expand-Windows");
+
+        /// <summary>False once the install has started changing the disk.</summary>
+        public bool TryCancel() => ((CancelGate)Sync["Gate"]).TryCancel();
 
         /// <summary>Stops the running command; its task then fails with PipelineStoppedException.</summary>
         public void Stop() => running?.BeginStop(null, null);

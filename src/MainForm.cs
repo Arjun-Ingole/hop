@@ -216,7 +216,7 @@ namespace Hop
         {
             base.OnFormClosing(e);
             if (!busy) return;
-            if (installing && engine.Stage <= 2)
+            if (installing && engine.TryCancel())
             {
                 StopDownload();
                 Environment.Exit(0);
