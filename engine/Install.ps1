@@ -203,6 +203,9 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
             if ($max -gt $c.Size + 1MB) {
                 Set-Status 'Giving the space back to Windows...'
                 Resize-Partition -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber -Size $max
+            } else {
+                # For example, Windows has made a recovery partition straight after C: since.
+                Write-Log 'The freed space is not next to C:, so Windows cannot use it directly.'
             }
         } catch {
             # The installer is gone by now, and that's what was asked for.

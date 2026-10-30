@@ -89,7 +89,7 @@ function New-LinuxSpace($Plan, [string]$Strategy, $State) {
             Resize-Partition -DiskNumber $Plan.DiskNumber -PartitionNumber $Plan.PartitionNumber -Size $Plan.NewWindowsSize
         } catch {
             # Hibernation, paging and restore point files can't be moved, so they limit the shrink.
-            throw "Windows could not shrink C: that far ($($_.Exception.Message)). Try a smaller Linux size. If that doesn't help, run powercfg /h off in an administrator terminal, restart, and try again."
+            throw "Windows could not shrink C: that far ($($_.Exception.Message)). Try a smaller Linux size. If that doesn't help, turn off hibernation (powercfg /h off in an administrator terminal), the paging file and System Protection for C:, then restart and try again. You can turn them back on afterwards."
         }
         $State.WindowsShrunk = $true
         Save-State $State
