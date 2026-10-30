@@ -236,6 +236,20 @@ Describe 'Test-LinuxSignature' {
     }
 }
 
+Describe 'Get-IsoKernelPath' {
+    BeforeEach {
+        $iso = Join-Path $TestDrive ([guid]::NewGuid())
+        New-Item -ItemType Directory -Path "$iso\boot\grub" | Out-Null
+    }
+    It 'skips a memory tester listed first' {
+        Set-Content "$iso\boot\grub\grub.cfg" "menuentry 'a' {`n  linux /boot/memtest.efi`n}`nmenuentry 'b' {`n  linux /casper/vmlinuz quiet`n}"
+        Get-IsoKernelPath $iso | Should -Be "$iso\casper\vmlinuz"
+    }
+    It 'says nothing without a menu' {
+        Get-IsoKernelPath (Join-Path $TestDrive 'none') | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'Repair-ShortenedNames' {
     BeforeEach {
         $root = Join-Path $TestDrive ([guid]::NewGuid())

@@ -39,6 +39,12 @@ function Read-Iso([string]$Path) {
     if (-not $live) {
         throw 'This ISO is not an Ubuntu-style live system. hop only supports Ubuntu-based systems (Ubuntu, Mint, elementary, Pop!_OS, Zorin...).'
     }
+    # FAT32 can't hold links, and Windows can't see them in an ISO, so a kernel reached
+    # through one wouldn't be there at startup. Checked on the catalog's ISOs: none do this.
+    $kernel = Get-IsoKernelPath $root
+    if ($kernel -and -not (Test-Path -LiteralPath $kernel)) {
+        throw "This ISO's boot menu needs $($kernel.Substring($root.Length)), which Windows can't see in it. It probably relies on a link, which the installer partition can't hold. Try a different system."
+    }
     $big = $files | Where-Object Length -ge 4GB | Select-Object -First 1
     if ($big) {
         throw "This ISO contains a file larger than 4 GB ($($big.Name)), which cannot be copied to the installer partition. Try a different system."

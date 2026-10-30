@@ -30,14 +30,18 @@ function Get-SecureBootDb {
     try { [Text.Encoding]::GetEncoding(28591).GetString((Get-SecureBootUEFI -Name db).Bytes) } catch { $null }
 }
 
-# The kernel the ISO's menu starts first.
-function Get-IsoKernel([string]$Root) {
+# Where the ISO's menu says the first kernel is. Memory testers also use the linux command.
+function Get-IsoKernelPath([string]$Root) {
     $menu = Join-Path $Root 'boot\grub\grub.cfg'
     if (-not (Test-Path -LiteralPath $menu)) { return }
-    $m = [regex]::Match((Get-Content -LiteralPath $menu -Raw), '(?m)^\s*linux(?:efi)?\s+(/\S+)')
-    if (-not $m.Success) { return }
-    $path = Join-Path $Root ($m.Groups[1].Value.TrimStart('/') -replace '/', '\')
-    if (Test-Path -LiteralPath $path) { $path }
+    $m = [regex]::Match((Get-Content -LiteralPath $menu -Raw), '(?m)^\s*linux(?:efi)?\s+(/(?!boot/memtest)\S+)')
+    if ($m.Success) { Join-Path $Root ($m.Groups[1].Value.TrimStart('/') -replace '/', '\') }
+}
+
+# The kernel the ISO's menu starts first.
+function Get-IsoKernel([string]$Root) {
+    $path = Get-IsoKernelPath $Root
+    if ($path -and (Test-Path -LiteralPath $path)) { $path }
 }
 
 function Get-SecureBootAdvice {
