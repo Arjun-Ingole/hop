@@ -7,105 +7,72 @@
 
 <p align="center">Install Linux next to Windows without a USB stick.</p>
 
-`hop.exe` is a single file. It runs on Windows 10 (1803 or newer) and Windows 11 with
-nothing to install, and asks for administrator access when it opens. Windows SmartScreen may
-warn about it because it isn't code-signed: click **More info → Run anyway**.
+<p align="center">
+  <img src="docs/screenshot.png" alt="The hop window: install elementary OS next to Windows, with 120 GB, above a bar showing drive C: split between Windows and Linux" width="760">
+</p>
+<p align="center"><sub>A render of the main window, drawn to the app's layout. Not yet a capture from Windows.</sub></p>
 
-## Status
+> [!WARNING]
+> hop is early. It resizes partitions and changes startup entries, and the full route into the Linux
+> installer hasn't been confirmed on real hardware yet. Back up anything you care about first.
 
-Early. hop resizes partitions and changes startup entries, so back up anything you care about
-first. The full route from Windows into the Linux installer has not yet been confirmed on real
-hardware, and Secure Boot may need to be turned off. Reports from different PCs are very welcome:
-see [Troubleshooting](docs/TROUBLESHOOTING.md) if something goes wrong.
+## What it is
 
-## Features
-
-- **One click, official sources.** Pick a system, and hop downloads it from the project's own server
-  and verifies its checksum. Or use an ISO you already have.
-- **Checks first.** It refuses PCs it can't work on and warns about battery power, RAID mode, pending
-  updates and BitLocker before anything on the disk changes.
-- **Picks up where it left off.** Interrupted downloads resume, and failures part way put the disk back.
-- **Gets you unstuck.** If the PC comes back to Windows, reopening hop says why and offers to restart
-  straight into the BIOS.
-- **Removes itself.** Undo gives the space back, and once Linux is installed it offers to remove the
-  installer. It can also remove another Linux that's on the drive, like Pond.
+hop is a single Windows app that installs Linux alongside Windows. Pick a system, drag to choose how
+much space it gets, and click Install. There's no USB stick to find and nothing to install first.
 
 ## What it does
 
-1. Downloads the ISO from the project's official server and checks its SHA256 checksum.
-   elementary OS publishes no checksum, so that download is checked by HTTPS only.
-2. Checks the ISO is an Ubuntu-style live system with no file over 4 GB.
-3. Uses free space after C:, shrinking C: only if it has to, and creates a small FAT32 partition
-   called `HOPINSTALL`, plus either
-   - free space that the installer's "alongside Windows" option uses (Ubuntu, Mint and flavours), or
-   - a 1 GB `LINUXBOOT` partition and a `LINUXROOT` placeholder (elementary OS, Pop!_OS, whose
-     easy install mode can't use free space).
-4. Copies the ISO's files onto `HOPINSTALL`.
-5. Copies the installer's signed boot loader to `\EFI\hop` on Windows' EFI system partition, adds a
-   UEFI startup entry for it, and boots it once on the next restart.
+- **Downloads from official sources.** It gets the ISO from the project's own server and verifies its
+  checksum where the project publishes one. You can also use an ISO you already have.
+- **Makes room safely.** It checks your PC first, and nothing on the disk changes until those checks pass.
+- **Tells you what to click.** It lists the exact choices to make in the Linux installer.
+- **Gets you unstuck.** If the PC goes back to Windows, reopening hop explains why and can restart into the BIOS.
+- **Cleans up after itself.** Undo gives the space back to Windows, and it can also remove another Linux
+  already on the drive.
 
-Nothing on the disk changes until steps 1 and 2 pass. BitLocker is paused for three restarts
-if it is on, and Windows Fast Startup is turned off. The app then lists the exact choices to
-make in the Linux installer.
+**Systems:** elementary OS, Ubuntu and its flavours (Budgie, Xubuntu, Lubuntu, Cinnamon, Unity, Edubuntu,
+Studio), Linux Mint and Pop!_OS. Other Ubuntu-based ISOs should work too. Kubuntu, Fedora and Arch aren't
+supported.
 
-**Undo** removes the startup entry, the boot loader copy and hop's partitions, and gives the
-space back to C: if Linux isn't installed yet.
+**Needs:** Windows 10 (1803 or newer) or 11, on a UEFI PC with a GPT disk, which is nearly every PC sold with them.
 
-hop can also remove another Linux it finds on the drive and give that space to Windows.
+## How it works
 
-## Systems
+A USB installer is just a FAT32 drive with the ISO's files on it. hop makes the same thing on your
+internal disk:
 
-elementary OS, Ubuntu 26.04 LTS, Ubuntu Budgie, Xubuntu, Lubuntu, Ubuntu Cinnamon,
-Ubuntu Unity, Edubuntu, Ubuntu Studio, Linux Mint (Cinnamon, Xfce, MATE) and Pop!_OS 24.04.
-Any other Ubuntu-based ISO also works, for example Zorin OS.
+```
+Before   [ EFI ][ C: Windows                              ][ Recovery ]
+After    [ EFI ][ C: Windows       ][ Linux ][ Installer  ][ Recovery ]
+```
 
-Not supported: Kubuntu (its ISO has a file over 4 GB, too big for FAT32) and systems not based
-on Ubuntu, such as Fedora, Bazzite or Arch (their installers look for the USB stick differently).
+1. **Download and check** the ISO, and confirm it's a system hop can install.
+2. **Make room** after C:, using free space first and shrinking C: only if needed.
+3. **Copy** the ISO's files onto a small FAT32 partition, and check each one.
+4. **Add a startup entry** with the ISO's signed boot loader, for the next restart only.
+5. **Restart.** The Linux installer opens and installs into the space hop made.
 
-Requires UEFI startup mode and a GPT disk, which every PC sold with Windows 10 or 11 has.
+More detail is in [How hop works](docs/ARCHITECTURE.md).
 
-## The app
+## Use it
 
-One window: a sentence ("Install elementary OS next to Windows, with 120 GB"), drive C: drawn
-to scale, and one button. Click the system name to pick another; drag the line between Windows
-and Linux to choose the size. The same window then shows progress, the choices to make in the
-Linux installer, and undo.
+Download `hop.exe` from [Releases](../../releases) and run it. Windows asks for administrator access, and
+SmartScreen may warn because hop isn't code-signed yet: click **More info → Run anyway**.
 
-## Project layout
+If something goes wrong, see [Troubleshooting](docs/TROUBLESHOOTING.md).
 
-| Path | What it is |
-| --- | --- |
-| `engine/` | Download, disk and boot-entry logic in PowerShell, embedded in the exe |
-| `src/MainForm*.cs` | The window, with one file per group of screens |
-| `src/Engine.cs` | Runs the engine and passes its results to the window |
-| `src/Firmware.cs`, `src/DiskProbe.cs` | UEFI boot entries, and identifying what's on a partition |
-| `src/Sentence.cs`, `src/DriveBar.cs`, `src/Picker.cs`, `src/Controls.cs` | Custom-drawn controls |
-| `src/Theme.cs`, `src/Text.cs` | Colours, the embedded Instrument Sans font, text layout |
-| `assets/brand/` | The hop frog and wordmark |
-| `assets/logos/` | Each project's logo (see `SOURCES.md`) |
-| `assets/fonts/` | Instrument Sans, SIL Open Font License (`OFL.txt`) |
-| `tools/make_icon.py` | Draws `assets/hop.ico` and the brand PNGs |
-| `tests/` | Unit tests, and a check that every download still resolves |
-| `docs/` | [How it works](docs/ARCHITECTURE.md), [testing](docs/TESTING.md), [troubleshooting](docs/TROUBLESHOOTING.md) |
-| `app.manifest` | Administrator rights and high-DPI support |
+## Build it
 
-The app hosts the engine in Windows' built-in PowerShell 5.1 and shows its progress.
-
-## Build
-
-Needs the .NET SDK (any OS). Produces `bin/Release/hop.exe`.
+You need the .NET SDK, on any OS. The result is `bin/Release/hop.exe`.
 
 ```
 dotnet build -c Release
 ```
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md), including how to add a Linux system. To report a security
-problem, see [SECURITY.md](SECURITY.md).
+See [Contributing](CONTRIBUTING.md) to help, or to add a Linux system.
 
 ## License
 
-hop is MIT licensed, see `LICENSE`. Instrument Sans is under the SIL Open Font License. The Linux
-logos belong to their projects, keep their own licences (listed in `assets/logos/SOURCES.md`) and
-are shown only to identify each download. hop isn't affiliated with any of those projects.
+[MIT](LICENSE). Instrument Sans is under the SIL Open Font License. Linux logos belong to their projects
+and are listed in [SOURCES.md](assets/logos/SOURCES.md). hop isn't affiliated with any of them.
