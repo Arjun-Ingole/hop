@@ -9,16 +9,15 @@ function Get-ReturnedHelp {
             'Find **Secure Boot**, usually under Security or Boot, and set it to **Disabled**.'
             'Save and exit. The installer should start.'
         )
+        $notes = @("If it doesn't, restart and keep tapping **$key** as the PC powers on, then choose **$entry**.")
     } else {
         $steps = @(
             "Restart and keep tapping **$key** as the PC powers on, which opens its boot menu."
             "Choose **$entry**."
         )
+        $notes = @("If it isn't listed, this PC's firmware removed it. Click **Try again** and hop adds it back.")
     }
-    [pscustomobject]@{
-        Steps = $steps
-        Notes = @("If the installer still doesn't start, tap **$key** as the PC powers on and choose **$entry**. If it isn't listed, this PC's firmware removed it.")
-    }
+    [pscustomobject]@{ Steps = $steps; Notes = $notes }
 }
 
 # What to click in the Linux installer. The app shows Steps as a numbered list
