@@ -127,6 +127,11 @@ function Restart-IntoFirmware {
 }
 
 function Set-InstallerForNextStart {
+    $others = @(Get-OtherInstallers)
+    $usb = $others | Where-Object Usb | Select-Object -First 1
+    if ($usb) { throw "Unplug $($usb.Name) and try again. It also holds a Linux installer, and the PC could start that one instead." }
+    # Can't be unplugged, and may well be fine, so it's in the warnings and doesn't block.
+    foreach ($other in $others) { Write-Log "Another installer is on $($other.Name); the PC could start that one instead." }
     $state = Read-State
     Suspend-BitLockerForRestart $state
     $state.BootNumber = Register-Installer $state.Distro

@@ -538,8 +538,35 @@ Describe 'Get-Blockers' {
     }
 }
 
+Describe 'Get-OtherInstallers' {
+    BeforeEach {
+        $usbStick = Join-Path $TestDrive 'usb\'
+        $plain = Join-Path $TestDrive 'plain\'
+        New-Item -ItemType Directory -Path "$usbStick.disk", $plain -Force | Out-Null
+        Set-Content "$usbStick.disk\info" 'Ubuntu'
+    }
+    It 'finds an installer on a USB stick, and not on other drives' {
+        Mock Get-Volume {
+            [pscustomobject]@{ DriveType = 'Removable'; FileSystemLabel = 'Ubuntu'; Path = $usbStick; DriveLetter = 'E' }
+            [pscustomobject]@{ DriveType = 'Fixed'; FileSystemLabel = 'Data'; Path = $plain; DriveLetter = 'D' }
+        }
+        $found = @(Get-OtherInstallers)
+        $found.Count | Should -Be 1
+        $found[0].Usb | Should -BeTrue
+        $found[0].Name | Should -Be 'drive E:'
+    }
+    It 'ignores hop''s own installer and mounted ISOs' {
+        Mock Get-Volume {
+            [pscustomobject]@{ DriveType = 'Fixed'; FileSystemLabel = 'HOPINSTALL'; Path = $usbStick; DriveLetter = 'H' }
+            [pscustomobject]@{ DriveType = 'CD-ROM'; FileSystemLabel = 'Ubuntu'; Path = $usbStick; DriveLetter = 'F' }
+        }
+        @(Get-OtherInstallers).Count | Should -Be 0
+    }
+}
+
 Describe 'Get-Warnings' {
     BeforeEach {
+        Mock Get-OtherInstallers { }
         Mock Get-CimInstance { $null } -ParameterFilter { $ClassName -eq 'Win32_Battery' }
         Mock Get-CimInstance { [pscustomobject]@{ TotalPhysicalMemory = [int64]16GB } } -ParameterFilter { $ClassName -eq 'Win32_ComputerSystem' }
         Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } }
@@ -557,6 +584,10 @@ Describe 'Get-Warnings' {
     It 'does not mind a battery on AC power' {
         Mock Get-CimInstance { [pscustomobject]@{ BatteryStatus = 2; EstimatedChargeRemaining = 0 } } -ParameterFilter { $ClassName -eq 'Win32_Battery' }
         @(Get-Warnings).Count | Should -Be 0
+    }
+    It 'asks to unplug a USB installer' {
+        Mock Get-OtherInstallers { [pscustomobject]@{ Name = 'drive E:'; Usb = $true } }
+        Get-Warnings | Should -BeLike '*Unplug drive E:*'
     }
     It 'warns about RAID mode' {
         Mock Get-Disk { [pscustomobject]@{ BusType = 'RAID' } }

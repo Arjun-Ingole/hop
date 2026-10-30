@@ -43,6 +43,19 @@ function Assert-EspRoom([string]$Root, [string]$Source) {
     }
 }
 
+# GRUB starts the first partition it finds with /.disk/info, and hop can't choose the order, so
+# a USB installer left plugged in, or another tool's leftovers, could start instead of hop's.
+function Get-OtherInstallers {
+    foreach ($volume in @(Get-Volume)) {
+        if ($volume.DriveType -eq 'CD-ROM' -or $volume.FileSystemLabel -in $InstallerLabels -or -not $volume.Path) { continue }
+        $found = try { [IO.File]::Exists("$($volume.Path).disk\info") } catch { $false }
+        if (-not $found) { continue }
+        $usb = $volume.DriveType -eq 'Removable' -or $(try { ($volume | Get-Partition | Get-Disk).BusType -eq 'USB' } catch { $false })
+        $name = if ($volume.DriveLetter) { "drive $($volume.DriveLetter):" } elseif ($volume.FileSystemLabel) { "the $($volume.FileSystemLabel) partition" } else { 'an unnamed partition' }
+        [pscustomobject]@{ Name = $name; Usb = $usb }
+    }
+}
+
 # Puts the installer in the startup menu. Many firmwares (MSI's included) only start
 # files from the EFI system partition, and some delete entries that point anywhere
 # else, so the installer's signed boot loader is copied to \EFI\hop there. The config

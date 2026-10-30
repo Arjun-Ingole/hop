@@ -33,6 +33,10 @@ function Get-Warnings {
     if ((Get-Disk -Number (Get-WindowsPartition).DiskNumber).BusType -eq 'RAID') {
         '**The drive is in RAID or Intel RST mode.** Most Linux installers can''t see a drive set up this way. Windows also needs care to switch to AHCI in the BIOS, so look up the steps for this PC before continuing.'
     }
+    foreach ($other in @(Get-OtherInstallers)) {
+        if ($other.Usb) { "**Unplug $($other.Name).** It holds a Linux installer, and the PC could start that one instead of the one hop makes." }
+        else { "**$($other.Name) also holds a Linux installer.** The PC could start that one instead. Delete it in Disk Management if you don't need it." }
+    }
     if (Test-RestartPending) {
         '**Windows is waiting to restart for an update.** Restart and let it finish first. Otherwise it could be interrupted when the PC starts the installer.'
     }
