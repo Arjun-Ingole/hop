@@ -16,7 +16,7 @@ dotnet build -c Release
 The result is `bin/Release/hop.exe`. Tests need Windows PowerShell and Pester 5:
 
 ```powershell
-Install-Module Pester -MinimumVersion 5.5 -Scope CurrentUser -SkipPublisherCheck
+Install-Module Pester -MinimumVersion 5.5 -MaximumVersion 5.99 -Scope CurrentUser -SkipPublisherCheck
 Invoke-Pester tests
 ```
 
