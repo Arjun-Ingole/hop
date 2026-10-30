@@ -231,6 +231,48 @@ Describe 'Test-LinuxSignature' {
     }
 }
 
+Describe 'Repair-ShortenedNames' {
+    BeforeEach {
+        $root = Join-Path $TestDrive ([guid]::NewGuid())
+        New-Item -ItemType Directory -Path "$root\dists\noble\main\binary-amd64", "$root\pool\main" | Out-Null
+        $long = 'system76-firmware-daemon_1.0.77~1784843200~24.04~0337bd4_amd64.deb'
+    }
+    It 'gives a shortened package its real name back' {
+        Set-Content "$root\dists\noble\main\binary-amd64\Packages" "Package: a`nFilename: ./pool/main/$long`n"
+        Set-Content "$root\pool\main\system76-firmware-daemon_1.0.77~1784843200~24.04~0337bd4_amd6.deb" 'x'
+        Repair-ShortenedNames $root
+        "$root\pool\main\$long" | Should -Exist
+    }
+    It 'reads a compressed index' {
+        $file = [IO.File]::Create("$root\dists\noble\main\binary-amd64\Packages.gz")
+        $zip = New-Object IO.Compression.GZipStream($file, [IO.Compression.CompressionMode]::Compress)
+        $bytes = [Text.Encoding]::ASCII.GetBytes("Filename: pool/main/$long`n")
+        $zip.Write($bytes, 0, $bytes.Length)
+        $zip.Dispose()
+        Set-Content "$root\pool\main\system76-firmware-daemon_1.0.77~1784843200~24.04~0337bd4_amd6.deb" 'x'
+        Repair-ShortenedNames $root
+        "$root\pool\main\$long" | Should -Exist
+    }
+    It 'never renames a file the index also lists' {
+        $short = 'system76-firmware-daemon_1.0.77~1784843200~24.04~0337bd4_amd6.deb'
+        Set-Content "$root\dists\noble\main\binary-amd64\Packages" "Filename: pool/main/$long`nFilename: pool/main/$short`n"
+        Set-Content "$root\pool\main\$short" 'x'
+        Repair-ShortenedNames $root
+        "$root\pool\main\$short" | Should -Exist
+        "$root\pool\main\$long" | Should -Not -Exist
+    }
+    It 'does not guess between two candidates' {
+        Set-Content "$root\dists\noble\main\binary-amd64\Packages" "Filename: pool/main/$long`n"
+        Set-Content "$root\pool\main\system76-firmware-daemon_1.0.77~1784843200~24.04~0337bd4_amd6.deb" 'x'
+        Set-Content "$root\pool\main\system76-firmware-daemon_1.0.77~1784843200~24.04~0337bd4_a.deb" 'x'
+        Repair-ShortenedNames $root
+        "$root\pool\main\$long" | Should -Not -Exist
+    }
+    It 'copes with an ISO that has no package indexes' {
+        { Repair-ShortenedNames (Join-Path $TestDrive 'empty') } | Should -Not -Throw
+    }
+}
+
 Describe 'Get-RecordedPartitions' {
     BeforeEach {
         Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } }

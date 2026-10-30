@@ -151,4 +151,46 @@ function Copy-Installer($Iso, [string]$Target) {
         throw "$($missing.Count) installer file(s) did not copy, for example $($missing[0]). The full list is under Show details."
     }
     Write-Log 'Installer files copied and checked.'
+    # Offline packages are a convenience: a problem here must not cost a finished copy.
+    try { Repair-ShortenedNames $targetRoot } catch { Write-Log "Could not check package names: $($_.Exception.Message)" }
+}
+
+# The files the ISO's package indexes say it has, as paths from its root.
+function Get-PackagePaths([string]$Root) {
+    $dists = Join-Path $Root 'dists'
+    if (-not (Test-Path -LiteralPath $dists)) { return }
+    $indexes = Get-ChildItem -LiteralPath $dists -Recurse -Force -File | Where-Object { $_.Name -in @('Packages', 'Packages.gz') }
+    $paths = foreach ($index in $indexes) {
+        $stream = [IO.File]::OpenRead($index.FullName)
+        try {
+            $input_ = if ($index.Extension -eq '.gz') { New-Object IO.Compression.GZipStream($stream, [IO.Compression.CompressionMode]::Decompress) } else { $stream }
+            $text = (New-Object IO.StreamReader($input_)).ReadToEnd()
+        } finally { $stream.Dispose() }
+        [regex]::Matches($text, '(?m)^Filename:\s*(\S+)') | ForEach-Object { $_.Groups[1].Value -replace '^\./', '' }
+    }
+    $paths | Sort-Object -Unique
+}
+
+# Windows reads an ISO through its Joliet names, which stop at 103 characters, so a very
+# long package name arrives shortened (Pop!_OS has two). The indexes still use the real
+# name, which FAT32 can hold, so the installer wouldn't find the file until it is renamed.
+function Repair-ShortenedNames([string]$Root) {
+    $known = @(Get-PackagePaths $Root)
+    foreach ($relative in $known) {
+        $path = Join-Path $Root ($relative -replace '/', '\')
+        if (Test-Path -LiteralPath $path) { continue }
+        $folder = Split-Path $path -Parent
+        if (-not (Test-Path -LiteralPath $folder)) { continue }
+        $name = Split-Path $path -Leaf
+        $extension = [IO.Path]::GetExtension($name)
+        $matches_ = @(Get-ChildItem -LiteralPath $folder -Force -File | Where-Object {
+                $_.Extension -eq $extension -and $name.StartsWith($_.BaseName) -and $_.BaseName.Length -ge 40 -and
+                (($relative.Substring(0, $relative.Length - $name.Length) + $_.Name) -notin $known)
+            })
+        # More than one candidate would be a guess.
+        if ($matches_.Count -eq 1) {
+            Rename-Item -LiteralPath $matches_[0].FullName -NewName $name
+            Write-Log "Restored the full name of $name."
+        }
+    }
 }
