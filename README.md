@@ -39,7 +39,7 @@ internal disk:
 
 ```
 Before   [ EFI ][ C: Windows                              ][ Recovery ]
-After    [ EFI ][ C: Windows       ][ Linux ][ Installer  ][ Recovery ]
+After    [ EFI ][ C: Windows       ][ Installer ][ Linux  ][ Recovery ]
 ```
 
 1. **Download and check** the ISO, and confirm it's a system hop can install.

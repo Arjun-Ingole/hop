@@ -7,10 +7,11 @@ the same thing on the internal disk: a small FAT32 partition, plus a one-time st
 
 ```
 Before   [EFI][MSR][ C: Windows                         ][Recovery]
-After    [EFI][MSR][ C: Windows       ][ Linux ][ Installer ][Recovery]
+After    [EFI][MSR][ C: Windows       ][ Installer ][ Linux ][Recovery]
 ```
 
-Linux and the installer sit straight after C:, so Undo can hand the space back by extending C:.
+The installer sits straight after C:, so once Linux is installed, removing it hands its space to C:.
+Undo extends C: over all of it. Older builds put the installer after Linux, where Windows can't reach it.
 
 Three things limit what it can install:
 

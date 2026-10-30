@@ -36,7 +36,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
             IsoPath = $IsoPath; Created = (Get-Date).ToString('s'); Copied = $false; RestartedAt = $null
             LoadersBefore = @(Get-LinuxLoaders | ForEach-Object { $_.Path })
             LinuxBefore = @(Get-LinuxPartitions @(Get-Partition -DiskNumber $plan.DiskNumber) | ForEach-Object { $_.Guid })
-            FastStartupWasOn = (Get-FastStartup) -eq 1; BitLockerPaused = $false
+            FastStartupWasOn = (Get-FastStartup) -eq 1; BitLockerPaused = $false; InstallerNextToWindows = $true
         }
         $diskChanged = $true
         Save-State $state
@@ -187,12 +187,21 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
     }
 
     # Free space that was next to C: before hop started stays free, unless C: was shrunk.
-    if (-not $InstallerOnly -and ($null -eq $state -or $state.WindowsShrunk -ne $false)) {
-        $c = Get-WindowsPartition
-        $max = (Get-PartitionSupportedSize -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber).SizeMax
-        if ($max -gt $c.Size + 1MB) {
-            Set-Status 'Giving the space back to Windows...'
-            Resize-Partition -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber -Size $max
+    # With Linux staying, the installer's space goes to C:, if it's next to it: builds before
+    # InstallerNextToWindows put it after Linux, where Windows can't reach it.
+    $growWindows = if ($InstallerOnly) { $state.InstallerNextToWindows } else { $null -eq $state -or $state.WindowsShrunk -ne $false }
+    if ($growWindows) {
+        try {
+            $c = Get-WindowsPartition
+            $max = (Get-PartitionSupportedSize -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber).SizeMax
+            if ($max -gt $c.Size + 1MB) {
+                Set-Status 'Giving the space back to Windows...'
+                Resize-Partition -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber -Size $max
+            }
+        } catch {
+            # The installer is gone by now, and that's what was asked for.
+            if (-not $InstallerOnly) { throw }
+            Write-Log "Could not give the installer's space to Windows: $($_.Exception.Message)"
         }
     }
 

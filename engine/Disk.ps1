@@ -33,19 +33,21 @@ function Get-Plan([int]$LinuxGB, [int]$InstallerGB) {
         if ($maxLinux -lt $MinLinuxGB) { throw "Not enough free space on C:. Free up at least $($MinLinuxGB - $maxLinux) GB and try again." }
         throw "Not enough free space for $LinuxGB GB. Lower the Linux size to $maxLinux GB or less and click Install again."
     }
-    # Linux and the installer go at the end of C: and the free space after it, so any
-    # space left over stays next to C:. C: only shrinks when the free space isn't enough.
+    # Linux goes last and the installer straight before it, at the end of C: and the free
+    # space after it. So the installer's space, and anything left over, stays next to C:,
+    # which is the only place Windows can use it once Linux is installed. C: only shrinks
+    # when the free space isn't enough.
     $c = $space.Partition
     $windowsEnd = [int64]($c.Offset + $c.Size)
     $regionEnd = [int64]([math]::Floor(($windowsEnd + $space.TailFree) / 1MB) * 1MB)
-    $installerOffset = [int64]($regionEnd - [int64]$InstallerGB * 1GB)
-    $linuxStart = [int64]($installerOffset - [int64]$LinuxGB * 1GB)
-    $shrink = $linuxStart -lt $windowsEnd
+    $linuxStart = [int64]($regionEnd - [int64]$LinuxGB * 1GB)
+    $installerOffset = [int64]($linuxStart - [int64]$InstallerGB * 1GB)
+    $shrink = $installerOffset -lt $windowsEnd
     [pscustomobject]@{
         DiskNumber      = $c.DiskNumber
         PartitionNumber = $c.PartitionNumber
         Shrink          = $shrink
-        NewWindowsSize  = if ($shrink) { [int64]($linuxStart - $c.Offset) } else { [int64]$c.Size }
+        NewWindowsSize  = if ($shrink) { [int64]($installerOffset - $c.Offset) } else { [int64]$c.Size }
         FreeStart       = $linuxStart
         LinuxGB         = $LinuxGB
         InstallerOffset = $installerOffset

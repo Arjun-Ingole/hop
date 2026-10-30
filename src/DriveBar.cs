@@ -8,8 +8,8 @@ namespace Hop
     enum DriveMode { Edit, Progress, Static }
 
     /// <summary>
-    /// Drive C: drawn to scale: Windows (used and free), the Linux part in the
-    /// system's brand color, and the installer. In Edit mode the boundary between
+    /// Drive C: drawn to scale: Windows (used and free), the installer, and the Linux
+    /// part in the system's brand color. In Edit mode the boundary between
     /// Windows and Linux is dragged to choose the size.
     /// </summary>
     sealed class DriveBar : DrawnControl
@@ -74,15 +74,15 @@ namespace Hop
 
         RectangleF Bar => new RectangleF(0, F(HeaderHeight + HeaderGap), Width, F(BarHeight));
         float PxPerGB => (Bar.Width - 2 * F(Gap)) / Math.Max(1, WindowsGB + TailFreeGB);
-        float InstallerLeft => Bar.Right - InstallerGB * PxPerGB;
-        float LinuxLeft => InstallerLeft - F(Gap) - linuxGB * PxPerGB;
-        float WindowsRight => LinuxLeft - F(Gap);
-        float HandleX => LinuxLeft - F(Gap) / 2;
+        float LinuxLeft => Bar.Right - linuxGB * PxPerGB;
+        float InstallerLeft => LinuxLeft - F(Gap) - InstallerGB * PxPerGB;
+        float WindowsRight => InstallerLeft - F(Gap);
+        float HandleX => InstallerLeft - F(Gap) / 2;
 
         /// <summary>Size of C: once Linux has its space: it only shrinks by what the free space can't cover.</summary>
         int WindowsAfterGB => WindowsGB - Math.Max(0, linuxGB + InstallerGB - TailFreeGB);
 
-        int ValueAt(float x) => (int)Math.Round((InstallerLeft - F(Gap) - x) / PxPerGB);
+        int ValueAt(float x) => (int)Math.Round((Bar.Right - x) / PxPerGB) - InstallerGB;
 
         // --- Input ------------------------------------------------------------------------
 
@@ -163,12 +163,12 @@ namespace Hop
             if (WindowsRight > usedRight)
                 using (var free = new SolidBrush(DriveFree)) g.FillRectangle(free, usedRight, bar.Y, WindowsRight - usedRight, bar.Height);
 
-            var linux = new RectangleF(LinuxLeft, bar.Y, InstallerLeft - F(Gap) - LinuxLeft, bar.Height);
+            var linux = new RectangleF(LinuxLeft, bar.Y, bar.Right - LinuxLeft, bar.Height);
             bool preparing = Mode == DriveMode.Progress;
             var linuxFill = preparing ? Mix(Color.White, Brand, 0.18f) : Brand;
             using (var brush = new SolidBrush(linuxFill)) g.FillRectangle(brush, linux);
             using (var brush = new SolidBrush(Mix(Color.White, Brand, 0.42f)))
-                g.FillRectangle(brush, InstallerLeft, bar.Y, bar.Right - InstallerLeft, bar.Height);
+                g.FillRectangle(brush, InstallerLeft, bar.Y, LinuxLeft - F(Gap) - InstallerLeft, bar.Height);
 
             // Labels sit on the bottom edge; in progress mode they make room for the progress line.
             float labelBottom = bar.Bottom - F(preparing ? 26 : 14);

@@ -127,12 +127,17 @@ Describe 'Get-Plan' {
         $plan.Shrink | Should -BeTrue
         $plan.NewWindowsSize | Should -Be ([int64]142GB)
     }
-    It 'puts the installer last and Linux straight before it, on megabyte boundaries' {
+    It 'puts Linux last and the installer straight before it, on megabyte boundaries' {
         Mock Get-SpaceInfo { New-Space ([int64]10GB + 123456) 150 }
         $plan = Get-Plan 60 8
         $plan.InstallerOffset % 1MB | Should -Be 0
         $plan.FreeStart % 1MB | Should -Be 0
-        $plan.FreeStart + 60GB | Should -Be $plan.InstallerOffset
+        $plan.InstallerOffset + 8GB | Should -Be $plan.FreeStart
+        $plan.FreeStart + 60GB | Should -Be ([int64]211GB)
+    }
+    It 'keeps what is left over next to C:' {
+        Mock Get-SpaceInfo { New-Space ([int64]100GB) 150 }
+        (Get-Plan 60 8).InstallerOffset | Should -Be ([int64]233GB)
     }
     It 'refuses a size that does not fit, and says how much does' {
         Mock Get-SpaceInfo { New-Space ([int64]0) 50 }
