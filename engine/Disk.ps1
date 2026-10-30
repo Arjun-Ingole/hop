@@ -64,6 +64,15 @@ function Get-DriveLetter($Partition) {
     throw 'Windows did not give the installer partition a drive letter. If every letter is in use, remove a network drive or USB drive and try again.'
 }
 
+# Partition numbers can shift once a partition is removed, and acting on a stale one could
+# delete Windows' recovery partition. So each is looked up again by where it starts.
+function Remove-PartitionAt([int]$DiskNumber, [int64]$Offset) {
+    $partition = Get-Partition -DiskNumber $DiskNumber | Where-Object { [int64]$_.Offset -eq $Offset } | Select-Object -First 1
+    if (-not $partition) { return }
+    if ($partition.IsSystem -or $partition.IsBoot) { throw "Refusing to remove partition $($partition.PartitionNumber): Windows needs it to start." }
+    Remove-Partition -DiskNumber $DiskNumber -PartitionNumber $partition.PartitionNumber -Confirm:$false
+}
+
 function Remove-DriveLetter($Partition) {
     $p = Get-Partition -DiskNumber $Partition.DiskNumber -PartitionNumber $Partition.PartitionNumber
     if ($p.DriveLetter -and $p.DriveLetter -ne [char]0) {

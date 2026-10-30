@@ -163,12 +163,12 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
     $labels = if ($InstallerOnly) { $InstallerLabels } else { $InstallerLabels + $RootLabel, $BootLabel }
     foreach ($found in @(Get-HopPartitions | Where-Object { $_.Label -in $labels })) {
         Set-Status "Removing the $($found.Label) partition..."
-        Remove-Partition -DiskNumber $found.Partition.DiskNumber -PartitionNumber $found.Partition.PartitionNumber -Confirm:$false
+        Remove-PartitionAt $found.Partition.DiskNumber $found.Partition.Offset
     }
     $roles = if ($InstallerOnly) { @('installer') } else { @('installer', 'root', 'boot') }
     foreach ($partition in @(Get-RecordedPartitions $state $roles)) {
         Set-Status 'Removing an unfinished partition...'
-        Remove-Partition -DiskNumber $partition.DiskNumber -PartitionNumber $partition.PartitionNumber -Confirm:$false
+        Remove-PartitionAt $partition.DiskNumber $partition.Offset
     }
 
     if (-not $InstallerOnly) {
