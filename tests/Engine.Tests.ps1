@@ -355,35 +355,34 @@ Describe 'Invoke-Cleanup' {
 
 Describe 'Remove-PartitionAt' {
     BeforeEach {
-        # Behaves like a disk whose numbers close up after a removal.
-        $script:disk = @(
-            [pscustomobject]@{ Name = 'windows'; Offset = [int64]1GB; IsSystem = $false; IsBoot = $true }
-            [pscustomobject]@{ Name = 'boot'; Offset = [int64]100GB; IsSystem = $false; IsBoot = $false }
-            [pscustomobject]@{ Name = 'root'; Offset = [int64]101GB; IsSystem = $false; IsBoot = $false }
-            [pscustomobject]@{ Name = 'installer'; Offset = [int64]160GB; IsSystem = $false; IsBoot = $false }
-            [pscustomobject]@{ Name = 'recovery'; Offset = [int64]168GB; IsSystem = $false; IsBoot = $false }
-        )
-        Mock Get-Partition {
+        # Plain stubs for a disk whose numbers close up after a removal.
+        $layout = New-Object Collections.ArrayList
+        foreach ($item in @(
+                @('windows', [int64]1GB, $true), @('boot', [int64]100GB, $false), @('root', [int64]101GB, $false),
+                @('installer', [int64]160GB, $false), @('recovery', [int64]168GB, $false))) {
+            [void]$layout.Add([pscustomobject]@{ Name = $item[0]; Offset = $item[1]; IsSystem = $false; IsBoot = $item[2] })
+        }
+        function Get-Partition {
+            param($DiskNumber)
             $number = 0
-            foreach ($item in $script:disk) {
+            foreach ($item in @($layout)) {
                 $number++
                 $item | Add-Member -NotePropertyName PartitionNumber -NotePropertyValue $number -Force
-                $item | Add-Member -NotePropertyName DiskNumber -NotePropertyValue 0 -Force
                 $item
             }
         }
-        Mock Remove-Partition {
-            $gone = $PartitionNumber
-            $script:disk = @($script:disk | Where-Object { $_.PartitionNumber -ne $gone })
+        function Remove-Partition {
+            param($DiskNumber, $PartitionNumber, $Confirm)
+            $layout.RemoveAt([int]$PartitionNumber - 1)
         }
     }
     It 'keeps the recovery partition when numbers shift during a clean-up' {
         foreach ($offset in [int64]100GB, [int64]101GB, [int64]160GB) { Remove-PartitionAt 0 $offset }
-        ($script:disk.Name -join ',') | Should -Be 'windows,recovery'
+        (@($layout | ForEach-Object { $_.Name }) -join ',') | Should -Be 'windows,recovery'
     }
     It 'does nothing when the partition has already gone' {
         Remove-PartitionAt 0 ([int64]500GB)
-        @($script:disk).Count | Should -Be 5
+        $layout.Count | Should -Be 5
     }
     It 'refuses a partition Windows needs' {
         { Remove-PartitionAt 0 ([int64]1GB) } | Should -Throw '*Refusing*'
