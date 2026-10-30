@@ -1,6 +1,6 @@
 # What makes hop refuse to run on this PC, each with the reason in plain words.
 function Get-Blockers {
-    if ($env:firmware_type -ne 'UEFI') {
+    if (-not (Test-Uefi)) {
         'This PC starts in the old "Legacy BIOS" mode. hop only works on UEFI PCs.'
         return
     }
@@ -16,6 +16,8 @@ function Get-Blockers {
     if ($volume.FileSystemType -ne 'NTFS') { "Drive C: uses $($volume.FileSystemType). Windows can only shrink NTFS drives." }
     if ($volume.HealthStatus -in @('Warning', 'Unhealthy')) { 'Windows reports a problem with drive C:. Run chkdsk C: /f in an administrator terminal, restart, and open hop again.' }
 }
+
+function Test-Uefi { [Hop.Firmware]::IsUefi() }
 
 function Test-System {
     $blockers = @(Get-Blockers)

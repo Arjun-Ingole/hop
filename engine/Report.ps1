@@ -25,7 +25,7 @@ function Get-Report {
         "Windows: $($os.Caption) build $($os.BuildNumber)"
         "Model: $($pc.Manufacturer) $($pc.Model)"
         "Memory: $([math]::Round($pc.TotalPhysicalMemory / 1GB)) GB"
-        "Firmware: $env:firmware_type, Secure Boot $(if (Test-SecureBoot) { 'on' } else { 'off or unknown' })"
+        "Firmware: $(if (Test-Uefi) { 'UEFI' } else { 'Legacy BIOS' }), Secure Boot $(if (Test-SecureBoot) { 'on' } else { 'off or unknown' })"
     }
     Add-ReportSection $lines 'hop' {
         "Status: $(Get-InstallStatus)"

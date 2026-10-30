@@ -224,9 +224,15 @@ Describe 'Get-RecordedPartitions' {
     }
 }
 
+Describe 'Firmware' {
+    It 'can tell how this PC started' {
+        [Hop.Firmware]::IsUefi() | Should -BeOfType [bool]
+    }
+}
+
 Describe 'Get-Blockers' {
     BeforeEach {
-        $env:firmware_type = 'UEFI'
+        Mock Test-Uefi { $true }
         Mock Get-CimInstance { [pscustomobject]@{ Architecture = 9 } } -ParameterFilter { $ClassName -eq 'Win32_Processor' }
         Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } }
         Mock Get-Disk { [pscustomobject]@{ PartitionStyle = 'GPT'; BusType = 'NVMe' } }
@@ -236,7 +242,7 @@ Describe 'Get-Blockers' {
         @(Get-Blockers).Count | Should -Be 0
     }
     It 'stops on Legacy BIOS' {
-        $env:firmware_type = 'Legacy'
+        Mock Test-Uefi { $false }
         Get-Blockers | Should -BeLike '*Legacy BIOS*'
     }
     It 'stops on ARM' {

@@ -26,6 +26,10 @@ namespace Hop
         const string GlobalVariables = "{8BE4DF61-93CA-11D2-AA0D-00E098032B8C}";
         const int ErrorEnvVarNotFound = 203;
         const uint LoadOptionActive = 1;
+        const uint FirmwareTypeUefi = 2;
+
+        /// <summary>True when Windows started through UEFI rather than Legacy BIOS.</summary>
+        public static bool IsUefi() => GetFirmwareType(out uint type) && type == FirmwareTypeUefi;
 
         /// <summary>Adds an entry that starts <paramref name="path"/> on a GPT partition. Returns its number.</summary>
         public static int CreateBootEntry(string description, int partitionNumber, long startLba, long sizeLba,
@@ -268,6 +272,9 @@ namespace Hop
             public Luid Luid;
             public uint Attributes;
         }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool GetFirmwareType(out uint type);
 
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "GetFirmwareEnvironmentVariableW")]
         static extern uint GetFirmwareEnvironmentVariable(string name, string guid, byte[] buffer, uint size);
