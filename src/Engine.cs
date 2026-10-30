@@ -34,6 +34,9 @@ namespace Hop
         public string Status;           // "ready", "leftover" (from an attempt that didn't finish) or "none"
         public string PreparedDistro;   // set when an installer is ready
         public string PreparedId;
+        public bool CameBack;           // restarted for the installer, and Windows started instead
+        public bool SecureBoot;
+        public string BootKey;          // the key that opens this PC's boot menu
     }
 
     public sealed class InstallSteps
@@ -58,6 +61,7 @@ namespace Hop
         public Engine()
         {
             Sync["Log"] = Log;
+            Sync["Version"] = typeof(Engine).Assembly.GetName().Version.ToString(3);
             ResetProgress();
 
             var session = InitialSessionState.CreateDefault();
@@ -153,6 +157,9 @@ namespace Hop
                 OtherGB = other == null ? 0 : Get<int>(other, "SizeGB"),
                 PreparedDistro = state == null ? null : Get<string>(state, "Distro"),
                 PreparedId = state == null ? null : Get<string>(state, "DistroId"),
+                CameBack = Get<bool>(info, "CameBack"),
+                SecureBoot = Get<bool>(info, "SecureBoot"),
+                BootKey = Get<string>(info, "BootKey"),
             };
         }
 
@@ -167,9 +174,13 @@ namespace Hop
         public Task CleanupAsync(bool installerOnly) =>
             InvokeAsync("Invoke-Cleanup", new Hashtable { ["InstallerOnly"] = installerOnly });
 
-        public async Task<InstallSteps> GetStepsAsync()
+        public Task<InstallSteps> GetStepsAsync() => GetStepsFromAsync("Get-StateSteps");
+
+        public Task<InstallSteps> GetReturnedHelpAsync() => GetStepsFromAsync("Get-ReturnedHelp");
+
+        async Task<InstallSteps> GetStepsFromAsync(string command)
         {
-            var steps = (await InvokeAsync("Get-StateSteps")).Single;
+            var steps = (await InvokeAsync(command)).Single;
             return new InstallSteps
             {
                 Steps = Get<string[]>(steps, "Steps"),
@@ -177,7 +188,14 @@ namespace Hop
             };
         }
 
+        public async Task<string[]> GetWarningsAsync() =>
+            (await InvokeAsync("Get-Warnings")).Items.Select(o => o.ToString()).ToArray();
+
+        public async Task<string> GetReportAsync() => (await InvokeAsync("Get-Report")).Single.ToString();
+
         public Task RestartIntoInstallerAsync() => InvokeAsync("Restart-IntoInstaller");
+
+        public Task RestartIntoFirmwareAsync() => InvokeAsync("Restart-IntoFirmware");
 
         public Task RemoveOtherSystemAsync() => InvokeAsync("Remove-OtherSystem");
 

@@ -41,7 +41,7 @@ namespace Hop
 
         async Task ShowStartScreenAsync()
         {
-            if (startup.Status == "ready")
+            if (startup.Status == "ready" || startup.Status == "installed")
             {
                 prepared = catalog.FirstOrDefault(d => d.Id == startup.PreparedId) ?? new Distro
                 {
@@ -49,7 +49,8 @@ namespace Hop
                     Name = string.IsNullOrWhiteSpace(startup.PreparedDistro) ? "Linux" : startup.PreparedDistro,
                     Color = Ink,
                 };
-                await ShowReadyAsync();
+                if (startup.Status == "installed") ShowInstalled();
+                else await ShowReadyAsync();
             }
             else if (startup.Status == "leftover") ShowLeftover();
             else ShowChoose();

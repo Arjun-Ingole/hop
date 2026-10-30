@@ -38,7 +38,7 @@ namespace Hop
                 new[] { Run.Gray("next to Windows, with"), Run.Black(linuxGB + " GB") },
             }, noteText, enoughSpace ? Secondary : Danger, drive, 64);
 
-            Action install = enoughSpace ? (Action)ShowConfirm : null;
+            Action install = enoughSpace ? () => _ = CheckThenConfirmAsync() : (Action)null;
             if (startup.OtherGB > 0)
                 Footer($"Remove {startup.OtherName} ({startup.OtherGB} GB)", ShowRemoveOther, "Install", install);
             else if (startup.TailFreeGB > 0)
@@ -86,6 +86,22 @@ namespace Hop
                 selected = null;
                 ShowChoose();
             }
+        }
+
+        /// <summary>Anything worth checking comes first. Checked now, not at startup: the charger may have come out since.</summary>
+        async Task CheckThenConfirmAsync()
+        {
+            primary.Enabled = false;
+            string[] warnings;
+            try { warnings = await engine.GetWarningsAsync(); }
+            catch { warnings = new string[0]; }
+            primary.Enabled = true;
+            if (warnings.Length == 0) { ShowConfirm(); return; }
+
+            steps.Set(warnings, null);
+            Arrange(new[] { new[] { Run.Gray("Before you"), Run.Black("start") } },
+                "hop can go ahead, but check these first.", Secondary, steps, 32);
+            Footer("Back", ShowChoose, "Continue", ShowConfirm);
         }
 
         /// <summary>Install asks once more, in place, before touching the disk.</summary>

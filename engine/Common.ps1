@@ -20,6 +20,8 @@ $ErrorActionPreference = 'Stop'
 # recognised, so it can be used or undone; only the new names are ever written.
 $StateDir = Join-Path $env:ProgramData 'hop'
 $StatePath = Join-Path $StateDir 'state.json'
+$LogDir = Join-Path $StateDir 'logs'
+$LogPath = Join-Path $LogDir ('hop-{0:yyyy-MM-dd}.log' -f (Get-Date))
 $LegacyStatePath = Join-Path $env:ProgramData 'LinuxHop\state.json'
 $InstallerLabel = 'HOPINSTALL'
 $InstallerLabels = @($InstallerLabel, 'LINUXHOP')
@@ -40,7 +42,13 @@ $MinLinuxGB = 25
 # download, 3 make room, 4 copy installer, 5 startup menu.
 
 function Write-Log([string]$Message) {
-    [void]$Sync.Log.Add(('{0:HH:mm:ss}  {1}' -f (Get-Date), $Message))
+    $line = '{0:HH:mm:ss}  {1}' -f (Get-Date), $Message
+    [void]$Sync.Log.Add($line)
+    # The log outlives the app, for bug reports. Failing to write it must never stop an install.
+    try {
+        if (-not (Test-Path -LiteralPath $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
+        Add-Content -LiteralPath $LogPath -Value $line -Encoding UTF8
+    } catch { }
 }
 
 function Set-Status([string]$Message, [int]$Percent = -1) {

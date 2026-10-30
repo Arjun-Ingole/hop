@@ -77,6 +77,8 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
 
 function Get-StartupInfo {
     Test-System
+    $status = Get-InstallStatus
+    $state = Read-State
     $space = Get-SpaceInfo
     $volume = Get-Volume -DriveLetter $env:SystemDrive.TrimEnd(':')
     $disk = Get-Disk -Number $space.Partition.DiskNumber
@@ -87,9 +89,18 @@ function Get-StartupInfo {
         DiskName  = ($disk.FriendlyName -replace '\s+', ' ').Trim()
         TailFreeGB = [int][math]::Floor($space.TailFree / 1GB)
         Other     = Get-OtherSystem | Select-Object Name, SizeGB
-        Status    = Get-InstallStatus
-        State     = Read-State
+        Status    = $status
+        State     = $state
+        CameBack  = $status -eq 'ready' -and (Test-CameBack $state)
+        SecureBoot = Test-SecureBoot
+        BootKey   = Get-BootMenuKey
     }
+}
+
+# True when hop restarted the PC for the installer and Windows has started since.
+function Test-CameBack($State) {
+    if (-not $State.RestartedAt) { return $false }
+    (Get-CimInstance Win32_OperatingSystem).LastBootUpTime -gt [datetime]$State.RestartedAt
 }
 
 function Get-StateSteps {
@@ -101,11 +112,29 @@ function Get-StateSteps {
 }
 
 function Restart-IntoInstaller {
+    Set-InstallerForNextStart
+    Invoke-Shutdown '/r', '/t', '0'
+}
+
+# The BIOS settings, for turning off Secure Boot. Leaving them starts the installer.
+function Restart-IntoFirmware {
+    Set-InstallerForNextStart
+    Invoke-Shutdown '/r', '/fw', '/t', '0'
+}
+
+function Set-InstallerForNextStart {
     $state = Read-State
     $state.BootNumber = Register-Installer $state.Distro
-    Save-State $state
     Set-BootOnce ([int]$state.BootNumber)
-    & shutdown.exe /r /t 0
+    # Builds before this one didn't have the field, so it may need adding.
+    $state | Add-Member -NotePropertyName RestartedAt -NotePropertyValue (Get-Date).ToString('s') -Force
+    Save-State $state
+}
+
+function Invoke-Shutdown([string[]]$Arguments) {
+    $ErrorActionPreference = 'Continue'
+    $output = & shutdown.exe @Arguments 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) { throw "Windows could not restart this PC: $($output.Trim())" }
 }
 
 # Removes what hop made: its startup entries and partitions, found by their
