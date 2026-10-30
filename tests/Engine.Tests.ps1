@@ -80,7 +80,25 @@ Describe 'Download helpers' {
         Get-CurlMessage 6 | Should -BeLike '*internet*'
         Get-CurlMessage 60 | Should -BeLike '*date and time*'
         Get-CurlMessage 23 | Should -BeLike '*free space*'
+        Get-CurlMessage 22 | Should -BeLike '*server returned an error*'
         Get-CurlMessage 99 | Should -BeLike '*curl error 99*'
+    }
+    Context 'when the server refuses to resume' {
+        BeforeEach {
+            Set-Content -LiteralPath 'TestDrive:\a.iso.part' -Value 'partial'
+            Mock Assert-DownloadRoom { }
+            Mock Invoke-WebRequest { throw 'no' }
+            Mock Invoke-Curl { 22 }
+        }
+        It 'keeps the partial file when the server is not answering' {
+            { Invoke-Download ([pscustomobject]@{ Url = 'https://x/a.iso'; Size = 100; FileName = 'a.iso' }) 'TestDrive:\a.iso' } | Should -Throw '*server returned an error*'
+            'TestDrive:\a.iso.part' | Should -Exist
+        }
+        It 'starts again when the server is answering' {
+            Mock Test-ServerAnswers { $true }
+            { Invoke-Download ([pscustomobject]@{ Url = 'https://x/a.iso'; Size = 100; FileName = 'a.iso' }) 'TestDrive:\a.iso' } | Should -Throw
+            Should -Invoke Invoke-Curl -Times 2
+        }
     }
     It 'compares versions numerically' {
         (ConvertTo-Version '26') | Should -BeLessThan (ConvertTo-Version '26.04')

@@ -105,6 +105,7 @@ function Get-CurlMessage([int]$Code) {
         28 { return 'The download stalled. Check the internet connection and click Install again; it will pick up where it left off.' }
         { $_ -in 35, 60 } { return "A secure connection to the download server failed. Check this PC's date and time are correct, then click Install again." }
     }
+    if ($Code -eq 22) { return 'The download server returned an error. It may be busy, or a proxy may be blocking it. Click Install again later; it will pick up where it left off.' }
     "The download stopped (curl error $Code). Check the internet connection and click Install again; it will pick up where it left off."
 }
 
@@ -130,6 +131,10 @@ function Invoke-Curl([string]$Url, [string]$Part, [int64]$Total, [string]$Name) 
         Start-Sleep -Milliseconds 700
     }
     $proc.ExitCode
+}
+
+function Test-ServerAnswers([string]$Url) {
+    try { [void](Invoke-WebRequest -Uri $Url -Method Head -UseBasicParsing -TimeoutSec 60); $true } catch { $false }
 }
 
 function Invoke-Download($Download, [string]$Path) {
@@ -158,8 +163,9 @@ function Invoke-Download($Download, [string]$Path) {
     } else {
         $code = Invoke-Curl $Download.Url $part $total $Download.FileName
         # 22 and 33: the server refused to resume, usually because the partial file is already
-        # whole or is from an older link. Start from zero once.
-        if ($code -in 22, 33 -and (Test-Path -LiteralPath $part)) {
+        # whole or is from an older link. Start from zero once, but only if the server is
+        # answering: 22 is also any HTTP error, and that shouldn't cost gigabytes of progress.
+        if ($code -in 22, 33 -and (Test-Path -LiteralPath $part) -and (Test-ServerAnswers $Download.Url)) {
             Write-Log "The server would not resume the download (curl error $code); starting again."
             Remove-Item -LiteralPath $part -Force
             $code = Invoke-Curl $Download.Url $part $total $Download.FileName
