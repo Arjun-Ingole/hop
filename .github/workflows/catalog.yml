@@ -1,0 +1,16 @@
+name: Catalog
+
+# Projects move their downloads without warning. This finds out before users do.
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve every download
+        shell: powershell
+        run: ./tests/Check-Catalog.ps1

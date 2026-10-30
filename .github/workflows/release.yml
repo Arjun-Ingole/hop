@@ -1,0 +1,34 @@
+name: Release
+
+# Push a tag like v0.2.0 to publish hop.exe and its checksum as a GitHub release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build
+        shell: powershell
+        run: dotnet build -c Release "-p:Version=$($env:GITHUB_REF_NAME.TrimStart('v'))"
+
+      - name: Checksum
+        shell: powershell
+        run: |
+          $hash = (Get-FileHash bin/Release/hop.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path bin/Release/hop.exe.sha256 -Value "$hash  hop.exe" -Encoding ASCII
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$env:GITHUB_REF_NAME" bin/Release/hop.exe bin/Release/hop.exe.sha256 --generate-notes --prerelease
