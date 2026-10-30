@@ -44,7 +44,13 @@
 - Sparse ISO files, ISOs in cloud folders, ISOs too big for FAT32 and a full EFI partition now work or
   explain themselves.
 
+- Installer files with very long names, like two of Pop!_OS's packages, now keep their real names.
+- Cancel could land just as the disk started changing. Now either Cancel wins or the install does.
+- The message after Undo says what actually happened to the space.
+
 ### Changed
 
+- The installer now sits next to C:, so removing it after installing Linux gives its space to Windows.
+- hop warns about another Linux installer on the PC, and won't restart with one on a USB drive.
 - Renamed from LinuxHop to hop, with a new logo. Setups made by LinuxHop builds are still recognised.
 - The boot loader now runs from Windows' EFI partition, because many firmwares won't start files from anywhere else.

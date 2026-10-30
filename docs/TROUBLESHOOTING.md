@@ -41,6 +41,11 @@ Ubuntu 24.04's installer is [reported](https://bugs.launchpad.net/ubuntu-desktop
 to ask for BitLocker to be turned off before offering this. If yours does, use the manual option hop
 lists, or turn off BitLocker first.
 
+## A different installer started
+
+GRUB starts the first partition it finds with a Linux installer on it. Unplug any USB installers, and
+delete other tools' installer partitions in Disk Management if you don't need them. hop warns about these.
+
 ## The installer can't see the drive
 
 The drive is probably in RAID or Intel RST mode. Linux needs AHCI, set in the BIOS. **Don't just switch

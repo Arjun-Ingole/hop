@@ -41,12 +41,14 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] Fill C: until there isn't room: the window says how much to free
 - [ ] Pick an ISO that isn't Ubuntu-based, and one with a file over 4 GB: both refused before the disk changes
 - [ ] Open a second copy of hop: refused
+- [ ] Plug in a USB stick with an Ubuntu ISO written to it: warned before starting, refused at restart
+- [ ] Click Cancel as "Making room" begins: either it cancels with the disk untouched, or the install carries on
 
 **Undo**
 
 - [ ] Undo before installing Linux: C: gets all its space back, and no startup entry or `\EFI\hop` remains
 - [ ] Fast Startup is back on after undo, if it was on before
-- [ ] After installing Linux: reopen hop, it says installed, and removing the installer leaves Linux working
+- [ ] After installing Linux: reopen hop, it says installed, and removing the installer leaves Linux working and grows C:
 
 **Another Linux**
 
