@@ -31,7 +31,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="engine\Engine.ps1" LogicalName="Hop.Engine.ps1" />
+    <EmbeddedResource Include="engine\*.ps1" LogicalName="Hop.Engine.%(Filename)%(Extension)" />
     <EmbeddedResource Include="assets\hop.ico" LogicalName="Hop.Icon.ico" />
     <EmbeddedResource Include="assets\fonts\*.ttf" LogicalName="Hop.Fonts.%(Filename)%(Extension)" />
     <EmbeddedResource Include="assets\logos\*.png" LogicalName="Hop.Logos.%(Filename)%(Extension)" />

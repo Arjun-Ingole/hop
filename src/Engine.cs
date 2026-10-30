@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Management.Automation;
 using System.Management.Automation.Runspaces;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace Hop
@@ -42,7 +43,7 @@ namespace Hop
     }
 
     /// <summary>
-    /// Runs engine\Engine.ps1 in an in-process PowerShell runspace. Calls are
+    /// Runs the engine\ scripts in an in-process PowerShell runspace. Calls are
     /// serialized; progress is shared through <see cref="Sync"/>.
     /// </summary>
     public sealed class Engine : IDisposable
@@ -72,11 +73,18 @@ namespace Hop
             }
         }
 
+        // Every engine\*.ps1 is embedded. Common comes first: it sets what the others use.
         static string ReadEngineScript()
         {
-            using (var stream = typeof(Engine).Assembly.GetManifestResourceStream("Hop.Engine.ps1"))
-            using (var reader = new StreamReader(stream))
-                return reader.ReadToEnd();
+            var assembly = typeof(Engine).Assembly;
+            var modules = assembly.GetManifestResourceNames()
+                .Where(name => name.StartsWith("Hop.Engine.") && name.EndsWith(".ps1"))
+                .OrderBy(name => name == "Hop.Engine.Common.ps1" ? 0 : 1).ThenBy(name => name, StringComparer.Ordinal);
+            var script = new StringBuilder();
+            foreach (var name in modules)
+                using (var reader = new StreamReader(assembly.GetManifestResourceStream(name)))
+                    script.AppendLine(reader.ReadToEnd());
+            return script.ToString();
         }
 
         public void ResetProgress()

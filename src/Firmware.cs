@@ -11,7 +11,7 @@ namespace Hop
     /// UEFI boot entries (the Boot#### and BootNext variables), written directly the way
     /// efibootmgr does on Linux. bcdedit can't do this: a copy of {bootmgr} is a Windows
     /// Boot Manager object, which bcdedit refuses as a one-time boot target.
-    /// Called from engine\Engine.ps1 as [Hop.Firmware].
+    /// Called from the engine scripts as [Hop.Firmware].
     /// </summary>
     public sealed class BootEntry
     {
