@@ -16,3 +16,9 @@ The files come from Wikimedia Commons; the PNGs are rendered from the SVGs at 12
 | ubuntu-unity | Unity desktop environment logo 2022.svg | Public domain |
 | edubuntu | Edubuntu icon.svg | GPL |
 | ubuntustudio | Ubuntustudio v3 logo only.svg | Public domain |
+| zorin | Zorin Logomark.svg | CC BY-SA 4.0 |
+| debian | Debian-OpenLogo.svg | CC BY-SA 3.0 |
+| fedora | Fedora icon (2021).svg | Public domain |
+| ultramarine | Ultramarine-Linux-Logo.svg | Public domain |
+| cachyos | CachyOS Logo.svg | GPL |
+| arch | Arch Linux "Crystal" icon.svg | GPL |
