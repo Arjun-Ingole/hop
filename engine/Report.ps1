@@ -36,6 +36,8 @@ function Get-Report {
         $c = Get-WindowsPartition
         $disk = Get-Disk -Number $c.DiskNumber
         "$($disk.FriendlyName), $($disk.BusType), $($disk.PartitionStyle), $([math]::Round($disk.Size / 1GB)) GB, $($disk.LogicalSectorSize)-byte sectors"
+        $space = Get-SpaceInfo
+        "C: free $([math]::Floor((Get-Volume -DriveLetter $env:SystemDrive.TrimEnd(':')).SizeRemaining / 1GB)) GB, can shrink to $([math]::Ceiling($space.MinSize / 1GB)) GB, usable $($space.UsableGB) GB"
         foreach ($p in Get-Partition -DiskNumber $c.DiskNumber | Sort-Object Offset) {
             $volume = try { $p | Get-Volume -ErrorAction SilentlyContinue } catch { $null }
             $signature = try { [Hop.DiskProbe]::ReadSignature($p.DiskNumber, [int64]$p.Offset) } catch { 'unread' }

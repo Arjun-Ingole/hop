@@ -26,12 +26,22 @@ function Get-SpaceInfo {
     }
 }
 
+# GB that C: could spare but Windows can't release. Files it can't move, such as the paging
+# file, stop a shrink wherever they sit, so a drive with plenty free can still give up very little.
+function Get-StuckGB([int64]$FreeBytes, $Space) {
+    $spareGB = [math]::Floor(($FreeBytes - $WindowsReserve) / 1GB)
+    $shrinkGB = $Space.UsableGB - [math]::Floor($Space.TailFree / 1GB)
+    [int][math]::Max(0, $spareGB - [math]::Max(0, $shrinkGB))
+}
+
+$ShrinkAdvice = "turn off hibernation (powercfg /h off in an administrator terminal), the paging file and System Protection for C:, restart, run defrag C: /X, and try again. You can turn them back on afterwards."
+
 function Get-Plan([int]$LinuxGB, [int]$InstallerGB) {
     $space = Get-SpaceInfo
     $maxLinux = $space.UsableGB - $InstallerGB
     if ($LinuxGB -gt $maxLinux) {
-        if ($maxLinux -lt $MinLinuxGB) { throw "Not enough free space on C:. Free up at least $($MinLinuxGB - $maxLinux) GB and try again." }
-        throw "Not enough free space for $LinuxGB GB. Lower the Linux size to $maxLinux GB or less and click Install again."
+        if ($maxLinux -lt $MinLinuxGB) { throw "Windows can't release enough space from C:. It needs $($MinLinuxGB - $maxLinux) GB more. If C: is nearly full, delete some files. If it has plenty free, $ShrinkAdvice" }
+        throw "Windows can't release enough space from C: for $LinuxGB GB. Lower the Linux size to $maxLinux GB or less and click Install again."
     }
     # Linux goes last and the installer straight before it, at the end of C: and the free
     # space after it. So the installer's space, and anything left over, stays next to C:,
@@ -89,7 +99,7 @@ function New-LinuxSpace($Plan, [string]$Strategy, $State) {
             Resize-Partition -DiskNumber $Plan.DiskNumber -PartitionNumber $Plan.PartitionNumber -Size $Plan.NewWindowsSize
         } catch {
             # Hibernation, paging and restore point files can't be moved, so they limit the shrink.
-            throw "Windows could not shrink C: that far ($($_.Exception.Message)). Try a smaller Linux size. If that doesn't help, turn off hibernation (powercfg /h off in an administrator terminal), the paging file and System Protection for C:, then restart and try again. You can turn them back on afterwards."
+            throw "Windows could not shrink C: that far ($($_.Exception.Message)). Try a smaller Linux size. If that doesn't help, $ShrinkAdvice"
         }
         $State.WindowsShrunk = $true
         Save-State $State

@@ -15,6 +15,8 @@ namespace Hop
     {
         // --- Choose -----------------------------------------------------------------------
 
+        const int StuckWorthExplainingGB = 20;
+
         int MaxLinuxGB => startup.UsableGB - InstallerGB - (isoPath == null ? IsoDownloadGB : 0);
 
         void ShowChoose()
@@ -24,9 +26,14 @@ namespace Hop
             bool secureBootStops = selected != null && selected.SecureBootOff && startup.SecureBoot;
             linuxGB = enoughSpace ? Math.Max(MinLinuxGB, Math.Min(MaxLinuxGB, linuxGB)) : MinLinuxGB;
 
+            // C: has the room, but Windows can't release it. Deleting files wouldn't help.
+            bool stuck = !enoughSpace && MaxLinuxGB + startup.StuckGB >= MinLinuxGB;
+
             string noteText;
             if (secureBootStops)
                 noteText = $"{system.Name} doesn't start with Secure Boot on. Pick another system, or turn off Secure Boot in the BIOS and open hop again.";
+            else if (stuck)
+                noteText = $"Drive C: has free space, but Windows can only release {Math.Max(0, startup.UsableGB)} GB of it, because it can't move some files.";
             else if (!enoughSpace)
                 noteText = $"Drive C: needs about {MinLinuxGB - MaxLinuxGB} GB more free space. Delete some files or empty the Recycle Bin, then open hop again.";
             else if (isoPath != null)
@@ -46,8 +53,22 @@ namespace Hop
                 Footer($"Remove {startup.OtherName} ({startup.OtherGB} GB)", ShowRemoveOther, "Install", install);
             else if (startup.TailFreeGB > 0)
                 Footer($"Give the free {startup.TailFreeGB} GB to Windows", () => _ = ExpandWindowsAsync(), "Install", install);
+            else if (stuck || startup.StuckGB >= StuckWorthExplainingGB)
+                Footer("How to release more space", () => _ = ShowShrinkHelpAsync(), "Install", install);
             else
                 Footer("Windows and your files stay.", null, "Install", install);
+        }
+
+        async Task ShowShrinkHelpAsync()
+        {
+            InstallSteps help;
+            try { help = await engine.GetShrinkHelpAsync(); }
+            catch (Exception ex) { ShowBlocked(Describe(ex)); return; }
+
+            steps.Set(help.Steps, help.Notes);
+            Arrange(new[] { new[] { Run.Gray("Release"), Run.Black("more space") } },
+                $"Drive C: has {startup.StuckGB} GB free that Windows can't release, because it can't move some files.", Secondary, steps, 32);
+            Footer("Back", ShowChoose, null, null);
         }
 
         void ConfigureDrive(DriveMode mode, Distro system)

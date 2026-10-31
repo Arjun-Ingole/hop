@@ -51,14 +51,21 @@ delete other tools' installer partitions in Disk Management if you don't need th
 The drive is probably in RAID or Intel RST mode. Linux needs AHCI, set in the BIOS. **Don't just switch
 it:** Windows may stop starting until it's prepared. Search for the steps for your PC first.
 
-## "Windows could not shrink C: that far"
+## C: has free space, but hop can't use it
 
-Hibernation, paging and restore point files can't be moved, so they limit the shrink. Try a smaller
-size. If that doesn't help, turn these off, restart, and try again. You can turn them back on afterwards.
+Windows can only shrink C: down to the last file it can't move, wherever that sits on the drive. So a
+drive with hundreds of GB free can still give up very little, and deleting files won't help. Hibernation,
+paging and restore point files are the usual cause. The same applies to "Windows could not shrink C: that far".
+
+Try a smaller size first. If that doesn't help, turn these off:
 
 - **Hibernation:** run `powercfg /h off` in an administrator terminal.
 - **The paging file:** in System > About > Advanced system settings > Performance > Advanced > Virtual memory.
-- **System Protection:** in the same Advanced system settings, on the System Protection tab, for C:.
+- **System Protection:** in the same Advanced system settings, on the System Protection tab, for C:. This
+  deletes the restore points on C:.
+
+Then restart, run `defrag C: /X` in an administrator terminal, and try hop again. You can turn them back on
+afterwards.
 
 ## Windows asks for a BitLocker recovery key
 

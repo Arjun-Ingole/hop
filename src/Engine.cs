@@ -30,6 +30,7 @@ namespace Hop
         public int UsedGB;
         public string DiskName;
         public int TailFreeGB;          // unallocated space right after C:
+        public int StuckGB;             // free on C:, but Windows can't release it
         public string OtherName;        // another Linux on this drive, such as Pond
         public int OtherGB;
         public string Status;           // "ready", "leftover" (from an attempt that didn't finish) or "none"
@@ -199,6 +200,7 @@ namespace Hop
                 DiskName = Get<string>(info, "DiskName"),
                 Status = Get<string>(info, "Status"),
                 TailFreeGB = Get<int>(info, "TailFreeGB"),
+                StuckGB = Get<int>(info, "StuckGB"),
                 OtherName = other == null ? null : Get<string>(other, "Name"),
                 OtherGB = other == null ? 0 : Get<int>(other, "SizeGB"),
                 PreparedDistro = state == null ? null : Get<string>(state, "Distro"),
@@ -223,6 +225,8 @@ namespace Hop
         public Task<InstallSteps> GetStepsAsync() => GetStepsFromAsync("Get-StateSteps");
 
         public Task<InstallSteps> GetReturnedHelpAsync() => GetStepsFromAsync("Get-ReturnedHelp");
+
+        public Task<InstallSteps> GetShrinkHelpAsync() => GetStepsFromAsync("Get-ShrinkHelp");
 
         async Task<InstallSteps> GetStepsFromAsync(string command)
         {

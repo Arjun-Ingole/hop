@@ -148,7 +148,35 @@ Describe 'Get-Plan' {
     }
     It 'refuses when too little is free for any Linux' {
         Mock Get-SpaceInfo { New-Space ([int64]0) 20 }
-        { Get-Plan 25 8 } | Should -Throw '*Free up at least*'
+        { Get-Plan 25 8 } | Should -Throw '*GB more*plenty free*defrag*'
+    }
+}
+
+Describe 'Get-StuckGB' {
+    BeforeAll {
+        function New-Space([int64]$TailFree, [int]$UsableGB) { [pscustomobject]@{ TailFree = $TailFree; UsableGB = $UsableGB } }
+    }
+    It 'finds free space that can not be released, as in issue 4' {
+        Get-StuckGB ([int64]239GB) (New-Space ([int64]0) 0) | Should -Be 231
+    }
+    It 'treats a negative usable size as nothing released' {
+        Get-StuckGB ([int64]239GB) (New-Space ([int64]0) -5) | Should -Be 231
+    }
+    It 'finds nothing stuck when Windows can release it all' {
+        Get-StuckGB ([int64]100GB) (New-Space ([int64]0) 92) | Should -Be 0
+    }
+    It 'does not count free space after C: as released from it' {
+        Get-StuckGB ([int64]100GB) (New-Space ([int64]50GB) 50) | Should -Be 92
+    }
+    It 'finds nothing stuck on a nearly full drive' {
+        Get-StuckGB ([int64]2GB) (New-Space ([int64]0) 0) | Should -Be 0
+    }
+}
+
+Describe 'Get-ShrinkHelp' {
+    It 'covers what stops a shrink, and warns about restore points' {
+        $text = (Get-ShrinkHelp).Steps -join ' '
+        foreach ($expected in 'powercfg /h off', 'paging file', 'restore points', 'defrag C: /X') { $text | Should -BeLike "*$expected*" }
     }
 }
 

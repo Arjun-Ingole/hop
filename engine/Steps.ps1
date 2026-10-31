@@ -13,6 +13,20 @@ function Test-EntryDropped($State) {
     try { $number -notin @(Get-FirmwareEntries) -or $number -notin @([Hop.Firmware]::BootOrderNumbers()) } catch { $false }
 }
 
+# When C: has free space that Windows can't release.
+function Get-ShrinkHelp {
+    [pscustomobject]@{
+        Steps = @(
+            'Open Terminal as administrator and run **powercfg /h off**, which turns off hibernation.'
+            'In **Advanced system settings**, open Performance, then Advanced, then Virtual memory. Choose **No paging file** for C:.'
+            'On the **System Protection** tab, turn it off for C:. This deletes the restore points on C:.'
+            'Restart, then run **defrag C: /X** in an administrator Terminal.'
+            'Open hop again.'
+        )
+        Notes = @('You can turn these back on after installing Linux.')
+    }
+}
+
 # When the PC came back to Windows instead of starting the installer.
 function Get-ReturnedHelp {
     $state = Read-State

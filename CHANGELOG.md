@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- hop said C: needed more free space when it had plenty, but Windows couldn't shrink it. It now says
+  what's actually wrong and shows how to release more space. Bug reports include both numbers.
+
 ## 0.1.1 - 2026-10-31
 
 ### Fixed

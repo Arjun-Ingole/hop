@@ -99,6 +99,7 @@ function Get-StartupInfo {
         UsedGB    = [int][math]::Ceiling(($volume.Size - $volume.SizeRemaining) / 1GB)
         DiskName  = ($disk.FriendlyName -replace '\s+', ' ').Trim()
         TailFreeGB = [int][math]::Floor($space.TailFree / 1GB)
+        StuckGB   = Get-StuckGB $volume.SizeRemaining $space
         Other     = Get-OtherSystem | Select-Object Name, SizeGB
         Status    = $status
         State     = $state
