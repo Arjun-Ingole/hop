@@ -54,7 +54,8 @@ in a runspace and calls their functions one at a time. Progress comes back throu
 ## The install, step by step
 
 1. Check the PC (`Get-Blockers`).
-2. Download and verify, or take the user's ISO.
+2. Check the startup menu can be read and changed (`Assert-FirmwareAccess`), because the entry is
+   added after the disk has changed. Then download and verify, or take the user's ISO.
 3. Mount and check the ISO, check Secure Boot will start it and the EFI partition has room, and plan
    the space. **Nothing on the disk has changed yet.**
 4. Save the state, pause BitLocker, turn off Fast Startup.
@@ -69,7 +70,7 @@ A failure in steps 4 to 6 runs `Invoke-Cleanup`, which puts everything back.
 
 | What | Where | How it's found |
 | --- | --- | --- |
-| Installer partition | After Linux | Label `HOPINSTALL` |
+| Installer partition | After C: | Label `HOPINSTALL` |
 | Linux partitions (`prepared` systems) | After C: | Labels `LINUXBOOT`, `LINUXROOT` |
 | Boot loader copy | `\EFI\hop` on the EFI partition | Fixed path |
 | Startup entry | UEFI variables | `(hop)` in its name |

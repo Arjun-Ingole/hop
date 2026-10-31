@@ -106,6 +106,15 @@ function Register-Installer([string]$Name) {
     $number
 }
 
+function Test-FirmwareAccess { [Hop.Firmware]::CheckAccess() }
+
+# The startup entry is added after the disk has changed, so find out now if it can't be.
+function Assert-FirmwareAccess {
+    try { Test-FirmwareAccess } catch {
+        throw "hop can't change this PC's startup menu, so it couldn't start a Linux installer. Nothing has been changed. $($_.Exception.GetBaseException().Message)"
+    }
+}
+
 function Set-BootOnce([int]$Number) {
     # Only the next restart goes to the installer; after that Windows is the default again.
     [Hop.Firmware]::SetBootNext($Number)

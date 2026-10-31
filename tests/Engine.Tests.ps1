@@ -18,6 +18,9 @@ BeforeAll {
 Describe 'Catalog' {
     BeforeAll { $catalog = @(Get-Catalog) }
 
+    It 'marks the systems that need Secure Boot off' {
+        @($catalog | Where-Object SecureBootOff).Id | Should -Be @('pop')
+    }
     It 'has unique ids' {
         ($catalog.Id | Sort-Object -Unique).Count | Should -Be $catalog.Count
     }
@@ -764,6 +767,47 @@ Describe 'CancelGate' {
         $gate = New-Object Hop.CancelGate
         $gate.EnterDiskStage() | Should -BeTrue
         $gate.TryCancel() | Should -BeFalse
+    }
+}
+
+Describe 'Firmware after the Secure Boot check' {
+    # Read only. Confirm-SecureBootUEFI turns the firmware privilege off when it finishes,
+    # so hop has to ask for it again. This found a bug that stopped installs on every PC.
+    It 'can still read the startup menu' {
+        try { [void][Hop.Firmware]::BootOrderNumbers() } catch { Set-ItResult -Skipped -Because 'this PC has no readable firmware' }
+        [void](Test-SecureBoot)
+        { [void][Hop.Firmware]::BootOrderNumbers() } | Should -Not -Throw
+    }
+}
+
+Describe 'Assert-FirmwareAccess' {
+    It 'passes when the startup menu can be changed' {
+        Mock Test-FirmwareAccess { }
+        { Assert-FirmwareAccess } | Should -Not -Throw
+    }
+    It 'explains itself and keeps the Windows error' {
+        Mock Test-FirmwareAccess { throw 'Windows error 1314: A required privilege is not held by the client' }
+        { Assert-FirmwareAccess } | Should -Throw "*startup menu*Nothing has been changed*1314*"
+    }
+    It 'stops an install before the download' {
+        Mock Test-System { }
+        Mock Get-InstallStatus { 'none' }
+        Mock Assert-SecureBootAllows { }
+        Mock Test-FirmwareAccess { throw 'refused' }
+        Mock Resolve-Download { }
+        { Invoke-Install 'ubuntu' '' 40 } | Should -Throw '*startup menu*'
+        Should -Invoke Resolve-Download -Times 0
+    }
+}
+
+Describe 'Engine' {
+    It 'writes the reason a command stopped to the log' {
+        $engine = New-Object Hop.Engine
+        try {
+            $invoke = [Hop.Engine].GetMethod('Invoke', [Reflection.BindingFlags]'NonPublic,Instance')
+            { $invoke.Invoke($engine, @('Get-NoSuchHopCommand', $null)) } | Should -Throw
+            ($engine.Log -join "`n") | Should -BeLike '*Stopped:*Get-NoSuchHopCommand*'
+        } finally { $engine.Dispose() }
     }
 }
 

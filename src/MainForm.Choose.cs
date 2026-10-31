@@ -21,10 +21,13 @@ namespace Hop
         {
             var system = Current;
             bool enoughSpace = MaxLinuxGB >= MinLinuxGB;
+            bool secureBootStops = selected != null && selected.SecureBootOff && startup.SecureBoot;
             linuxGB = enoughSpace ? Math.Max(MinLinuxGB, Math.Min(MaxLinuxGB, linuxGB)) : MinLinuxGB;
 
             string noteText;
-            if (!enoughSpace)
+            if (secureBootStops)
+                noteText = $"{system.Name} doesn't start with Secure Boot on. Pick another system, or turn off Secure Boot in the BIOS and open hop again.";
+            else if (!enoughSpace)
                 noteText = $"Drive C: needs about {MinLinuxGB - MaxLinuxGB} GB more free space. Delete some files or empty the Recycle Bin, then open hop again.";
             else if (isoPath != null)
                 noteText = $"Your file, {Path.GetFileName(isoPath)}. Nothing on your disk changes until you click Install.";
@@ -36,9 +39,9 @@ namespace Hop
             {
                 new[] { Run.Gray("Install"), new Run { Text = system.Name, Color = Ink, Logo = LogoFor(selected), Picker = true, Underline = system.Color } },
                 new[] { Run.Gray("next to Windows, with"), Run.Black(linuxGB + " GB") },
-            }, noteText, enoughSpace ? Secondary : Danger, drive, 64);
+            }, noteText, enoughSpace && !secureBootStops ? Secondary : Danger, drive, 64);
 
-            Action install = enoughSpace ? () => _ = CheckThenConfirmAsync() : (Action)null;
+            Action install = enoughSpace && !secureBootStops ? () => _ = CheckThenConfirmAsync() : (Action)null;
             if (startup.OtherGB > 0)
                 Footer($"Remove {startup.OtherName} ({startup.OtherGB} GB)", ShowRemoveOther, "Install", install);
             else if (startup.TailFreeGB > 0)

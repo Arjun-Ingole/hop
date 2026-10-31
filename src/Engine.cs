@@ -19,6 +19,7 @@ namespace Hop
         public string Source;
         public string Strategy;
         public string Logo;
+        public bool SecureBootOff;      // can't start with Secure Boot on
         public System.Drawing.Color Color;
     }
 
@@ -146,9 +147,24 @@ namespace Hop
                     if (parameters != null) ps.AddParameters(parameters);
                     running = ps;
                     try { return new Collection(ps.Invoke()); }
+                    catch (Exception ex) when (!(ex is PipelineStoppedException)) { LogStop(ex); throw; }
                     finally { running = null; }
                 }
             }
+        }
+
+        // The reason something stopped belongs in the bug report, not just on the screen.
+        void LogStop(Exception ex)
+        {
+            try
+            {
+                using (var ps = PowerShell.Create())
+                {
+                    ps.Runspace = runspace;
+                    ps.AddCommand("Write-Log").AddParameter("Message", "Stopped: " + ex.Message).Invoke();
+                }
+            }
+            catch (Exception) { }
         }
 
         Task<Collection> InvokeAsync(string command, IDictionary parameters = null) =>
@@ -164,6 +180,7 @@ namespace Hop
                 Source = Get<string>(o, "Source"),
                 Strategy = Get<string>(o, "Strategy"),
                 Logo = Get<string>(o, "Logo"),
+                SecureBootOff = Get<bool>(o, "SecureBootOff"),
                 Color = System.Drawing.ColorTranslator.FromHtml(Get<string>(o, "Color")),
             }).ToList();
 

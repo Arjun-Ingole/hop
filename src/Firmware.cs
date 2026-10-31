@@ -50,6 +50,17 @@ namespace Hop
             return data != null && data.Length >= 2 ? BitConverter.ToUInt16(data, 0) : (int?)null;
         }
 
+        /// <summary>
+        /// Fails if hop couldn't add a startup entry, using the same read and write that needs.
+        /// Writing BootOrder back unchanged is the one write that leaves the startup menu as it was.
+        /// </summary>
+        public static void CheckAccess()
+        {
+            EnablePrivilege();
+            var order = Read("BootOrder");
+            if (order != null) Write("BootOrder", order);
+        }
+
         /// <summary>Adds an entry that starts <paramref name="path"/> on a GPT partition. Returns its number.</summary>
         public static int CreateBootEntry(string description, int partitionNumber, long startLba, long sizeLba,
             string partitionGuid, string path)
@@ -229,7 +240,7 @@ namespace Hop
             {
                 int error = Marshal.GetLastWin32Error();
                 if (error == ErrorEnvVarNotFound) return null;
-                throw new Win32Exception(error, $"Could not read the firmware variable {name}.");
+                throw new Win32Exception(error, $"Could not read the firmware variable {name}. {WindowsError(error)}");
             }
             var data = new byte[length];
             Array.Copy(buffer, data, length);
@@ -250,15 +261,15 @@ namespace Hop
             {
                 int error = Marshal.GetLastWin32Error();
                 if (data == null && error == ErrorEnvVarNotFound) return;
-                throw new Win32Exception(error, $"Could not write the firmware variable {name}.");
+                throw new Win32Exception(error, $"Could not write the firmware variable {name}. {WindowsError(error)}");
             }
         }
 
-        static bool privilegeEnabled;
+        static string WindowsError(int error) => $"Windows error {error}: {new Win32Exception(error).Message}";
 
+        // Every time, not once: other code in this process can turn the privilege back off.
         static void EnablePrivilege()
         {
-            if (privilegeEnabled) return;
             const uint TokenAdjustPrivileges = 0x20, TokenQuery = 0x8, PrivilegeEnabled = 0x2;
             if (!OpenProcessToken(GetCurrentProcess(), TokenAdjustPrivileges | TokenQuery, out var token))
                 throw new Win32Exception(Marshal.GetLastWin32Error());
@@ -274,7 +285,6 @@ namespace Hop
             {
                 CloseHandle(token);
             }
-            privilegeEnabled = true;
         }
 
         [StructLayout(LayoutKind.Sequential)]
