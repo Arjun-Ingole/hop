@@ -148,7 +148,7 @@ Describe 'Get-Plan' {
     }
     It 'refuses when too little is free for any Linux' {
         Mock Get-SpaceInfo { New-Space ([int64]0) 20 }
-        { Get-Plan 25 8 } | Should -Throw '*GB more*plenty free*defrag*'
+        { Get-Plan 25 8 } | Should -Throw '*GB more*plenty free*Make room*'
     }
 }
 
@@ -173,10 +173,109 @@ Describe 'Get-StuckGB' {
     }
 }
 
-Describe 'Get-ShrinkHelp' {
-    It 'covers what stops a shrink, and warns about restore points' {
-        $text = (Get-ShrinkHelp).Steps -join ' '
-        foreach ($expected in 'powercfg /h off', 'paging file', 'restore points', 'defrag C: /X') { $text | Should -BeLike "*$expected*" }
+Describe 'Make room' {
+    BeforeAll {
+        $RoomPath = Join-Path $TestDrive 'make-room.json'
+        $Logged = @'
+A volume shrink analysis was initiated on volume Windows (C:).
+ Diagnostic details:
+ - The last unmovable file appears to be: \$Extend\$UsnJrnl:$J:$DATA
+ - The last cluster of the file is: 0x25716c4
+ To find more details please use the "fsutil volume querycluster \\?\Volume{bc7f279c} 0x25716c4" command.
+'@
+    }
+    BeforeEach {
+        Remove-Item $RoomPath -ErrorAction SilentlyContinue
+        Mock Test-HibernationOn { $true }
+        Mock Test-EnoughMemoryWithoutPaging { $true }
+        Mock Get-PagingSettings { @('?:\pagefile.sys') }
+        Mock Set-Hibernation { }
+        Mock Clear-ChangeJournal { }
+        Mock New-ChangeJournal { }
+        Mock Set-PagingOff { }
+        Mock Restore-Paging { }
+        Mock Register-RunAfterRestart { }
+        Mock Unregister-RunAfterRestart { }
+        Mock Invoke-Shutdown { }
+        Mock Invoke-Defrag { }
+        Mock Get-LastBoot { [datetime]'2030-01-01' }
+    }
+    It 'reads the file from the message Windows logs' {
+        Get-BlockerFile $Logged | Should -Be '\$Extend\$UsnJrnl:$J:$DATA'
+    }
+    It 'sorts blockers by what can be done about them' {
+        Get-BlockerKind '\hiberfil.sys' | Should -Be 'hibernation'
+        Get-BlockerKind '\pagefile.sys' | Should -Be 'paging'
+        Get-BlockerKind '\swapfile.sys' | Should -Be 'paging'
+        Get-BlockerKind '\System Volume Information\{a}' | Should -Be 'restore'
+        Get-BlockerKind '\$Extend\$UsnJrnl:$J:$DATA' | Should -Be 'journal'
+        Get-BlockerKind '\$MFT::$DATA' | Should -Be 'ntfs'
+        Get-BlockerKind '\Users\a\b.txt' | Should -Be 'file'
+        Get-BlockerKind '' | Should -Be 'unknown'
+    }
+    It 'saves what it changes before changing it, then restarts' {
+        Mock Set-Hibernation { Test-Path $RoomPath | Should -BeTrue }
+        Start-MakeRoom
+        (Read-RoomState).Phase | Should -Be 'restarting'
+        Should -Invoke Set-PagingOff -Times 1
+        Should -Invoke Invoke-Shutdown -Times 1
+    }
+    It 'only takes paging off the system drive' {
+        $files = Get-PagingWithoutSystemDrive @("$env:SystemDrive\pagefile.sys 0 0", 'Z:\pagefile.sys 0 0', '?:\pagefile.sys')
+        $files | Should -Be @('Z:\pagefile.sys 0 0')
+    }
+    It 'gets back the exact paging settings it saved' {
+        Mock Get-PagingSettings { @('Z:\pagefile.sys 0 0', '?:\pagefile.sys') }
+        Start-MakeRoom
+        Restore-RoomSettings
+        Should -Invoke Restore-Paging -ParameterFilter { ($Saved -join '|') -eq 'Z:\pagefile.sys 0 0|?:\pagefile.sys' } -Times 1
+    }
+    It 'leaves the paging file on when memory is low' {
+        Mock Test-EnoughMemoryWithoutPaging { $false }
+        Start-MakeRoom
+        Should -Invoke Set-PagingOff -Times 0
+    }
+    It 'puts everything back if the restart fails' {
+        Mock Invoke-Shutdown { throw 'no' }
+        { Start-MakeRoom } | Should -Throw 'no'
+        Should -Invoke Set-Hibernation -ParameterFilter { $On } -Times 1
+        Should -Invoke Restore-Paging -Times 1
+        Test-Path $RoomPath | Should -BeFalse
+    }
+    It 'continues after the restart' {
+        Start-MakeRoom
+        Get-RoomPhase | Should -Be 'continue'
+        Complete-MakeRoom
+        Should -Invoke Invoke-Defrag -Times 1
+        (Read-RoomState).Phase | Should -Be 'ready'
+    }
+    It 'restores if the restart never happened' {
+        Start-MakeRoom
+        Mock Get-LastBoot { [datetime]'2000-01-01' }
+        Get-RoomPhase | Should -Be 'restore'
+    }
+    It 'restores after a crash once it had finished' {
+        Start-MakeRoom
+        Complete-MakeRoom
+        Get-RoomPhase | Should -Be 'restore'
+    }
+    It 'has nothing to do when it never ran' {
+        Get-RoomPhase | Should -BeNullOrEmpty
+        Restore-RoomSettings
+        Should -Invoke Restore-Paging -Times 0
+    }
+    It 'only turns hibernation back on if it was on' {
+        Mock Test-HibernationOn { $false }
+        Start-MakeRoom
+        Restore-RoomSettings
+        Should -Invoke Set-Hibernation -ParameterFilter { $On } -Times 0
+    }
+    It 'finishes restoring when one part fails' {
+        Mock Set-Hibernation { if ($On) { throw 'no' } }
+        Start-MakeRoom
+        Restore-RoomSettings
+        Should -Invoke Restore-Paging -Times 1
+        Test-Path $RoomPath | Should -BeFalse
     }
 }
 

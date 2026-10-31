@@ -31,6 +31,9 @@ namespace Hop
         public string DiskName;
         public int TailFreeGB;          // unallocated space right after C:
         public int StuckGB;             // free on C:, but Windows can't release it
+        public string Blocker;          // the file in the way, as Windows names it
+        public string BlockerKind;      // hibernation, paging, restore, journal, ntfs, file or unknown
+        public string RoomPhase;        // Make room: "continue" after its restart, "restore" if it stopped early
         public string OtherName;        // another Linux on this drive, such as Pond
         public int OtherGB;
         public string Status;           // "ready", "leftover" (from an attempt that didn't finish) or "none"
@@ -201,6 +204,9 @@ namespace Hop
                 Status = Get<string>(info, "Status"),
                 TailFreeGB = Get<int>(info, "TailFreeGB"),
                 StuckGB = Get<int>(info, "StuckGB"),
+                Blocker = Get<string>(info, "Blocker"),
+                BlockerKind = Get<string>(info, "BlockerKind"),
+                RoomPhase = Get<string>(info, "RoomPhase"),
                 OtherName = other == null ? null : Get<string>(other, "Name"),
                 OtherGB = other == null ? 0 : Get<int>(other, "SizeGB"),
                 PreparedDistro = state == null ? null : Get<string>(state, "Distro"),
@@ -226,7 +232,17 @@ namespace Hop
 
         public Task<InstallSteps> GetReturnedHelpAsync() => GetStepsFromAsync("Get-ReturnedHelp");
 
-        public Task<InstallSteps> GetShrinkHelpAsync() => GetStepsFromAsync("Get-ShrinkHelp");
+        public Task<InstallSteps> GetMakeRoomStepsAsync() => GetStepsFromAsync("Get-MakeRoomSteps");
+
+        public Task StartMakeRoomAsync() => InvokeAsync("Start-MakeRoom");
+
+        public Task CompleteMakeRoomAsync() => InvokeAsync("Complete-MakeRoom");
+
+        public Task ClearRestorePointsAsync() => InvokeAsync("Clear-RestorePoints");
+
+        public Task RestoreRoomSettingsAsync() => InvokeAsync("Restore-RoomSettings");
+
+        public void RestoreRoomSettings() => Invoke("Restore-RoomSettings");
 
         async Task<InstallSteps> GetStepsFromAsync(string command)
         {

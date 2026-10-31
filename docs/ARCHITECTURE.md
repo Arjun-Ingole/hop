@@ -48,6 +48,7 @@ in a runspace and calls their functions one at a time. Progress comes back throu
 | `State.ps1` | What hop left on this PC, and `state.json` |
 | `OtherLinux.ps1` | Finds and removes another Linux, such as Pond |
 | `Install.ps1` | The main flows: install, restart and undo |
+| `MakeRoom.ps1` | Clears what stops C: shrinking, across a restart, and puts it all back |
 | `Steps.ps1` | What to click in each Linux installer |
 | `Report.ps1` | The bug report |
 

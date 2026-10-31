@@ -215,7 +215,11 @@ namespace Hop
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             base.OnFormClosing(e);
-            if (!busy) return;
+            if (!busy)
+            {
+                if (roomMade) try { engine.RestoreRoomSettings(); } catch { }
+                return;
+            }
             if (installing && engine.TryCancel())
             {
                 StopDownload();

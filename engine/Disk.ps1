@@ -34,7 +34,7 @@ function Get-StuckGB([int64]$FreeBytes, $Space) {
     [int][math]::Max(0, $spareGB - [math]::Max(0, $shrinkGB))
 }
 
-$ShrinkAdvice = "turn off hibernation (powercfg /h off in an administrator terminal), the paging file and System Protection for C:, restart, run defrag C: /X, and try again. You can turn them back on afterwards."
+$ShrinkAdvice = "open hop again and click Make room, which clears what's in the way."
 
 function Get-Plan([int]$LinuxGB, [int]$InstallerGB) {
     $space = Get-SpaceInfo

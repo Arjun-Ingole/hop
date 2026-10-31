@@ -57,15 +57,12 @@ Windows can only shrink C: down to the last file it can't move, wherever that si
 drive with hundreds of GB free can still give up very little, and deleting files won't help. Hibernation,
 paging and restore point files are the usual cause. The same applies to "Windows could not shrink C: that far".
 
-Try a smaller size first. If that doesn't help, turn these off:
+Click **Make room** and hop clears the usual causes. It turns off hibernation and the paging file, clears the
+change journal, restarts, moves what it can, and turns them back on once Linux has its space or you close hop.
+It asks first if restore points are in the way, because deleting those can't be undone.
 
-- **Hibernation:** run `powercfg /h off` in an administrator terminal.
-- **The paging file:** in System > About > Advanced system settings > Performance > Advanced > Virtual memory.
-- **System Protection:** in the same Advanced system settings, on the System Protection tab, for C:. This
-  deletes the restore points on C:.
-
-Then restart, run `defrag C: /X` in an administrator terminal, and try hop again. You can turn them back on
-afterwards.
+If it still can't release enough, hop names the file in the way. Windows can't move some NTFS system files
+while it's running, so try a smaller size.
 
 ## Windows asks for a BitLocker recovery key
 

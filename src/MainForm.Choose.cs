@@ -17,6 +17,8 @@ namespace Hop
 
         const int StuckWorthExplainingGB = 20;
 
+        bool roomMade;      // Make room has run, and its settings go back on when hop closes
+
         int MaxLinuxGB => startup.UsableGB - InstallerGB - (isoPath == null ? IsoDownloadGB : 0);
 
         void ShowChoose()
@@ -33,7 +35,7 @@ namespace Hop
             if (secureBootStops)
                 noteText = $"{system.Name} doesn't start with Secure Boot on. Pick another system, or turn off Secure Boot in the BIOS and open hop again.";
             else if (stuck)
-                noteText = $"Drive C: has free space, but Windows can only release {Math.Max(0, startup.UsableGB)} GB of it, because it can't move some files.";
+                noteText = StuckNote();
             else if (!enoughSpace)
                 noteText = $"Drive C: needs about {MinLinuxGB - MaxLinuxGB} GB more free space. Delete some files or empty the Recycle Bin, then open hop again.";
             else if (isoPath != null)
@@ -53,22 +55,76 @@ namespace Hop
                 Footer($"Remove {startup.OtherName} ({startup.OtherGB} GB)", ShowRemoveOther, "Install", install);
             else if (startup.TailFreeGB > 0)
                 Footer($"Give the free {startup.TailFreeGB} GB to Windows", () => _ = ExpandWindowsAsync(), "Install", install);
-            else if (stuck || startup.StuckGB >= StuckWorthExplainingGB)
-                Footer("How to release more space", () => _ = ShowShrinkHelpAsync(), "Install", install);
+            else if ((stuck || startup.StuckGB >= StuckWorthExplainingGB) && !roomMade)
+                Footer("Make room", () => _ = ShowMakeRoomAsync(), "Install", install);
+            else if ((stuck || startup.StuckGB >= StuckWorthExplainingGB) && startup.BlockerKind == "restore")
+                Footer("Delete restore points", ShowDeleteRestorePoints, "Install", install);
             else
                 Footer("Windows and your files stay.", null, "Install", install);
         }
 
-        async Task ShowShrinkHelpAsync()
+        string StuckNote()
         {
-            InstallSteps help;
-            try { help = await engine.GetShrinkHelpAsync(); }
+            int release = Math.Max(0, startup.UsableGB);
+            if (!roomMade)
+                return $"Drive C: has free space, but Windows can only release {release} GB of it, because it can't move some files. hop can clear them.";
+            if (startup.BlockerKind == "restore")
+                return $"Windows can release {release} GB. Restore points on drive C: are stopping it releasing more.";
+            return $"hop made what room it could, and Windows can release {release} GB. It can't move {startup.Blocker ?? "some system files"}, which limits the rest.";
+        }
+
+        async Task ShowMakeRoomAsync()
+        {
+            InstallSteps plan;
+            try { plan = await engine.GetMakeRoomStepsAsync(); }
             catch (Exception ex) { ShowBlocked(Describe(ex)); return; }
 
-            steps.Set(help.Steps, help.Notes);
-            Arrange(new[] { new[] { Run.Gray("Release"), Run.Black("more space") } },
-                $"Drive C: has {startup.StuckGB} GB free that Windows can't release, because it can't move some files.", Secondary, steps, 32);
-            Footer("Back", ShowChoose, null, null);
+            steps.Set(plan.Steps, plan.Notes);
+            Arrange(new[] { new[] { Run.Gray("Make room"), Run.Black("on drive C:") } },
+                $"Drive C: has {startup.StuckGB} GB free that Windows can't release yet. hop can clear what's in the way.", Secondary, steps, 32);
+            Footer("Back", ShowChoose, "Make room and restart", () => _ = MakeRoomAsync());
+        }
+
+        async Task MakeRoomAsync()
+        {
+            BeginWork(new[] { new[] { Run.Gray("Making"), Run.Black("room") } }, "Starting…");
+            try
+            {
+                await engine.StartMakeRoomAsync();
+                // The restart is on its way. Windows closes hop.
+            }
+            catch (Exception ex)
+            {
+                EndWork();
+                Arrange(new[] { new[] { Run.Gray("Couldn't"), Run.Black("make room") } }, Describe(ex), Danger, null, 0);
+                Footer("Back", ShowChoose, null, null);
+            }
+        }
+
+        void ShowDeleteRestorePoints()
+        {
+            Arrange(new[] { new[] { Run.Gray("Delete"), Run.Black("restore points?") } },
+                "They're stopping Windows releasing more of drive C:. This deletes the ones on C: for good, and can't be undone. Your files aren't touched, and Windows makes new ones later.",
+                Secondary, null, 0);
+            Footer("Back", ShowChoose, "Delete them", () => _ = DeleteRestorePointsAsync());
+        }
+
+        async Task DeleteRestorePointsAsync()
+        {
+            BeginWork(new[] { new[] { Run.Gray("Making"), Run.Black("room") } }, "Starting…");
+            try
+            {
+                await engine.ClearRestorePointsAsync();
+                startup = await engine.GetStartupInfoAsync();
+                EndWork();
+                ShowChoose();
+            }
+            catch (Exception ex)
+            {
+                EndWork();
+                Arrange(new[] { new[] { Run.Gray("Couldn't"), Run.Black("make room") } }, Describe(ex), Danger, null, 0);
+                Footer("Back", ShowChoose, null, null);
+            }
         }
 
         void ConfigureDrive(DriveMode mode, Distro system)

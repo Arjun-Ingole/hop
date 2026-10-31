@@ -23,6 +23,16 @@ namespace Hop
                 engine = await Task.Run(() => new Engine());
                 catalog = await Task.Run(() => engine.GetCatalog());
                 startup = await engine.GetStartupInfoAsync();
+                if (startup.RoomPhase == "continue")
+                {
+                    await engine.CompleteMakeRoomAsync();
+                    roomMade = true;
+                    startup = await engine.GetStartupInfoAsync();
+                }
+                else if (startup.RoomPhase == "restore")
+                {
+                    await engine.RestoreRoomSettingsAsync();
+                }
             }
             catch (Exception ex)
             {

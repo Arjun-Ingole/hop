@@ -4,8 +4,9 @@
 
 ### Fixed
 
-- hop said C: needed more free space when it had plenty, but Windows couldn't shrink it. It now says
-  what's actually wrong and shows how to release more space. Bug reports include both numbers.
+- hop said C: needed more free space when it had plenty, but Windows couldn't shrink it. **Make room**
+  now clears what's in the way in one click: hibernation, the paging file and the change journal, then a
+  restart and moving what's left. It turns them back on afterwards. Bug reports name the file in the way.
 
 ## 0.1.1 - 2026-10-31
 

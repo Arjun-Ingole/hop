@@ -50,6 +50,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
         Disable-FastStartup
         Save-State $state
         $installer = New-LinuxSpace $plan $distro.Strategy $state | Select-Object -Last 1
+        Restore-RoomSettings
         $letter = Get-DriveLetter $installer
 
         Set-Stage 4
@@ -93,13 +94,18 @@ function Get-StartupInfo {
     $space = Get-SpaceInfo
     $volume = Get-Volume -DriveLetter $env:SystemDrive.TrimEnd(':')
     $disk = Get-Disk -Number $space.Partition.DiskNumber
+    $stuck = Get-StuckGB $volume.SizeRemaining $space
+    $blocker = if ($stuck -gt 0) { Get-ShrinkBlocker }
     [pscustomobject]@{
         UsableGB  = $space.UsableGB
         WindowsGB = [int][math]::Floor($space.Partition.Size / 1GB)
         UsedGB    = [int][math]::Ceiling(($volume.Size - $volume.SizeRemaining) / 1GB)
         DiskName  = ($disk.FriendlyName -replace '\s+', ' ').Trim()
         TailFreeGB = [int][math]::Floor($space.TailFree / 1GB)
-        StuckGB   = Get-StuckGB $volume.SizeRemaining $space
+        StuckGB   = $stuck
+        Blocker   = $blocker
+        BlockerKind = Get-BlockerKind $blocker
+        RoomPhase = Get-RoomPhase
         Other     = Get-OtherSystem | Select-Object Name, SizeGB
         Status    = $status
         State     = $state
