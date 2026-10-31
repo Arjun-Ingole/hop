@@ -182,10 +182,10 @@ try {
     Check 'made a real ISO' (Test-Path $iso) ''
 
     # The "Windows disk": [ESP][W: pretends to be C:][D: data][recovery][E: data]
-    $vdiskA = New-VDisk 'windows' 60
+    $vdiskA = New-VDisk 'windows' 70
     $a = $vdiskA.Number
     New-ProbeVolume $a 100MB '' '' $EspType | Out-Null
-    $w = New-ProbeVolume $a 16GB 'PRETENDC'
+    $w = New-ProbeVolume $a 26GB 'PRETENDC'
     $d = New-ProbeVolume $a 18GB 'DATA'
     $recovery = New-ProbeVolume $a 1GB '' '' $RecoveryType
     $e = New-ProbeVolume $a 5GB 'AFTER'
@@ -271,7 +271,8 @@ try {
     Check 'D: keeps its offset and has shrunk' ($afterD -and $afterD.Size -lt $d.Size) $afterD.Size
     Check 'D: shrank by what Linux and the installer need' ([int64]$d.Size - [int64]$afterD.Size -eq ([int64]6GB + [int64]4GB)) ([int64]$d.Size - [int64]$afterD.Size)
     Check 'the installer sits straight after D:' ([int64]$installer.Partition.Offset -eq [int64]$afterD.Offset + [int64]$afterD.Size) ''
-    Check 'space for Linux is left after the installer' ((Get-DiskGaps (Get-Disk -Number $a) @(Storage\Get-Partition -DiskNumber $a) | Where-Object { [int64]$_.Offset -eq [int64]$installer.Partition.Offset + [int64]$installer.Partition.Size }).Size -ge 6GB) ''
+    $next = Storage\Get-Partition -DiskNumber $a | Where-Object { [int64]$_.Offset -gt [int64]$installer.Partition.Offset } | Sort-Object { [int64]$_.Offset } | Select-Object -First 1
+    Check 'exactly the space for Linux is left after the installer' ([int64]$next.Offset - ([int64]$installer.Partition.Offset + [int64]$installer.Partition.Size) -eq 6GB) $next.Offset
     Check 'data on D: survived the shrink' ((Get-TestHash $dLetter) -eq $dHash) ''
     Check 'the partition after it did not move' ((Storage\Get-Partition -DiskNumber $a | Where-Object { [int64]$_.Offset -eq [int64]$e.Offset }).Size -eq $e.Size) ''
     Check 'the installer holds the real files' (Test-Path "$($installer.Letter):\casper\filesystem.squashfs") ''
