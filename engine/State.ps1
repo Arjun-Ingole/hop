@@ -2,10 +2,19 @@
 # Everything hop makes is recognisable without the state file: partitions by
 # their labels, startup entries by "(hop)" in their description.
 
+# Looks on every disk hop could have used, because a crash can leave its state file behind or
+# out of date. Off the Windows disk, a label alone isn't enough: the format has to match too,
+# so someone's own drive named LINUXBOOT isn't mistaken for hop's.
 function Get-HopPartitions {
-    foreach ($partition in Get-Partition -DiskNumber (Get-WindowsPartition).DiskNumber) {
-        $volume = try { $partition | Get-Volume -ErrorAction SilentlyContinue } catch { $null }
-        if ($volume -and $volume.FileSystemLabel -in ($InstallerLabels + $BootLabel, $RootLabel)) {
+    $windowsDisk = (Get-WindowsPartition).DiskNumber
+    foreach ($disk in @(Get-HopDisks)) {
+        foreach ($partition in @(Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue)) {
+            $volume = try { $partition | Get-Volume -ErrorAction SilentlyContinue } catch { $null }
+            if (-not $volume -or $volume.FileSystemLabel -notin ($InstallerLabels + $BootLabel, $RootLabel)) { continue }
+            if ($disk.Number -ne $windowsDisk) {
+                $format = if ($volume.FileSystemLabel -eq $RootLabel) { 'exFAT' } else { 'FAT32' }
+                if ($volume.FileSystemType -ne $format) { continue }
+            }
             [pscustomobject]@{ Partition = $partition; Label = $volume.FileSystemLabel; Letter = $volume.DriveLetter }
         }
     }
@@ -56,9 +65,10 @@ function Get-InstallStatus {
 function Test-LinuxInstalled($State) {
     $names = $State.PSObject.Properties.Name
     if ($names -notcontains 'LoadersBefore') { return $false }
-    if (@(Get-LinuxLoaders | Where-Object { $_.Path -notin @($State.LoadersBefore) }).Count) { return $true }
-    if ($names -notcontains 'LinuxBefore') { return $false }
-    $partitions = @(Get-Partition -DiskNumber (Get-WindowsPartition).DiskNumber)
+    $disk = Get-StateDisk $State
+    if (@(Get-LinuxLoaders $disk | Where-Object { $_.Path -notin @($State.LoadersBefore) }).Count) { return $true }
+    if ($names -notcontains 'LinuxBefore' -or $null -eq $disk) { return $false }
+    $partitions = @(Get-Partition -DiskNumber $disk)
     @(Get-LinuxPartitions $partitions | Where-Object { $_.Guid -notin @($State.LinuxBefore) }).Count -gt 0
 }
 
@@ -67,7 +77,9 @@ function Test-LinuxInstalled($State) {
 function Get-RecordedPartitions($State, [string[]]$Roles) {
     $recorded = @($State.Partitions | Where-Object { $_.Role -in $Roles })
     if (-not $recorded.Count) { return }
-    foreach ($partition in Get-Partition -DiskNumber (Get-WindowsPartition).DiskNumber) {
+    $disk = Get-StateDisk $State
+    if ($null -eq $disk) { return }
+    foreach ($partition in Get-Partition -DiskNumber $disk) {
         $match = $recorded | Where-Object { [int64]$_.Offset -eq [int64]$partition.Offset -and [int64]$_.Size -eq [int64]$partition.Size }
         if (-not $match -or $partition.IsSystem -or $partition.IsBoot -or (Test-LinuxSignature $partition)) { continue }
         $volume = try { $partition | Get-Volume -ErrorAction SilentlyContinue } catch { $null }

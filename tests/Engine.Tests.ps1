@@ -328,6 +328,7 @@ Describe 'Get-InstallStatus' {
 }
 
 Describe 'Test-LinuxInstalled' {
+    BeforeEach { Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } } }
     It 'does not guess for a setup made before this was recorded' {
         Mock Get-LinuxLoaders { [pscustomobject]@{ Path = '\EFI\ubuntu\shimx64.efi' } }
         Test-LinuxInstalled ([pscustomobject]@{ Copied = $true }) | Should -BeFalse
@@ -467,6 +468,8 @@ Describe 'Get-StartupInfo' {
         Mock Get-SpaceInfo { [pscustomobject]@{ UsableGB = 100; TailFree = 0; Partition = [pscustomobject]@{ DiskNumber = 0; Size = [int64]200GB } } }
         Mock Get-Volume { [pscustomobject]@{ Size = [int64]200GB; SizeRemaining = [int64]100GB } }
         Mock Get-Disk { [pscustomobject]@{ FriendlyName = 'Disk' } }
+        Mock Get-DriveTargets { }
+        Mock Get-DownloadDrives { }
     }
     It 'stops a new install on a PC with a blocker' {
         Mock Get-InstallStatus { 'none' }

@@ -14,10 +14,11 @@ function Get-WebText([string]$Url) {
     }
 }
 
-# The user's Downloads folder, wherever they have moved it.
-function Get-DownloadFolder {
+# The user's Downloads folder, wherever they have moved it, or a folder on the drive asked for.
+function Get-DownloadFolder([string]$Drive) {
     $folder = try { (New-Object -ComObject Shell.Application).Namespace('shell:Downloads').Self.Path } catch { $null }
     if (-not $folder -or -not (Test-Path -LiteralPath $folder)) { $folder = Join-Path $env:USERPROFILE 'Downloads' }
+    if ($Drive -and -not $folder.StartsWith("$Drive`:", [StringComparison]::OrdinalIgnoreCase)) { $folder = "$Drive`:\hop" }
     New-Item -ItemType Directory -Path $folder -Force | Out-Null
     $folder
 }
@@ -86,7 +87,7 @@ function Assert-DownloadRoom([string]$Path, [int64]$Total, [int64]$Done) {
     $root = [IO.Path]::GetPathRoot($Path)
     $free = ([IO.DriveInfo]$root).AvailableFreeSpace
     if ($free -lt $needed) {
-        throw ('The download needs {0:N0} GB free on {1} and only {2:N0} GB is free. Free up some space, or download the ISO yourself and pick "Use an ISO file".' -f ($needed / 1GB), $root, ($free / 1GB))
+        throw ('The download needs {0:N0} GB free on {1} and only {2:N0} GB is free. Free up some space, choose another drive for the download, or download the ISO yourself and pick "Use an ISO file".' -f ($needed / 1GB), $root, ($free / 1GB))
     }
 }
 

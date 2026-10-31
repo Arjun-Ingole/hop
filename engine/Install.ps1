@@ -1,6 +1,6 @@
 # --- Main flows ------------------------------------------------------------
 
-function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
+function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [string]$Target, [string]$DownloadDrive) {
     Set-Stage 0
     Set-Status 'Checking this PC...'
     Test-System
@@ -8,6 +8,8 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
     $distro = Get-Distro $DistroId $IsoPath
     Assert-SecureBootAllows $distro
     Assert-FirmwareAccess
+    Assert-DriveUsable $Target
+    Assert-StateRoom
     $diskChanged = $false
 
     if (-not $IsoPath) {
@@ -17,7 +19,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
             throw "Couldn't find the download on $($distro.Source): $($_.Exception.Message) Check the internet connection, or download the ISO yourself and pick ""Use an ISO file""."
         }
         Write-Log "Official download: $($download.Url)"
-        $IsoPath = Join-Path (Get-DownloadFolder) $download.FileName
+        $IsoPath = Join-Path (Get-DownloadFolder $DownloadDrive) $download.FileName
         Get-Iso $download $IsoPath
     } elseif (-not (Test-Path -LiteralPath $IsoPath)) {
         throw "Can't find $IsoPath. Pick the ISO file again."
@@ -27,7 +29,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
         # Nothing on the disk changes until New-LinuxSpace.
         Set-Stage 2
         $iso = Read-Iso $IsoPath
-        $plan = Get-Plan $LinuxGB $iso.InstallerGB
+        $plan = Get-Plan $LinuxGB $iso.InstallerGB $Target
         Use-Esp {
             param($root)
             Assert-EspRoom $root "$($iso.Letter):\EFI\BOOT"
@@ -36,13 +38,18 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
 
         Set-Stage 3
         if (-not $Sync.Gate.EnterDiskStage()) { throw 'Cancelled.' }
+        $disk = Get-Disk -Number $plan.DiskNumber
         $state = [pscustomobject]@{
             Distro = $distro.Name; DistroId = $distro.Id; Strategy = $distro.Strategy; LinuxGB = $LinuxGB
             DiskNumber = $plan.DiskNumber; WindowsShrunk = $false; Partitions = @(); BootNumber = $null
             IsoPath = $IsoPath; Created = (Get-Date).ToString('s'); Copied = $false; RestartedAt = $null
-            LoadersBefore = @(Get-LinuxLoaders | ForEach-Object { $_.Path })
+            LoadersBefore = @(Get-LinuxLoaders $plan.DiskNumber | ForEach-Object { $_.Path })
             LinuxBefore = @(Get-LinuxPartitions @(Get-Partition -DiskNumber $plan.DiskNumber) | ForEach-Object { $_.Guid })
-            FastStartupWasOn = (Get-FastStartup) -eq 1; BitLockerPaused = $false; InstallerNextToWindows = $true
+            # WindowsShrunk and InstallerNextToWindows now mean the chosen drive, and keep their names so older files still read.
+            FastStartupWasOn = (Get-FastStartup) -eq 1; BitLockerPaused = $false; InstallerNextToWindows = $plan.Kind -eq 'volume'
+            DiskGuid = $disk.Guid; DiskName = Get-DiskLabel $disk; DiskGB = [int][math]::Round($disk.Size / 1GB)
+            OnWindowsDisk = $plan.DiskNumber -eq (Get-WindowsPartition).DiskNumber
+            TargetKind = $plan.Kind; TargetLetter = $plan.Letter; TargetOffset = $plan.TargetOffset; AlongsideOk = $null
         }
         $diskChanged = $true
         Save-State $state
@@ -50,6 +57,8 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
         Disable-FastStartup
         Save-State $state
         $installer = New-LinuxSpace $plan $distro.Strategy $state | Select-Object -Last 1
+        $state.AlongsideOk = try { Test-AlongsideFindsLinux $plan } catch { $null }
+        Save-State $state
         Restore-RoomSettings
         $letter = Get-DriveLetter $installer
 
@@ -91,12 +100,24 @@ function Get-StartupInfo {
     # Only for a new install: what stops an install must not stop someone undoing one.
     if ($status -eq 'none') { Test-System }
     $state = Read-State
-    $space = Get-SpaceInfo
+    # C: can't always be measured, for example when it isn't NTFS and hop is here for another drive.
+    $space = try { Get-SpaceInfo } catch { Write-Log "Could not measure C:: $($_.Exception.Message)"; $null }
     $volume = Get-Volume -DriveLetter $env:SystemDrive.TrimEnd(':')
-    $disk = Get-Disk -Number $space.Partition.DiskNumber
-    $stuck = Get-StuckGB $volume.SizeRemaining $space
+    $disk = if ($space) { Get-Disk -Number $space.Partition.DiskNumber }
+    $stuck = if ($space) { Get-StuckGB $volume.SizeRemaining $space } else { 0 }
     # Working this out takes a moment, and only matters when a lot is stuck.
-    $blocker = if ($stuck -ge 20) { Get-ShrinkBlocker }
+    $blocker = if ($stuck -ge 20) { Get-ShrinkBlocker $space.Partition }
+    $drives = @(try { Get-DriveTargets } catch { Write-Log "Could not list the drives: $($_.Exception.Message)" })
+    $windowsRow = $drives | Where-Object Id -eq '' | Select-Object -First 1
+    if ($windowsRow -and $space) {
+        $windowsRow.UsableGB = $space.UsableGB; $windowsRow.StuckGB = $stuck; $windowsRow.Estimated = $false
+        $windowsRow.TailFreeGB = [int][math]::Floor($space.TailFree / 1GB)
+        $windowsRow.ShrinkBlocker = $blocker; $windowsRow.BlockerKind = Get-BlockerKind $blocker
+    }
+    $stateDisk = if ($state) { Get-StateDisk $state }
+    # Free space gives no drive anything back. An older file can only mean C:.
+    $stateLetter = $null
+    if ($state) { $stateLetter = if ($state.TargetOffset) { $state.TargetLetter } else { $env:SystemDrive.TrimEnd(':') } }
     [pscustomobject]@{
         UsableGB  = $space.UsableGB
         WindowsGB = [int][math]::Floor($space.Partition.Size / 1GB)
@@ -107,12 +128,17 @@ function Get-StartupInfo {
         Blocker   = $blocker
         BlockerKind = Get-BlockerKind $blocker
         RoomPhase = Get-RoomPhase
-        Other     = Get-OtherSystem | Select-Object Name, SizeGB
+        Other     = Get-OtherSystem | Select-Object Name, SizeGB, OnWindowsDisk
         Status    = $status
         State     = $state
         CameBack  = $status -eq 'ready' -and (Test-CameBack $state)
         SecureBoot = Test-SecureBoot
         BootKey   = Get-BootMenuKey
+        Drives    = $drives
+        DownloadDrives = @(try { Get-DownloadDrives } catch { Write-Log "Could not list the drives for the download: $($_.Exception.Message)" })
+        RoomLetter = (Read-RoomState).Drive -replace ':', ''
+        StateLetter = $stateLetter
+        StateDiskMissing = $state -and $null -eq $stateDisk
     }
 }
 
@@ -127,7 +153,7 @@ function Get-StateSteps {
     # A system removed from the catalog since the install still needs its steps.
     $distro = Get-Distro $state.DistroId $state.IsoPath
     if (-not $distro) { $distro = Get-Distro 'custom' "$($state.Distro).iso" }
-    Get-Steps $distro $state.LinuxGB
+    Get-Steps $distro $state.LinuxGB $state
 }
 
 function Restart-IntoInstaller {
@@ -162,6 +188,29 @@ function Invoke-Shutdown([string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { throw "Windows could not restart this PC: $($output.Trim())" }
 }
 
+# The volume that gave up the space hop is about to free, as a disk and an offset, or nothing
+# when it came from free space. Older state files and plain leftovers on the Windows disk mean C:.
+function Get-SpaceOwner($State, $HopPartitions) {
+    if ($State -and $null -ne $State.TargetOffset) {
+        if ($State.TargetKind -eq 'gap') { return }
+        $disk = Get-StateDisk $State
+        if ($null -eq $disk) { Write-Log 'The drive this setup is on is not connected.'; return }
+        $c = Get-PartitionAt $disk ([int64]$State.TargetOffset)
+        $windows = $c -and $c.IsBoot
+        return [pscustomobject]@{ DiskNumber = $disk; Offset = [int64]$State.TargetOffset; Windows = [bool]$windows }
+    }
+    $windows = [pscustomobject]@{ Windows = $true }
+    if ($State) { return $windows }
+    $windowsDisk = (Get-WindowsPartition).DiskNumber
+    $first = @($HopPartitions | Where-Object { $_.Partition.DiskNumber -ne $windowsDisk } | Sort-Object { [int64]$_.Partition.Offset }) | Select-Object -First 1
+    if (-not $first) { return $windows }
+    $disk = $first.Partition.DiskNumber
+    $before = @(Get-Partition -DiskNumber $disk | Where-Object { [int64]$_.Offset -lt [int64]$first.Partition.Offset } | Sort-Object { [int64]$_.Offset }) | Select-Object -Last 1
+    if (-not $before -or -not (Get-LetterOf $before)) { return }
+    if (($before | Get-Volume -ErrorAction SilentlyContinue).FileSystemType -ne 'NTFS') { return }
+    [pscustomobject]@{ DiskNumber = $disk; Offset = [int64]$before.Offset; Windows = $false }
+}
+
 # Removes what hop made: its startup entries and partitions, found by their
 # description and labels, so this also works when an earlier attempt failed half way.
 # With -InstallerOnly, Linux and its partitions stay.
@@ -191,7 +240,10 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
     } catch { Write-Log "Could not tidy the EFI system partition: $($_.Exception.Message)" }
 
     $labels = if ($InstallerOnly) { $InstallerLabels } else { $InstallerLabels + $RootLabel, $BootLabel }
-    foreach ($found in @(Get-HopPartitions | Where-Object { $_.Label -in $labels })) {
+    $hopPartitions = @(Get-HopPartitions | Where-Object { $_.Label -in $labels })
+    # Before anything goes: with no state file, the neighbours say whose space it was.
+    $owner = Get-SpaceOwner $state $hopPartitions
+    foreach ($found in $hopPartitions) {
         Set-Status "Removing the $($found.Label) partition..."
         Remove-PartitionAt $found.Partition.DiskNumber $found.Partition.Offset
     }
@@ -201,20 +253,25 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
         Remove-PartitionAt $partition.DiskNumber $partition.Offset
     }
 
-    # Free space that was next to C: before hop started stays free, unless C: was shrunk.
-    # With Linux staying, the installer's space goes to C:, if it's next to it: builds before
-    # InstallerNextToWindows put it after Linux, where Windows can't reach it.
+    # Free space that was next to the drive before hop started stays free, unless it was shrunk.
+    # With Linux staying, the installer's space goes to that drive, if it's next to it: builds
+    # before InstallerNextToWindows put it after Linux, where Windows can't reach it.
     $growWindows = if ($InstallerOnly) { $state.InstallerNextToWindows } else { $null -eq $state -or $state.WindowsShrunk -ne $false }
-    if ($growWindows) {
+    # Growing over the installer also takes whatever was left free before it. Another drive that
+    # never gave anything up keeps its size, so that free space stays free for someone to use.
+    if ($owner -and -not $owner.Windows -and $state.WindowsShrunk -eq $false) { $growWindows = $false }
+    if ($growWindows -and $owner) {
         try {
-            $c = Get-WindowsPartition
+            # Looked up again now: numbers can shift once partitions have gone, and offsets can't.
+            $c = if ($owner.Windows) { Get-WindowsPartition } else { Get-PartitionAt $owner.DiskNumber $owner.Offset }
+            if (-not $c) { throw "The drive that gave up the space isn't there any more." }
             $max = (Get-PartitionSupportedSize -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber).SizeMax
             if ($max -gt $c.Size + 1MB) {
-                Set-Status 'Giving the space back to Windows...'
+                Set-Status "Giving the space back to $(if ($owner.Windows) { 'Windows' } else { "drive $(Get-LetterOf $c):" })..."
                 Resize-Partition -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber -Size $max
             } else {
                 # For example, Windows has made a recovery partition straight after C: since.
-                Write-Log 'The freed space is not next to C:, so Windows cannot use it directly.'
+                Write-Log 'The freed space is not next to the drive, so Windows cannot use it directly.'
             }
         } catch {
             # The installer is gone by now, and that's what was asked for.
@@ -222,6 +279,9 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
             Write-Log "Could not give the installer's space to Windows: $($_.Exception.Message)"
         }
     }
+
+    # So hop can offer to remove it later: nothing else would say that Linux on this disk is hop's.
+    if ($InstallerOnly -and $state.OnWindowsDisk -eq $false) { Add-LinuxDisk $state.DiskGuid }
 
     # Only without Linux: Fast Startup stays off for a dual boot, because it locks the Windows drive.
     if (-not $InstallerOnly) {

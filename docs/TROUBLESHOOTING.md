@@ -51,7 +51,36 @@ delete other tools' installer partitions in Disk Management if you don't need th
 The drive is probably in RAID or Intel RST mode. Linux needs AHCI, set in the BIOS. **Don't just switch
 it:** Windows may stop starting until it's prepared. Search for the steps for your PC first.
 
+## hop won't use a drive
+
+Choose the drive and hop says why. The usual reasons:
+
+- **USB, removable or network drive.** Linux has to go on a disk inside the PC. The download can still go there.
+- **Not set up, or MBR.** A new disk needs setting up as GPT in Disk Management. Converting an MBR disk
+  that holds files means erasing it first, so copy them off.
+- **RAID or dynamic.** Linux installers can't use these. Leave them to their own tools.
+- **Locked with BitLocker.** Unlock it in File Explorer and open hop again. An unlocked drive can be shrunk.
+- **Not NTFS.** Windows can only shrink NTFS drives. Free space next to one is still offered.
+- **Another system on the disk.** hop leaves a disk with another Windows or Linux alone.
+- **Windows' recovery files are there.** Moving them is beyond hop. Use another drive.
+
+## The PC stops at a grub> prompt, with Linux on a second drive
+
+The PC's firmware didn't start the second drive before GRUB looked for the installer. Fast Boot is the usual
+reason. Hold the power button to turn it off, and the PC goes back to Windows. Click **Open BIOS** in hop, turn
+off **Fast Boot** (sometimes **Ultra Fast Boot**), and click **Try again**.
+
+If this happens later, after Linux is installed, it's the same cause. Windows still starts from the boot menu key.
+
+## Which drive should Linux go on?
+
+Any that hop offers works the same way. Free space on a second disk changes nothing else, and so is the
+easiest to undo. A second disk also means Linux keeps working if Windows is reinstalled. An SSD will be much
+faster than a hard drive.
+
 ## C: has free space, but hop can't use it
+
+If another drive has room, hop suggests it, and that's quicker than what follows.
 
 Windows can only shrink C: down to the last file it can't move, wherever that sits on the drive. So a
 drive with hundreds of GB free can still give up very little, and deleting files won't help. Hibernation,
@@ -63,6 +92,9 @@ It asks first if restore points are in the way, because deleting those can't be 
 
 If it still can't release enough, hop names the file in the way. Windows can't move some NTFS system files
 while it's running, so try a smaller size.
+
+On another drive there's less to do. hop clears the change journal and moves files without restarting, unless
+that drive has its own paging file.
 
 ## Windows asks for a BitLocker recovery key
 
@@ -99,7 +131,10 @@ also need `GRUB_DISABLE_OS_PROBER=false` in `/etc/default/grub` first.
 
 Open hop and click **Undo changes**:
 
-- **Linux isn't installed yet:** removes everything hop made and gives the space back to C:.
+- **Linux isn't installed yet:** removes everything hop made and gives the space back to the drive it came from.
 - **Linux is installed:** removes only the installer. Linux stays.
 
-To remove an installed Linux, open hop again. It offers to remove it and free the space.
+To remove an installed Linux, open hop again. It offers to remove it and free the space. On a second disk, it
+only offers this for a Linux that hop put there. So a disk of your own Linux files is never offered for removal.
+
+If you unplugged a drive hop was using, plug it back in before you undo.

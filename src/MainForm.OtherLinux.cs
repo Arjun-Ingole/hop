@@ -31,15 +31,25 @@ namespace Hop
         {
             string name = startup.OtherName;
             int freed = startup.OtherGB;
+            bool onWindowsDisk = startup.OtherOnWindowsDisk;
             BeginWork(new[] { new[] { Run.Gray("Removing"), Run.Black(name) } }, "Starting…");
             try
             {
                 await engine.RemoveOtherSystemAsync();
-                startup = await engine.GetStartupInfoAsync();
+                await ReloadAsync();
                 EndWork();
-                Arrange(new[] { new[] { Run.Black(name), Run.Gray("is gone.") } },
-                    $"{freed} GB is free now. Use it for Linux, or give it back to Windows.", Secondary, null, 0);
-                Footer(null, null, "Use it for Linux", ShowChoose, "Give it to Windows", () => _ = ExpandWindowsAsync());
+                if (onWindowsDisk)
+                {
+                    Arrange(new[] { new[] { Run.Black(name), Run.Gray("is gone.") } },
+                        $"{freed} GB is free now. Use it for Linux, or give it back to Windows.", Secondary, null, 0);
+                    target = startup.Drives.FirstOrDefault(d => d.IsWindows) ?? target;
+                    Footer(null, null, "Use it for Linux", ShowChoose, "Give it to Windows", () => _ = ExpandWindowsAsync());
+                }
+                else
+                {
+                    Arrange(new[] { new[] { Run.Black(name), Run.Gray("is gone.") } }, $"{freed} GB is free now on that drive.", Secondary, null, 0);
+                    Footer(null, null, "Done", ShowChoose);
+                }
             }
             catch (Exception ex)
             {
@@ -52,20 +62,21 @@ namespace Hop
 
         async Task ExpandWindowsAsync()
         {
-            BeginWork(new[] { new[] { Run.Gray("Giving the space to"), Run.Black("Windows") } }, "Starting…");
+            string owner = target.IsWindows ? "Windows" : target.Title.ToLowerInvariant();
+            BeginWork(new[] { new[] { Run.Gray("Giving the space to"), Run.Black(owner) } }, "Starting…");
             try
             {
-                await engine.ExpandWindowsAsync();
-                startup = await engine.GetStartupInfoAsync();
+                await engine.ExpandWindowsAsync(target.Id);
+                await ReloadAsync();
                 EndWork();
-                Arrange(new[] { new[] { Run.Black("Windows"), Run.Gray("has the space back.") } },
-                    $"Drive C: is {startup.WindowsGB} GB now.", Secondary, null, 0);
+                Arrange(new[] { new[] { Run.Black(target.IsWindows ? "Windows" : target.Title), Run.Gray("has the space back.") } },
+                    $"{target.Title} is {target.SizeGB} GB now.", Secondary, null, 0);
                 Footer("Start over", ShowChoose, "Close", Close);
             }
             catch (Exception ex)
             {
                 EndWork();
-                Arrange(new[] { new[] { Run.Gray("Couldn't give the space to"), Run.Black("Windows") } }, Describe(ex), Danger, null, 0);
+                Arrange(new[] { new[] { Run.Gray("Couldn't give the space to"), Run.Black(owner) } }, Describe(ex), Danger, null, 0);
                 Footer(null, null, "Use it for Linux", ShowChoose, "Try again", () => _ = ExpandWindowsAsync());
             }
         }
