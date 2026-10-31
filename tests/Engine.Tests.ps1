@@ -828,6 +828,19 @@ Describe 'Invoke-Cleanup' {
     }
 }
 
+Describe 'Remove-PartitionByGuid' {
+    It 'removes it from the disk it was found on, not a clone with the same GUID' {
+        Mock Get-Partition {
+            if ($DiskNumber -contains 1) { [pscustomobject]@{ Guid = '{same}'; DiskNumber = 1; PartitionNumber = 5 } }
+            else { [pscustomobject]@{ Guid = '{same}'; DiskNumber = 0; PartitionNumber = 2 } }
+        }
+        Mock Remove-Partition { }
+        Remove-PartitionByGuid '{same}' 1
+        Should -Invoke Remove-Partition -ParameterFilter { $DiskNumber -contains 1 -and $PartitionNumber -contains 5 } -Times 1
+        Should -Invoke Remove-Partition -Times 1
+    }
+}
+
 Describe 'Remove-PartitionAt' {
     BeforeEach {
         # Plain stubs for a disk whose numbers close up after a removal.

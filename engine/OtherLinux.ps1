@@ -103,8 +103,9 @@ function Test-LinuxSignature($Partition) {
     $found -in $LinuxSignatures
 }
 
-function Remove-PartitionByGuid([string]$Guid) {
-    $partition = Get-Partition | Where-Object Guid -eq $Guid | Select-Object -First 1
+# Only on the disk it was found on: a cloned disk can have the same GUIDs.
+function Remove-PartitionByGuid([string]$Guid, [int]$DiskNumber) {
+    $partition = Get-Partition -DiskNumber $DiskNumber | Where-Object Guid -eq $Guid | Select-Object -First 1
     if (-not $partition) { return }
     try {
         Remove-Partition -DiskNumber $partition.DiskNumber -PartitionNumber $partition.PartitionNumber -Confirm:$false
@@ -145,7 +146,7 @@ function Remove-OtherSystem {
 
     foreach ($partition in $other.Partitions) {
         Set-Status "Removing $($other.Name) ($([math]::Round($partition.Size / 1GB)) GB partition)..."
-        Remove-PartitionByGuid $partition.Guid
+        Remove-PartitionByGuid $partition.Guid $partition.DiskNumber
     }
     if (-not $other.OnWindowsDisk) { Set-LinuxDisks (@(Get-LinuxDisks) | Where-Object { $_ -ne $other.DiskGuid }) }
     Set-Status "$($other.Name) removed." 100
