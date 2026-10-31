@@ -93,7 +93,7 @@ namespace Hop
             .Where(d => d.Id != target.Id && d.Blocker == null && MaxLinuxGBOn(d) >= MinLinuxGB)
             .OrderByDescending(d => d.UsableGB).FirstOrDefault();
 
-        bool HasDriveChoice => startup.Drives.Count > 1 || (isoPath == null && startup.DownloadDrives.Count(d => d.FreeGB > IsoDownloadGB) > 1);
+        bool HasDriveChoice => FullDiskOffered || startup.Drives.Count > 1 || (isoPath == null && startup.DownloadDrives.Count(d => d.FreeGB > IsoDownloadGB) > 1);
 
         Run[] WhereLine(bool picker, Color brand)
         {
@@ -110,6 +110,7 @@ namespace Hop
 
         void ShowChoose()
         {
+            fullDisk = false;
             var system = Current;
             bool usable = target.Blocker == null;
             bool enoughSpace = usable && MaxLinuxGB >= MinLinuxGB;
@@ -205,11 +206,17 @@ namespace Hop
                     : $"{d.DiskName} · {(d.Estimated ? "about " : "")}{d.UsableGB} GB to spare",
                 Dimmed = d.Blocker != null,
             }).ToList();
+            // After every drive, and never chosen by itself: it's on a screen of its own from here.
+            if (FullDiskOffered) items.Add(new PickerItem { Name = "Replace Windows", Note = "Erases the whole disk" });
             var downloads = isoPath == null ? startup.DownloadDrives.Where(d => d.FreeGB > IsoDownloadGB).ToList() : new List<DownloadDrive>();
             var spot = DownloadSpot;
             string footer = downloads.Count > 1 && spot != null ? $"Save the download on drive {spot.Letter}:…" : null;
             var picker = new ListPicker(items, rows.FindIndex(d => d.Id == target.Id), footer, 460);
-            picker.Picked += i => _ = UseDriveAsync(rows[i]);
+            picker.Picked += i =>
+            {
+                if (i < rows.Count) _ = UseDriveAsync(rows[i]);
+                else _ = ReplaceWindowsAsync();
+            };
             picker.FooterClicked += () => OpenDownloadPicker(downloads);
             var anchor = sentence.PickerScreenBounds(1);
             picker.Show(new Point(anchor.Left - S(13), anchor.Bottom + S(8)));
@@ -325,9 +332,11 @@ namespace Hop
             drive.UsedGB = target.UsedGB;
             drive.SystemName = system.Name;
             drive.Brand = system.Color;
-            drive.MinLinuxGB = MinLinuxGB;
-            drive.MaxLinuxGB = Math.Max(MinLinuxGB, MaxLinuxGB);
-            drive.LinuxGB = linuxGB;
+            // Replacing Windows only makes the installer. Windows stays until the Linux installer erases it.
+            drive.Legend = fullDisk ? $"Installer · {InstallerGB} GB. Windows stays until the Linux installer erases it" : null;
+            drive.MinLinuxGB = fullDisk ? 0 : MinLinuxGB;
+            drive.MaxLinuxGB = Math.Max(drive.MinLinuxGB, MaxLinuxGB);
+            drive.LinuxGB = fullDisk ? 0 : linuxGB;
             drive.Invalidate();
         }
 
@@ -359,19 +368,84 @@ namespace Hop
         }
 
         /// <summary>Anything worth checking comes first. Checked now, not at startup: the charger may have come out since.</summary>
-        async Task CheckThenConfirmAsync()
+        Task CheckThenConfirmAsync() => CheckThenAsync(target.Id, ShowConfirm);
+
+        async Task CheckThenAsync(string place, Action next)
         {
             primary.Enabled = false;
             string[] warnings;
-            try { warnings = await engine.GetWarningsAsync(target.Id); }
+            try { warnings = await engine.GetWarningsAsync(place); }
             catch { warnings = new string[0]; }
             primary.Enabled = true;
-            if (warnings.Length == 0) { ShowConfirm(); return; }
+            if (warnings.Length == 0) { next(); return; }
 
             steps.Set(warnings, null);
             Arrange(new[] { new[] { Run.Gray("Before you"), Run.Black("start") } },
                 "hop can go ahead, but check these first.", Secondary, steps, 32);
-            Footer("Back", ShowChoose, "Continue", ShowConfirm);
+            Footer("Back", ShowChoose, "Continue", next);
+        }
+
+        // --- Replacing Windows ------------------------------------------------------------
+        // Nothing changes on the PC until the last of these, and hop never erases anything: it
+        // makes the usual installer, and the Linux installer erases the disk if told to there.
+
+        bool FullDiskOffered => selected != null && selected.FullDisk && isoPath == null;
+
+        /// <summary>Checks first and says plainly why not. Only reads the PC.</summary>
+        async Task ReplaceWindowsAsync()
+        {
+            var system = Current;
+            BeginWork(new[] { new[] { Run.Gray("Checking"), Run.Black("this PC") } }, "Seeing what replacing Windows would mean here.");
+            FullDiskPlan plan;
+            try { plan = await engine.GetFullDiskPlanAsync(system.Id, target.Id); }
+            catch (Exception ex) { EndWork(); ShowCantReplaceWindows(Describe(ex)); return; }
+            EndWork();
+
+            if (plan.Blocker != null) { ShowCantReplaceWindows(plan.Blocker); return; }
+            if (plan.Target.Blocker != null) { ShowCantReplaceWindows(plan.Target.Blocker); return; }
+            int short_ = -MaxLinuxGBOn(plan.Target);
+            if (short_ > 0) { ShowCantReplaceWindows($"Windows can't release enough space from {plan.Target.Title.ToLowerInvariant()} for the installer. It needs {short_} GB more. Delete some files, or install next to Windows if you can make room."); return; }
+            await CheckThenAsync(plan.Target.Id, () => ShowReplaceWarning(plan));
+        }
+
+        void ShowCantReplaceWindows(string reason)
+        {
+            Arrange(new[] { new[] { Run.Gray("Can't replace"), Run.Black("Windows") } }, reason, Secondary, null, 0);
+            Footer("Back", ShowChoose, null, null);
+        }
+
+        string DiskOf(FullDiskPlan plan) => $"{plan.DiskName} ({plan.DiskGB} GB)";
+
+        void ShowReplaceWarning(FullDiskPlan plan)
+        {
+            var system = Current;
+            steps.Set(plan.Points, null);
+            Arrange(new[]
+            {
+                new[] { Run.Gray("Replace"), Run.Black("Windows"), Run.Gray("with"), new Run { Text = system.Name, Color = Ink, Logo = LogoFor(selected) } },
+            }, $"Windows and every file on {DiskOf(plan)} will be erased. They can't be recovered.", Danger, steps, 24);
+            Footer("Back", ShowChoose, "Continue", () => ShowReplaceConfirm(plan));
+        }
+
+        /// <summary>Typing the word is the one thing that can't happen by accident, so nothing else starts this.</summary>
+        void ShowReplaceConfirm(FullDiskPlan plan)
+        {
+            const string word = "ERASE";
+            var system = Current;
+            Arrange(new[] { new[] { Run.Gray("Type"), Run.Black(word), Run.Gray("to confirm") } },
+                $"hop will set up {system.Name} to erase Windows and every file on {DiskOf(plan)}. They can't be recovered.", Danger, eraseWord, 28);
+            eraseWord.Font = Theme.Font(15);
+            eraseWord.Text = "";
+            onEraseWord = () => primary.Enabled = eraseWord.Text == word;
+            Footer("Back", () => ShowReplaceWarning(plan), "Prepare the installer", () =>
+            {
+                if (eraseWord.Text != word) return;
+                fullDisk = true;
+                target = plan.Target;
+                _ = InstallAsync();
+            }, "Cancel", ShowChoose);
+            primary.Enabled = false;
+            eraseWord.Focus();
         }
 
         /// <summary>Install asks once more, in place, before touching the disk.</summary>

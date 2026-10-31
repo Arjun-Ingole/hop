@@ -20,7 +20,18 @@ namespace Hop
         public string Strategy;
         public string Logo;
         public bool SecureBootOff;      // can't start with Secure Boot on
+        public bool FullDisk;           // shown to work replacing Windows
         public System.Drawing.Color Color;
+    }
+
+    /// <summary>What replacing Windows would mean on this PC, or why it can't be done.</summary>
+    public sealed class FullDiskPlan
+    {
+        public string Blocker;          // why not, or null
+        public DriveChoice Target;      // where the installer goes: always on Windows' disk
+        public string DiskName;
+        public int DiskGB;
+        public string[] Points;         // what the warning says
     }
 
     /// <summary>One place Linux could go, or a drive it can't go on and why.</summary>
@@ -87,6 +98,7 @@ namespace Hop
         public string[] Steps;
         public string[] Notes;
         public bool Restart;            // Make room: the PC restarts
+        public bool FullDisk;           // the installer is there to replace Windows
     }
 
     /// <summary>
@@ -224,7 +236,8 @@ namespace Hop
                 Strategy = Get<string>(o, "Strategy"),
                 Logo = Get<string>(o, "Logo"),
                 SecureBootOff = Get<bool>(o, "SecureBootOff"),
-                Color = System.Drawing.ColorTranslator.FromHtml(Get<string>(o, "Color")),
+                FullDisk = o.Properties["FullDisk"]?.Value != null,
+                Color =System.Drawing.ColorTranslator.FromHtml(Get<string>(o, "Color")),
             }).ToList();
 
         public async Task<StartupInfo> GetStartupInfoAsync()
@@ -297,7 +310,7 @@ namespace Hop
         public async Task<DriveChoice> GetDriveSpaceAsync(string target) =>
             ToDrive((await InvokeAsync("Get-DriveSpace", new Hashtable { ["Target"] = target })).Single);
 
-        public Task InstallAsync(string distroId, string isoPath, int linuxGB, string target, string downloadDrive) =>
+        public Task InstallAsync(string distroId, string isoPath, int linuxGB, string target, string downloadDrive, bool fullDisk = false) =>
             InvokeAsync("Invoke-Install", new Hashtable
             {
                 ["DistroId"] = distroId,
@@ -305,7 +318,23 @@ namespace Hop
                 ["LinuxGB"] = linuxGB,
                 ["Target"] = target ?? "",
                 ["DownloadDrive"] = downloadDrive ?? "",
+                ["FullDisk"] = fullDisk,
             });
+
+        /// <summary>Only reads the PC. Telling Windows how far a drive shrinks can take a while.</summary>
+        public async Task<FullDiskPlan> GetFullDiskPlanAsync(string distroId, string target)
+        {
+            var plan = (await InvokeAsync("Get-FullDiskPlan", new Hashtable { ["DistroId"] = distroId, ["Target"] = target ?? "" })).Single;
+            var drive = plan.Properties["Target"]?.Value;
+            return new FullDiskPlan
+            {
+                Blocker = Get<string>(plan, "Blocker") is string blocker && blocker.Length > 0 ? blocker : null,
+                Target = drive == null ? null : ToDrive(PSObject.AsPSObject(drive)),
+                DiskName = Get<string>(plan, "DiskName"),
+                DiskGB = Get<int>(plan, "DiskGB"),
+                Points = Get<string[]>(plan, "Points"),
+            };
+        }
 
         public Task CleanupAsync(bool installerOnly) =>
             InvokeAsync("Invoke-Cleanup", new Hashtable { ["InstallerOnly"] = installerOnly });
@@ -338,6 +367,7 @@ namespace Hop
                 Steps = Get<string[]>(steps, "Steps"),
                 Notes = Get<string[]>(steps, "Notes"),
                 Restart = Get<bool>(steps, "Restart"),
+                FullDisk = Get<bool>(steps, "FullDisk"),
             };
         }
 

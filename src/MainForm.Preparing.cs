@@ -61,7 +61,7 @@ namespace Hop
             try
             {
                 var download = DownloadSpot;
-                await engine.InstallAsync(selected?.Id ?? "custom", isoPath, linuxGB, target.Id, download == null || download.IsDefault ? "" : download.Letter);
+                await engine.InstallAsync(selected?.Id ?? "custom", isoPath, linuxGB, target.Id, download == null || download.IsDefault ? "" : download.Letter, fullDisk);
                 poll.Stop();
                 busy = installing = false;
                 prepared = system;
