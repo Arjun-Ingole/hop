@@ -59,6 +59,14 @@ Ubuntu 24.04's installer is [reported](https://bugs.launchpad.net/ubuntu-desktop
 to ask for BitLocker to be turned off before offering this. If yours does, use the manual option hop
 lists, or turn off BitLocker first.
 
+## A partition called writable, or Linux "installed" when it isn't
+
+Builds up to 0.2.0 let Ubuntu's live system make a partition for its logs, and it could take all the space hop set aside
+for Linux. The installer then said there wasn't room, and hop said Linux was installed. It happens when nothing comes
+after that space on the disk. Open this build of hop: if it was this setup's doing, **Undo changes** and **Restart now** both
+remove it. If hop can't be sure, it leaves it, and it shows up as another Linux that hop offers to remove. Check it's
+not yours first.
+
 ## A different installer started
 
 GRUB starts the first partition it finds with a Linux installer on it. Unplug any USB installers, and
@@ -74,6 +82,9 @@ it:** Windows may stop starting until it's prepared. Search for the steps for yo
 Choose the drive and hop says why. The usual reasons:
 
 - **USB, removable or network drive.** Linux has to go on a disk inside the PC. The download can still go there.
+- **Can be unplugged, or hop can't tell.** A Thunderbolt or USB4 drive looks like an internal NVMe drive, so hop
+  asks Windows whether it expects the drive to be unplugged. A disk inside the PC is refused too if its port has
+  hot-plug turned on in the BIOS settings. Turning that off, then restarting, lets hop use it.
 - **Not set up, or MBR.** A new disk needs setting up as GPT in Disk Management. Converting an MBR disk
   that holds files means erasing it first, so copy them off.
 - **RAID or dynamic.** Linux installers can't use these. Leave them to their own tools.

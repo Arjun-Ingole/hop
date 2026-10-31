@@ -24,8 +24,10 @@ Three things limit what it can install:
   the ISO's signed boot loader is copied to `\EFI\hop` there. It then has to find the installer partition,
   and how it does that depends on the system.
 - **The live system has to find itself.** Ubuntu's `casper` and Debian's `live-boot` search every
-  partition, so they just work. Fedora's `dracut` and Arch's `archiso` look for a specific label or disc
+  partition, so they find it. Fedora's `dracut` and Arch's `archiso` look for a specific label or disc
   stamp, so `Update-BootConfig` changes the copy of their boot menu to name `HOPINSTALL`.
+- **The live system mustn't take the space.** Left alone, `casper` makes a partition in it. See
+  [Casper and the free space](#casper-and-the-free-space).
 
 ## Two languages, one exe
 
@@ -85,6 +87,7 @@ A failure in steps 4 to 6 runs `Invoke-Cleanup`, which puts everything back.
 | ISO | Downloads, or `\hop` on another drive | Named in the log |
 | State and logs | `C:\ProgramData\hop` | Fixed path |
 | Which disks hold Linux hop put there | `C:\ProgramData\hop\linux-disks.json` | Fixed path |
+| Casper's partition, only from builds up to 0.2.0 | The end of the disk | See [Casper and the free space](#casper-and-the-free-space) |
 
 Clean-up works from these, not just the state file, so it works after a crash. It looks for labels on
 the Windows disk and every internal disk. USB drives are skipped, because they could be from another PC,
@@ -157,7 +160,8 @@ Anaconda also renames the EFI partition's GPT name to `EFI System Partition`, an
 firmware's boot order. Neither changes the files Windows has there.
 
 The edits only touch the copy on the installer partition. Shim checks the signatures of programs, not of
-GRUB's config, so a changed menu still starts with Secure Boot on.
+GRUB's config, so a changed menu still starts with Secure Boot on. This was seen with Ubuntu's menu: with Secure
+Boot on, the kernel's line had the new word in it.
 
 Arch is the odd one. systemd-boot only reads its menu and kernels from its own partition, and they
 need 270 MB, which Windows' EFI partition doesn't have. So `\EFI\hop\BOOTX64.EFI` is the EFI Shell from
@@ -168,15 +172,68 @@ means step 1 or 2 failed, or the firmware never tried:** firmware moves on to th
 when a loader is refused or exits. Firmware clears `BootNext` as it starts, so one still set after
 coming back means it never tried, which is what `Test-BootNextIgnored` looks for.
 
+## Casper and the free space
+
+When casper finds itself on a partition, `check_dev` in its `scripts/casper` calls
+`find_or_create_persistent_partition` from `scripts/casper-helpers` on that partition's disk. Unless a partition
+called `writable` already exists, that one:
+
+1. Takes the highest end of any partition on the disk, and goes to the next multiple of 4096 sectors.
+2. Stops if less than 100 MiB is left after that.
+3. Adds a partition there with `sfdisk -a`, up to the end of the disk, of the type Linux filesystem.
+4. Runs `mkfs.ext4 -L writable` on it. With no partition node yet, this fails and leaves an empty partition.
+
+`setup_auto_log_persistence` then mounts it, on `/var/log` and `/var/crash`. On a USB stick that's a good use of
+spare space. Here, **if nothing comes after hop's free space, it's all of it,** and the installer is left with
+what's between its partition and the next multiple of 4096 sectors, about 1 MiB. So what happens depends on the disk:
+
+| What's after hop's free space | What casper does |
+| --- | --- |
+| Nothing | Takes all of it. An install into free space then fails, out of room in a 1 MiB partition |
+| A partition, right up to the end of the disk, as Windows' recovery partition usually is | Nothing |
+| A partition, then 100 MiB or more | Takes that last bit. hop's space is fine, but the partition is left behind |
+
+**The fix is one word.** `nopersistent` makes `check_dev` and `setup_auto_log_persistence` both do nothing.
+`Get-CasperBoot` adds it to the copy of the menu, for each entry in the catalog that uses casper and for a chosen ISO.
+It goes straight after the kernel's path, before `---` or `--`, so that the installed system doesn't get it.
+`toram` already implies it, which is why this never showed up when replacing Windows. The live system's logs then stay in memory.
+
+`Register-Installer` makes the same edit when the installer is restarted, for an installer partition that an older build copied.
+
+**Where it's already happened,** the partition looks like Linux to Windows, and older builds took it for that. They
+said Linux was installed and Undo left it behind. Now `Get-CasperPartition` recognises it, so hop doesn't say that. Undo
+and Restart now remove it. A partition called `writable` could be anyone's, so all of this has to hold:
+
+- hop did restart into this setup's installer (`RestartedAt`).
+- It's new since the setup began (`LinuxBefore`), after the installer partition, on that disk, and the last on it.
+- It starts on exactly the sector casper would pick, with casper's partition type.
+- Its superblock says ext and `writable`, or its first 128 KB are all zero, for when `mkfs.ext4` failed.
+
+With no state file, or a Linux installed as well, it isn't removed. In the first case hop offers it as another Linux, on the
+Windows disk. In the second, Windows can't see whether that Linux is using it. A failed `mkfs` over old data
+on a real disk won't look empty either, so that one still counts as Linux.
+
 ## Where Linux can go
 
 `Get-DriveBlocker` in `Drives.ps1` is the one place that decides, and it gives the reason.
 
 | | Viable |
 | --- | --- |
-| A disk | NVMe, SATA, SAS, ATA or SCSI. GPT and basic, online, writable and healthy. Not RAID, and with no other Windows or Linux on it |
+| A disk | NVMe, SATA, SAS, ATA or SCSI, and not one Windows expects to be unplugged. GPT and basic, online, writable and healthy. Not RAID, and with no other Windows or Linux on it |
 | A volume to shrink | All of that, plus: an ordinary data partition with a letter, NTFS, healthy, unlocked, not part way through encrypting, and not holding Windows' recovery files |
 | Free space | Any free space on such a disk, unless it's right after a volume that can use it |
+
+**A Thunderbolt or USB4 NVMe enclosure reports the bus type NVMe**, so the bus can't tell it from a drive inside
+the PC. `Get-DiskAttachment` asks Windows instead, through [the device's removal
+policy](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/devpkey-device-removalpolicy), found from
+`Win32_DiskDrive.PNPDeviceID`. 1 means Windows expects no removal, and that has to hold for the disk and for each
+parent up the device tree, since it's the slot the drive is tunnelled through that's hot-pluggable. Any other value,
+or `MediaType` saying external or removable, refuses the disk. So does not getting an answer about the disk itself.
+Internal disks on a port with hot-plug turned on are refused as well, which is the safe mistake to make.
+**This hasn't been tried on real Thunderbolt hardware.**
+
+Clean-up still looks at these disks, because `Get-HopDisks` only goes by the bus. A setup made on one by an earlier
+build can still be undone.
 
 The Windows disk keeps the checks it has always had, so C: is still judged by them and nothing else.
 RST mode there only gets a warning. A volume on that disk gets the volume checks too.

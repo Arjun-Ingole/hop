@@ -100,7 +100,50 @@ function Test-LinuxInstalled($State) {
     if (@(Get-LinuxLoaders $disk | Where-Object { $_.Path -notin @($State.LoadersBefore) }).Count) { return $true }
     if ($names -notcontains 'LinuxBefore' -or $null -eq $disk) { return $false }
     $partitions = @(Get-Partition -DiskNumber $disk)
-    @(Get-LinuxPartitions $partitions | Where-Object { $_.Guid -notin @($State.LinuxBefore) }).Count -gt 0
+    $casper = @(Get-CasperPartition $State $partitions | ForEach-Object { $_.Guid })
+    @(Get-LinuxPartitions $partitions | Where-Object { $_.Guid -notin @($State.LinuxBefore) -and $_.Guid -notin $casper }).Count -gt 0
+}
+
+# The partition casper made for its logs when this setup's installer started, on a build of hop that
+# didn't tell it not to. See Get-CasperBoot. It isn't Linux, and it's holding Linux's space. A partition
+# called writable could be anyone's, so everything has to point at this: hop did start the installer,
+# the partition is new since, it's after the installer, it's the last on the disk, it starts just where
+# casper would put it, it has casper's type, and it holds casper's file system. Or none at all,
+# because casper's mkfs loses a race on some boots, as seen on elementary OS.
+function Get-CasperPartition($State, $Partitions) {
+    if (-not $State.RestartedAt -or $State.PSObject.Properties.Name -notcontains 'LinuxBefore') { return }
+    $installer = @($State.Partitions | Where-Object Role -eq 'installer') | Select-Object -First 1
+    $sorted = @($Partitions | Sort-Object { [int64]$_.Offset + [int64]$_.Size })
+    if (-not $installer -or $sorted.Count -lt 2) { return }
+    $last = $sorted[-1]
+    $before = $sorted[-2]
+    if ($last.DiskNumber -ne (Get-StateDisk $State)) { return }
+    if ($last.GptType -ne $LinuxPartitionTypes[0] -or $last.Guid -in @($State.LinuxBefore)) { return }
+    if ([int64]$last.Offset -lt [int64]$installer.Offset + [int64]$installer.Size) { return }
+    # Casper starts at the first multiple of 4096 sectors after the last partition.
+    $boundary = [int64]4096 * (Get-Disk -Number $last.DiskNumber).LogicalSectorSize
+    if ($boundary -le 0) { return }
+    $end = [int64]$before.Offset + [int64]$before.Size
+    if ([int64]$last.Offset -ne [int64]([math]::Ceiling($end / $boundary)) * $boundary) { return }
+    if (Test-CasperContents $last) { $last }
+}
+
+function Test-CasperContents($Partition) {
+    $head = try { [Hop.DiskProbe]::ReadHead($Partition.DiskNumber, [int64]$Partition.Offset) } catch {
+        Write-Log "Could not read partition $($Partition.PartitionNumber): $($_.Exception.Message)"
+        return $false
+    }
+    [Hop.DiskProbe]::ExtLabel($head) -ceq 'writable' -or [Hop.DiskProbe]::IsBlank($head)
+}
+
+function Remove-CasperPartition($State) {
+    if (-not $State.RestartedAt) { return }
+    $disk = Get-StateDisk $State
+    if ($null -eq $disk) { return }
+    $partition = Get-CasperPartition $State @(Get-Partition -DiskNumber $disk)
+    if (-not $partition) { return }
+    Set-Status 'Removing the partition the live system made...'
+    Remove-PartitionAt $partition.DiskNumber $partition.Offset
 }
 
 # Partitions hop recorded but may not have got as far as labelling, for example when

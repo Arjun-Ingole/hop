@@ -23,7 +23,7 @@ namespace Hop
         /// <summary>The ID of the file system on a partition, as GRUB's search.fs_uuid names it, or null.</summary>
         public static string ReadUuid(int diskNumber, long offset) => IdentifyUuid(ReadHead(diskNumber, offset));
 
-        static byte[] ReadHead(int diskNumber, long offset)
+        public static byte[] ReadHead(int diskNumber, long offset)
         {
             var handle = CreateFile($@"\\.\PhysicalDrive{diskNumber}", GenericRead, ShareRead | ShareWrite, IntPtr.Zero, OpenExisting, 0, IntPtr.Zero);
             if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not read the disk.");
@@ -35,6 +35,19 @@ namespace Hop
                 while (read < head.Length && (count = disk.Read(head, read, head.Length - read)) > 0) read += count;
                 return head;
             }
+        }
+
+        /// <summary>True when the bytes are all zero, as on a partition nothing has been written to.</summary>
+        public static bool IsBlank(byte[] head) => Array.TrueForAll(head, b => b == 0);
+
+        /// <summary>The name of the ext2/3/4 file system these bytes start, or null if they start something else.</summary>
+        public static string ExtLabel(byte[] head)
+        {
+            if (Identify(head) != "ext") return null;
+            const int start = 1024 + 120, size = 16;
+            int length = 0;
+            while (length < size && head[start + length] != 0) length++;
+            return Encoding.ASCII.GetString(head, start, length);
         }
 
         public static string IdentifyUuid(byte[] head)

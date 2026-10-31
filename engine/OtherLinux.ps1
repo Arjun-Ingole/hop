@@ -99,7 +99,9 @@ function Get-OwnedEspFolders([string[]]$Folders, $Linux, [int]$Disk) {
 # that can't be tied to this Linux, which stay.
 function Find-OtherSystem([int]$Disk) {
     $partitions = @(Get-Partition -DiskNumber $Disk)
-    $linux = @(Get-LinuxPartitions $partitions)
+    $state = Read-State
+    $casper = if ($state) { @(Get-CasperPartition $state $partitions | ForEach-Object { $_.Guid }) } else { @() }
+    $linux = @(Get-LinuxPartitions $partitions | Where-Object { $_.Guid -notin $casper })
     if (-not $linux.Count) { return $null }
     $removing = @($linux | ForEach-Object { $_.Guid })
 

@@ -15,17 +15,30 @@ function New-Entry([string]$Id, [string]$Name, [string]$Note, [string]$Source, [
     [pscustomobject]$entry
 }
 
+# Casper, as it finds itself on a partition, adds an ext4 partition called writable after the last one on
+# that disk, up to the end of the disk, for the live system's logs. On a USB stick that's spare space. Here it
+# can be the space Linux is meant to go in. Nopersistent turns that off, and goes straight after the kernel's
+# path, before any --- or --, because what's after those ends up in the installed system too.
+# Safe to run again. See docs/ARCHITECTURE.md.
+function Get-CasperBoot {
+    @{
+        BootConfigs = @('boot/grub/grub.cfg')
+        BootEdits = [ordered]@{ '(?m)^(\s*linux(?:efi)?\s+/casper\S*)(?=\s|$)(?![^\n]*\snopersistent(?:\s|$))' = '$1 nopersistent' }
+    }
+}
+
 # Official Ubuntu flavours of 26.04 LTS, all published with SHA256SUMS on ubuntu.com.
 function New-UbuntuFlavor([string]$Id, [string]$Name, [string]$Note, [string]$Color, [hashtable]$More = @{}) {
     $base = if ($Id -eq 'ubuntu') { 'https://releases.ubuntu.com/26.04/' } else { "https://cdimage.ubuntu.com/$Id/releases/26.04/release/" }
     $settings = @{ Kind = 'ubuntu'; Version = '26.04 LTS'; Base = $base; Prefix = $Id; Alongside = "Install $Name alongside Windows"; Manual = 'Manual installation' }
+    $settings += Get-CasperBoot
     foreach ($key in $More.Keys) { $settings[$key] = $More[$key] }
     New-Entry $Id $Name $Note ([uri]$base).Host $Color $Id $settings
 }
 
 function New-MintEdition([string]$Edition, [string]$Name, [string]$Note) {
-    New-Entry "mint-$Edition" $Name $Note 'the Linux Mint mirror at kernel.org' '#69B53F' 'mint' @{
-        Kind = 'mint'; Edition = $Edition; Alongside = 'Install Linux Mint alongside Windows Boot Manager'; Manual = 'Something else' }
+    New-Entry "mint-$Edition" $Name $Note 'the Linux Mint mirror at kernel.org' '#69B53F' 'mint' ((Get-CasperBoot) + @{
+        Kind = 'mint'; Edition = $Edition; Alongside = 'Install Linux Mint alongside Windows Boot Manager'; Manual = 'Something else' })
 }
 
 # How live systems that don't search every partition, as casper does, find the installer.
@@ -72,7 +85,7 @@ function Get-FullDiskBoot([string]$Family) {
 # SecureBootOff: its boot loader or kernel isn't signed, as in Pop!_OS 24.04's ISO, so it can't start with Secure Boot on.
 # Live: a file its ISO must have, for systems that aren't Ubuntu-style. Empty means casper, which Read-Iso checks for.
 # BootConfigs and BootEdits: which copied boot files to change, and how (regex = replacement). The first
-#   edit is the one the system can't start without. See Update-BootConfig.
+#   edit is the one hop can't do without. See Update-BootConfig.
 # GrubDir: where its menu is, when GRUB should find the installer partition by label and not /.disk/info.
 # EspShell: the ISO's EFI Shell, for a boot loader that can't leave its own partition. See Get-EspShellScript.
 # EspLinuxMB: what its installer adds to the EFI partition, if it doesn't notice running out. Anaconda uses 21 MB.
@@ -95,23 +108,23 @@ function Get-Catalog {
         'If it warns that **/boot/efi** is smaller than recommended, carry on: hop has checked there is room.'
         "Don't choose **Use entire disk**. The installer is running from this drive.")
     @(
-        New-Entry 'elementary' 'elementary OS' 'Mac-like' 'elementary.io' '#3689E6' 'elementary' @{
-            Kind = 'elementary'; Strategy = 'prepared'; Mode = 'Custom Install (Advanced)' }
+        New-Entry 'elementary' 'elementary OS' 'Mac-like' 'elementary.io' '#3689E6' 'elementary' ((Get-CasperBoot) + @{
+            Kind = 'elementary'; Strategy = 'prepared'; Mode = 'Custom Install (Advanced)' })
         New-UbuntuFlavor 'ubuntu' 'Ubuntu' 'Most popular' '#E95420' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 6; Steps = @(
                 'Pick your language and keyboard, then start the installer.'
                 'When asked how to install, choose **Erase disk and install Ubuntu**.'
                 'Under **Select drive**, choose **{DISK}**. Leave any other drive alone.'
                 'On **Ready to install**, check that only **{DISK}** is listed under **Erased**, then click **Install**.') } }
         New-MintEdition 'cinnamon' 'Linux Mint' 'Windows-like'
-        New-Entry 'pop' 'Pop!_OS' 'Gaming' 'pop-os.org' '#48B9C7' 'pop' @{
-            Kind = 'pop'; Version = '24.04'; Strategy = 'prepared'; Mode = 'Custom (Advanced)'; SecureBootOff = $true }
-        New-Entry 'zorin' 'Zorin OS' 'Windows-like' 'the Zorin OS mirror at kernel.org' '#15A6F0' 'zorin' @{
+        New-Entry 'pop' 'Pop!_OS' 'Gaming' 'pop-os.org' '#48B9C7' 'pop' ((Get-CasperBoot) + @{
+            Kind = 'pop'; Version = '24.04'; Strategy = 'prepared'; Mode = 'Custom (Advanced)'; SecureBootOff = $true })
+        New-Entry 'zorin' 'Zorin OS' 'Windows-like' 'the Zorin OS mirror at kernel.org' '#15A6F0' 'zorin' ((Get-CasperBoot) + @{
             Kind = 'zorin'; Alongside = 'Install Zorin OS alongside Windows Boot Manager'; Manual = 'Something else'
             FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 3; Steps = @(
                 'Pick your language and keyboard, then start the installer.'
                 'When asked how to install, choose **Erase disk and install Zorin OS**.'
                 'If it lists more than one drive, choose **{DISK}**. Leave any other drive alone.'
-                'Click **Install Now**, check that only **{DISK}** is in the list of changes, then click **Continue**.') } }
+                'Click **Install Now**, check that only **{DISK}** is in the list of changes, then click **Continue**.') } })
         New-Entry 'fedora' 'Fedora Workstation' 'Up to date' 'fedoraproject.org' '#51A2DA' 'fedora' ((Get-DracutBoot 'boot/grub2') + @{
             Kind = 'fedora'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps })
         New-Entry 'debian' 'Debian' 'Rock solid' 'cdimage.debian.org' '#A80030' 'debian' @{
@@ -160,8 +173,8 @@ function Get-Catalog {
 
 function Get-Distro([string]$Id, [string]$IsoPath) {
     if ($Id -eq 'custom') {
-        return New-Entry 'custom' ([IO.Path]::GetFileNameWithoutExtension($IsoPath)) '' '' '#1D1D1F' '' @{
-            Alongside = 'Install ... alongside Windows'; Manual = 'Manual installation' }
+        return New-Entry 'custom' ([IO.Path]::GetFileNameWithoutExtension($IsoPath)) '' '' '#1D1D1F' '' ((Get-CasperBoot) + @{
+            Alongside = 'Install ... alongside Windows'; Manual = 'Manual installation' })
     }
     Get-Catalog | Where-Object Id -eq $Id
 }

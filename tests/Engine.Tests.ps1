@@ -13,6 +13,7 @@ BeforeAll {
     # Add-Type refuses .exe files.
     [void][Reflection.Assembly]::LoadFrom((Join-Path $root 'bin\Release\hop.exe'))
     Mock Write-Log { }
+    Mock Get-DiskAttachment { 'internal' }
 }
 
 Describe 'Catalog' {
@@ -55,16 +56,21 @@ Describe 'Catalog' {
     It 'edits the boot files of the systems that need it, with the edit they cannot start without first' {
         foreach ($distro in $catalog | Where-Object BootEdits) {
             $distro.BootConfigs | Should -Not -BeNullOrEmpty
-            $distro.Live | Should -Not -BeNullOrEmpty
-            @($distro.BootEdits.Values)[0] | Should -Match "=$InstallerLabel(\s|$)"
+            if ($distro.Live) { @($distro.BootEdits.Values)[0] | Should -Match "=$InstallerLabel(\s|$)" }
         }
     }
-    It 'keeps Ubuntu and its flavours exactly as they were' {
-        foreach ($distro in $catalog | Where-Object Kind -in @('ubuntu', 'mint', 'pop', 'elementary', 'zorin')) {
+    It 'stops casper making a partition for everything that starts with it, including a chosen ISO' {
+        foreach ($distro in @($catalog | Where-Object Kind -in @('ubuntu', 'mint', 'pop', 'elementary', 'zorin')) + (Get-Distro 'custom' 'C:\isos\x.iso')) {
             $distro.Live | Should -BeNullOrEmpty
-            $distro.BootEdits | Should -BeNullOrEmpty
+            $distro.BootConfigs | Should -Be @('boot/grub/grub.cfg')
+            @($distro.BootEdits.Values)[0] | Should -BeLike '* nopersistent'
             $distro.GrubDir | Should -BeNullOrEmpty
             $distro.EspShell | Should -BeNullOrEmpty
+        }
+    }
+    It 'leaves live-boot and the others alone, which make no partition' {
+        foreach ($distro in $catalog | Where-Object Kind -in @('debian', 'fedora', 'ultramarine', 'arch', 'cachyos')) {
+            ($distro.BootEdits.Values -join ' ') | Should -Not -BeLike '*nopersistent*'
         }
     }
 }
@@ -494,6 +500,109 @@ Describe 'Test-LinuxInstalled' {
     }
 }
 
+Describe 'Get-CasperPartition' {
+    BeforeAll {
+        # The layout seen in QEMU: 512-byte sectors, and casper starting at sector 16986112.
+        $sector = 512
+        function New-Disk {
+            @(
+                [pscustomobject]@{ DiskNumber = 0; Offset = [int64]2048 * $sector; Size = [int64]204800 * $sector; GptType = $EspType; Guid = '{esp}'; PartitionNumber = 1 }
+                [pscustomobject]@{ DiskNumber = 0; Offset = [int64]206848 * $sector; Size = [int64]2097152 * $sector; GptType = $BasicDataType; Guid = '{c}'; PartitionNumber = 2 }
+                [pscustomobject]@{ DiskNumber = 0; Offset = [int64]2304000 * $sector; Size = [int64]14680064 * $sector; GptType = $BasicDataType; Guid = '{hop}'; PartitionNumber = 3 }
+                [pscustomobject]@{ DiskNumber = 0; Offset = [int64]16986112 * $sector; Size = [int64]150784000 * $sector; GptType = $LinuxPartitionTypes[0]; Guid = '{casper}'; PartitionNumber = 4 }
+            )
+        }
+        function New-State {
+            [pscustomobject]@{
+                RestartedAt = '2026-10-31T10:00:00'; LinuxBefore = @(); LoadersBefore = @()
+                Partitions = @([pscustomobject]@{ Role = 'installer'; Offset = [int64]2304000 * $sector; Size = [int64]14680064 * $sector })
+            }
+        }
+    }
+    BeforeEach {
+        Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } }
+        Mock Get-Disk { [pscustomobject]@{ Number = 0; LogicalSectorSize = 512 } }
+        Mock Test-CasperContents { $true }
+        Mock Get-LinuxLoaders { }
+    }
+    It 'finds what casper made' {
+        (Get-CasperPartition (New-State) (New-Disk)).Guid | Should -Be '{casper}'
+    }
+    It 'finds it after a recovery partition too' {
+        $disk = New-Disk
+        $disk[3].Offset = [int64]163577856 * $sector
+        $recovery = [pscustomobject]@{ DiskNumber = 0; Offset = [int64]161478656 * $sector; Size = [int64]2099167 * $sector; GptType = $RecoveryType; Guid = '{re}'; PartitionNumber = 5 }
+        (Get-CasperPartition (New-State) @($disk + $recovery)).Guid | Should -Be '{casper}'
+    }
+    It 'is not fooled by <why>' -ForEach @(
+        @{ why = 'a state file from before the restart'; state = { $s = New-State; $s.RestartedAt = $null; $s }; disk = { New-Disk } }
+        @{ why = 'a setup that did not record what was there'; state = { [pscustomobject]@{ RestartedAt = 'x'; Partitions = (New-State).Partitions } }; disk = { New-Disk } }
+        @{ why = 'a partition that was there before hop'; state = { $s = New-State; $s.LinuxBefore = @('{casper}'); $s }; disk = { New-Disk } }
+        @{ why = 'a partition before the installer'; state = { $s = New-State; $s.Partitions[0].Offset = [int64]166000000 * 512; $s }; disk = { New-Disk } }
+        @{ why = 'a partition of another type'; state = { New-State }; disk = { $d = New-Disk; $d[3].GptType = $BasicDataType; $d } }
+        @{ why = 'a partition not where casper starts one'; state = { New-State }; disk = { $d = New-Disk; $d[3].Offset = [int64]16984064 * 512; $d } }
+        @{ why = 'a partition with another after it'; state = { New-State }; disk = { @(New-Disk) + [pscustomobject]@{ DiskNumber = 0; Offset = [int64]167700000 * 512; Size = 1MB; GptType = $BasicDataType; Guid = '{after}'; PartitionNumber = 5 } } }
+    ) {
+        Get-CasperPartition (& $state) (& $disk) | Should -BeNullOrEmpty
+    }
+    It 'leaves a partition holding something else' {
+        Mock Test-CasperContents { $false }
+        Get-CasperPartition (New-State) (New-Disk) | Should -BeNullOrEmpty
+    }
+    It 'leaves a partition on another disk' {
+        Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 1 } }
+        Get-CasperPartition (New-State) (New-Disk) | Should -BeNullOrEmpty
+    }
+    It 'does not make hop say Linux is installed' {
+        Mock Get-Partition { New-Disk }
+        Mock Get-LinuxPartitions { (New-Disk)[3] }
+        Test-LinuxInstalled (New-State) | Should -BeFalse
+    }
+    It 'still says Linux is installed if another Linux partition is there' {
+        Mock Get-Partition { New-Disk }
+        Mock Test-CasperContents { $false }
+        Mock Get-LinuxPartitions { (New-Disk)[3] }
+        Test-LinuxInstalled (New-State) | Should -BeTrue
+    }
+    It 'still says Linux is installed when a new boot loader says so' {
+        Mock Get-LinuxLoaders { [pscustomobject]@{ Path = '\EFI\ubuntu\shimx64.efi' } }
+        Test-LinuxInstalled (New-State) | Should -BeTrue
+    }
+    It 'removes it, and nothing else' {
+        Mock Get-Partition { New-Disk }
+        Mock Remove-PartitionAt { }
+        Remove-CasperPartition (New-State)
+        Should -Invoke Remove-PartitionAt -Times 1 -Exactly -ParameterFilter { $Offset -eq [int64]16986112 * 512 }
+    }
+    It 'removes nothing it cannot tie to this setup' {
+        Mock Get-Partition { New-Disk }
+        Mock Test-CasperContents { $false }
+        Mock Remove-PartitionAt { }
+        Remove-CasperPartition (New-State)
+        Should -Invoke Remove-PartitionAt -Times 0 -Exactly
+    }
+}
+
+Describe 'Test-CasperContents' {
+    BeforeAll {
+        function New-ExtHead([string]$Label) {
+            $head = New-Object byte[] (128KB)
+            [BitConverter]::GetBytes([uint32]1000).CopyTo($head, 1024)
+            $head[1080] = 0x53; $head[1081] = 0xEF
+            [Text.Encoding]::ASCII.GetBytes($Label).CopyTo($head, 1144)
+            , $head
+        }
+    }
+    It 'reads the name of an ext file system, and only of one' {
+        [Hop.DiskProbe]::ExtLabel((New-ExtHead 'writable')) | Should -BeExactly 'writable'
+        [Hop.DiskProbe]::ExtLabel((New-Object byte[] (128KB))) | Should -BeNullOrEmpty
+    }
+    It 'knows an empty partition from one with anything on it' {
+        [Hop.DiskProbe]::IsBlank((New-Object byte[] (128KB))) | Should -BeTrue
+        [Hop.DiskProbe]::IsBlank((New-ExtHead 'writable')) | Should -BeFalse
+    }
+}
+
 Describe 'Test-LinuxSignature' {
     It 'never picks a system or boot partition' {
         Test-LinuxSignature ([pscustomobject]@{ IsSystem = $true; IsBoot = $false; DiskNumber = 0; Offset = 0 }) | Should -BeFalse
@@ -579,12 +688,32 @@ Describe 'Boot config' {
         $expected = [Text.Encoding]::UTF8.GetBytes("menuentry 'Dévelop' {`n`t$edited quiet`n}`n")
         ([IO.File]::ReadAllBytes($path) -join ',') | Should -Be ($expected -join ',')
     }
-    It 'touches nothing for Ubuntu' {
+    It 'tells casper not to take the space, before anything the installed system would copy' -ForEach @(
+        @{ id = 'ubuntu'; line = '    linux  /casper/vmlinuz  --- quiet splash'; want = '    linux  /casper/vmlinuz nopersistent  --- quiet splash' }
+        @{ id = 'zorin'; line = "`tlinux /casper/vmlinuz maybe-ubiquity quiet splash ---"; want = "`tlinux /casper/vmlinuz nopersistent maybe-ubiquity quiet splash ---" }
+        @{ id = 'mint-cinnamon'; line = "`tlinux`t/casper/vmlinuz  boot=casper uuid=6e72f523 username=mint"; want = "`tlinux`t/casper/vmlinuz nopersistent  boot=casper uuid=6e72f523 username=mint" }
+        @{ id = 'elementary'; line = ' linux /casper/vmlinuz boot=casper maybe-ubiquity quiet splash'; want = ' linux /casper/vmlinuz nopersistent boot=casper maybe-ubiquity quiet splash' }
+        @{ id = 'pop'; line = "`tlinux /casper_pop-os_24.04_amd64/vmlinuz.efi boot=casper live-media-path=/casper_pop-os_24.04_amd64"; want = "`tlinux /casper_pop-os_24.04_amd64/vmlinuz.efi nopersistent boot=casper live-media-path=/casper_pop-os_24.04_amd64" }
+    ) {
+        Get-Edited $id $line | Should -Be $want
+    }
+    It 'changes every entry but the memory tester, and changes nothing else' {
         $path = "$root\boot\grub\grub.cfg"
-        $before = [Text.Encoding]::ASCII.GetBytes("linux /casper/vmlinuz root=live:CDLABEL=x archisosearchuuid=y --- quiet`n")
-        [IO.File]::WriteAllBytes($path, $before)
+        [IO.File]::WriteAllBytes($path, [Text.Encoding]::ASCII.GetBytes("menuentry 'Try' {`n linux /casper/vmlinuz --- quiet`n}`nmenuentry 'Safe' {`n linux /casper/vmlinuz nomodeset --- quiet`n}`nmenuentry 'Test' {`n linux /boot/memtest.efi`n}`n"))
+        Update-BootConfig (Get-CatalogEntry 'ubuntu') $root
+        [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($path)) |
+            Should -Be "menuentry 'Try' {`n linux /casper/vmlinuz nopersistent --- quiet`n}`nmenuentry 'Safe' {`n linux /casper/vmlinuz nopersistent nomodeset --- quiet`n}`nmenuentry 'Test' {`n linux /boot/memtest.efi`n}`n"
+    }
+    It 'does nothing the second time, even with the copy to memory there' {
+        $path = "$root\boot\grub\grub.cfg"
+        [IO.File]::WriteAllBytes($path, [Text.Encoding]::ASCII.GetBytes("linux /casper/vmlinuz toram nopersistent --- quiet`n"))
+        $before = [IO.File]::ReadAllBytes($path)
         Update-BootConfig (Get-CatalogEntry 'ubuntu') $root
         ([IO.File]::ReadAllBytes($path) -join ',') | Should -Be ($before -join ',')
+    }
+    It 'copes with both changes together when replacing Windows' {
+        $distro = Get-CatalogEntry 'ubuntu'
+        Get-EditedBootConfig $distro 'linux /casper/vmlinuz --- quiet' -FullDisk | Should -Be 'linux /casper/vmlinuz toram nopersistent --- quiet'
     }
     It 'knows a menu it can edit, and says so when a new release changes it' {
         $fedora = Get-CatalogEntry 'fedora'
@@ -594,8 +723,13 @@ Describe 'Boot config' {
         Set-Content "$root\boot\grub2\grub.cfg" 'linux /x root=live:CDLABEL=abc'
         Test-BootConfigKnown $fedora $root | Should -BeTrue
     }
-    It 'has nothing to check for Ubuntu' {
-        Test-BootConfigKnown (Get-CatalogEntry 'ubuntu') $root | Should -BeTrue
+    It 'needs a casper line in Ubuntu''s menu, and accepts one' {
+        $ubuntu = Get-CatalogEntry 'ubuntu'
+        Test-BootConfigKnown $ubuntu $root | Should -BeFalse
+        Set-Content "$root\boot\grub\grub.cfg" 'linux /boot/memtest.efi'
+        Test-BootConfigKnown $ubuntu $root | Should -BeFalse
+        Set-Content "$root\boot\grub\grub.cfg" 'linux /casper/vmlinuz --- quiet'
+        Test-BootConfigKnown $ubuntu $root | Should -BeTrue
     }
 }
 
