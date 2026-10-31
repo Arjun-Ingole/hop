@@ -219,7 +219,7 @@ Describe 'Get-DriveTargets' {
         $usb.Blocker | Should -BeLike '*USB*'
     }
     It 'lists free space on its own when the volume before it is refused' {
-        Mock Get-Volume { [pscustomobject]@{ FileSystemType = 'exFAT'; HealthStatus = 'Healthy'; Size = [int64]200GB; SizeRemaining = [int64]100GB } } -ParameterFilter { $InputObject.DriveLetter -eq 'E' }
+        Mock Get-Volume { [pscustomobject]@{ FileSystemType = 'exFAT'; HealthStatus = 'Healthy'; Size = [int64]200GB; SizeRemaining = [int64]100GB } } -ParameterFilter { $DriveLetter -contains 'E' }
         $gap = @(Get-DriveTargets) | Where-Object Kind -eq 'gap'
         $gap.Id | Should -Be "gap:{disk-1}:$([int64]301GB)"
         $gap.UsableGB | Should -Be 698
@@ -300,7 +300,7 @@ Describe 'Get-HopPartitions on any disk' {
         Mock Get-Disk { New-TestDisk -Number 0; New-TestDisk -Number 1; New-TestDisk -Number 2 -Bus 'USB' }
         Mock Get-Partition {
             $number = [int]@($DiskNumber)[0]
-            [pscustomobject]@{ DiskNumber = $number; Offset = [int64]100GB * ($number + 1); Name = "p$number" }
+            [pscustomobject]@{ DiskNumber = $number; Offset = [int64]100GB * ($number + 1); DriveLetter = 'H' }
         }
     }
     It 'finds hop''s partitions on a second disk' {

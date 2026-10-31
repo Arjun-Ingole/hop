@@ -6,8 +6,8 @@
         powershell -File tests\Probe-VirtualDisks.ps1
 
     hop refuses virtual disks by design, and this doesn't change that. The refusal is checked
-    first, then this script hides the real disks and reports its own as NVMe by defining a
-    function called Get-Disk, which wins over the cmdlet in this script alone. It also stands in
+    first, then this script hides the real disks and reports its own as NVMe with an alias
+    called Get-Disk, which wins over the cmdlet in this process alone. It also stands in
     for what can't run here: the firmware, the EFI partition and restarting. Nothing in the
     app can reach any of this. What's left is the real engine: every Storage cmdlet, robocopy,
     format, shrink, undo and defrag.
@@ -67,21 +67,22 @@ function New-VDisk([string]$Name, [int]$SizeGB, [string]$Style = 'GPT') {
     Get-RealVDisk $path
 }
 
-function Dismount-VDisk([string]$Name) { Invoke-Diskpart @("select vdisk file=`"$($script:VDisks[$Name])`"", 'detach vdisk') }
-function Mount-VDisk([string]$Name) { Invoke-Diskpart @("select vdisk file=`"$($script:VDisks[$Name])`"", 'attach vdisk') }
+function Dismount-VDisk([string]$Name) { Dismount-DiskImage -ImagePath $script:VDisks[$Name] | Out-Null }
+function Mount-VDisk([string]$Name) { Mount-DiskImage -ImagePath $script:VDisks[$Name] -Access ReadWrite | Out-Null }
 
-# The one change to what the engine sees of the PC.
-function Get-Disk {
+# The one change to what the engine sees of the PC. A copy, because a note added to a disk
+# object doesn't survive, and an alias, because a function doesn't reliably beat the cmdlet.
+function Get-ProbeDisk {
     param($Number)
     $numbers = @($script:VDisks.Values | ForEach-Object { try { (Get-RealVDisk $_).Number } catch { } })
     $all = if ($null -ne $Number) { Storage\Get-Disk -Number $Number } else { Storage\Get-Disk }
     foreach ($disk in $all) {
         if (-not $script:Pretend) { $disk; continue }
         if ($numbers -notcontains $disk.Number) { continue }
-        Add-Member -InputObject $disk -NotePropertyName BusType -NotePropertyValue 'NVMe' -Force
-        $disk
+        $disk | Select-Object -Property * -ExcludeProperty BusType | Add-Member -NotePropertyName BusType -NotePropertyValue 'NVMe' -PassThru
     }
 }
+Set-Alias -Name Get-Disk -Value Get-ProbeDisk -Scope Global
 
 # Firmware, restarting and the EFI partition, none of which can be touched here.
 function Test-Uefi { $true }
@@ -181,11 +182,11 @@ try {
     Check 'made a real ISO' (Test-Path $iso) ''
 
     # The "Windows disk": [ESP][W: pretends to be C:][D: data][recovery][E: data]
-    $vdiskA = New-VDisk 'windows' 40
+    $vdiskA = New-VDisk 'windows' 60
     $a = $vdiskA.Number
     New-ProbeVolume $a 100MB '' '' $EspType | Out-Null
-    $w = New-ProbeVolume $a 10GB 'PRETENDC'
-    $d = New-ProbeVolume $a 14GB 'DATA'
+    $w = New-ProbeVolume $a 16GB 'PRETENDC'
+    $d = New-ProbeVolume $a 18GB 'DATA'
     $recovery = New-ProbeVolume $a 1GB '' '' $RecoveryType
     $e = New-ProbeVolume $a 5GB 'AFTER'
     $wLetter = [string]$w.DriveLetter; $dLetter = [string]$d.DriveLetter; $eLetter = [string]$e.DriveLetter
@@ -204,6 +205,8 @@ try {
 
     function Get-WindowsPartition { Storage\Get-Partition -DiskNumber (Get-RealVDisk $script:VDisks['windows']).Number | Where-Object { [int64]$_.Offset -eq [int64]$w.Offset } }
     $env:SystemDrive = "$wLetter`:"
+
+    Check 'the stand-in for Get-Disk is what the engine gets' ((Get-Command Get-Disk).CommandType -eq 'Alias' -and @(Get-Disk).Count -eq 2 -and @(Get-Disk)[0].BusType -eq 'NVMe') ''
 
     Step 'hop refuses these disks when nothing pretends'
     $script:Pretend = $false
@@ -232,6 +235,7 @@ try {
     $gapRow = @(Get-DriveTargets) | Where-Object { $_.Kind -eq 'gap' -and $_.DiskName } | Select-Object -First 1
     Check 'free space after a refused volume is offered on its own' ($null -ne $gapRow) ''
     Write-Output "  free space row: $($gapRow.Id) $($gapRow.UsableGB) GB"
+    Remove-PartitionAt $b $y.Offset
 
     Step 'Real shrink limit, from the bounded query'
     $space = Get-SpaceInfo "volume:$($vdiskA.Guid):$([int64]$d.Offset)"
@@ -342,6 +346,7 @@ try {
     Check 'steps go to manual and name the disk' ($text -like '*Manual installation*Msft Virtual Disk*' -and $text -notlike '*Choose **Install*') ''
 
     Step 'B2: the disk number changes between restarts'
+    $xPathsBefore = $xLetter
     Dismount-VDisk 'second'
     Check 'with the disk gone, the setup is a leftover' ((Get-InstallStatus) -eq 'leftover') (Get-InstallStatus)
     Check 'and hop can tell the disk is missing' ($null -eq (Get-StateDisk (Read-State))) ''
@@ -356,6 +361,9 @@ try {
     Check 'status is ready again' ((Get-InstallStatus) -eq 'ready') (Get-InstallStatus)
     Invoke-Cleanup
     Check 'undo works on the new number' ((Get-Layout $moved) -eq $beforeB) "$(Get-Layout $moved) vs $beforeB"
+    # Reattaching can hand out a different letter.
+    $xLetter = [string](Storage\Get-Partition -DiskNumber $moved | Where-Object { [int64]$_.Offset -eq [int64]$x.Offset }).DriveLetter
+    Write-Output "  X: was $xPathsBefore, now $xLetter"
     Check 'data on X: survived' ((Get-TestHash $xLetter) -eq $xHash) ''
     $b = $moved
 
@@ -398,7 +406,7 @@ try {
     ${function:Copy-Installer} = $copyInstaller
 
     Step 'B6: a partition hop recorded but never formatted is found on the second disk'
-    Remove-Partition -DiskNumber $b -PartitionNumber $filler.PartitionNumber -Confirm:$false
+    Remove-PartitionAt $b $filler.Offset
     Reset-Run
     $raw = New-Partition -DiskNumber $b -Offset ([int64]$x.Offset + [int64]$x.Size + 1GB) -Size ([int64]2GB)
     $half = [pscustomobject]@{
@@ -412,6 +420,7 @@ try {
 
     Step 'B7: free space with no volume to grow, prepared system'
     Reset-Run
+    $y = New-ProbeVolume $b 6GB 'NOTNTFS' 'exFAT'
     $gapRow = @(Get-DriveTargets) | Where-Object { $_.Kind -eq 'gap' -and $_.Id -like "gap:$($vdiskB.Guid)*" } | Sort-Object UsableGB -Descending | Select-Object -First 1
     Check 'the second disk''s free space is offered' ($null -ne $gapRow) ''
     $beforeGap = Get-Layout $b
@@ -427,6 +436,7 @@ try {
     Invoke-Cleanup
     Check 'undo: the disk is as it was' ((Get-Layout $b) -eq $beforeGap) "$(Get-Layout $b) vs $beforeGap"
     Check 'nothing grew' ((Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$x.Offset }).Size -eq $x.Size) ''
+    Remove-PartitionAt $b $y.Offset
 
     Step 'B8: someone''s own drive that happens to be called LINUXBOOT is safe'
     Reset-Run
@@ -435,7 +445,7 @@ try {
     Check 'not counted as hop''s' (@(Get-HopPartitions | Where-Object { [int64]$_.Partition.Offset -eq [int64]$mine.Offset }).Count -eq 0) ''
     Invoke-Cleanup
     Check 'not removed by a clean-up' ($null -ne (Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$mine.Offset })) ''
-    Remove-Partition -DiskNumber $b -PartitionNumber $mine.PartitionNumber -Confirm:$false
+    Remove-PartitionAt $b $mine.Offset
 
     Step 'C: Make room on a data drive, for real and with a limit'
     Reset-Run
