@@ -28,6 +28,14 @@
 
 ### Fixed
 
+- **Ubuntu's live system could take the space set aside for Linux.** If nothing came after that space on the disk, its
+  `casper` startup code made a partition called `writable` over all of it, and the installer then had nowhere to put
+  Linux. This also affects released builds, and every system built on it: Ubuntu's flavours, Linux Mint, elementary OS,
+  Pop!_OS and Zorin OS. A PC with Windows' recovery partition at the end of the disk wasn't affected. hop now tells it
+  not to, in the installer's copy of the boot menu, which still starts with Secure Boot on.
+- That partition made hop say Linux was installed, and Undo left it there. hop now recognises it when it can tie it
+  to its own setup, and doesn't say that. Undo and Restart now remove it. One it can't tie to its setup is left alone.
+- A chosen ISO whose boot menu doesn't start the kernel from a `casper` folder is now refused before the disk changes.
 - A Thunderbolt or USB4 NVMe enclosure counted as a drive inside the PC, because it reports the same bus. hop now asks
   Windows whether it expects a drive to be unplugged, and refuses it if so, or if Windows won't say. Windows' own disk
   isn't affected. This hasn't been tried on real Thunderbolt hardware.

@@ -53,6 +53,14 @@ Ubuntu 24.04's installer is [reported](https://bugs.launchpad.net/ubuntu-desktop
 to ask for BitLocker to be turned off before offering this. If yours does, use the manual option hop
 lists, or turn off BitLocker first.
 
+## A partition called writable, or Linux "installed" when it isn't
+
+Builds up to 0.2.0 let Ubuntu's live system make a partition for its logs, and it could take all the space hop set aside
+for Linux. The installer then said there wasn't room, and hop said Linux was installed. It happens when nothing comes
+after that space on the disk. Open this build of hop: if it was this setup's doing, **Undo changes** and **Restart now** both
+remove it. If hop can't be sure, it leaves it, and it shows up as another Linux that hop offers to remove. Check it's
+not yours first.
+
 ## A different installer started
 
 GRUB starts the first partition it finds with a Linux installer on it. Unplug any USB installers, and

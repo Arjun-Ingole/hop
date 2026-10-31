@@ -53,6 +53,31 @@ the words in the steps come from the installer's own strings. The installers wer
 choices than a PC would give them. **No real PC has done this,** the screens in hop have never been opened, and
 neither Secure Boot nor BitLocker was part of these runs.
 
+## Casper's partition, in a virtual PC
+
+On a GitHub Actions runner, in QEMU with OVMF, on the same 80 GB NVMe disk: EFI partition, an NTFS "C:", FAT32
+`HOPINSTALL`, then free space. `tests/Probe-VirtualDisks.ps1` covers telling it apart on real partitions, on Windows.
+
+Before means the menu as it was, and after means with the engine's real `Update-BootConfig`. The results are from the
+serial log and the disk image. `casper-helpers` is the same file in every ISO below, read from the ISO's initrd, and
+each is casper 1.498, plus `+zorin2` on Zorin OS, where the manifest says.
+
+| System | Before | After |
+| --- | --- | --- |
+| Ubuntu 26.04.1 | 71.9 GB ext4 `writable`, mounted on `/var/log` and `/var/crash` | Nothing new |
+| Xubuntu, Edubuntu, Ubuntu Budgie, Cinnamon and Studio 26.04.1, Lubuntu 26.04.1, Ubuntu Unity 26.04 | The same, 70.9 to 73.9 GB | Nothing new |
+| Zorin OS 18.1, Pop!_OS 24.04 | The same, 73.9 and 74.9 GB | Nothing new |
+| Linux Mint 22.3 | The same, 74.9 GB, with Enter pressed at its menu | Nothing new |
+| elementary OS 8.1 | A 74.9 GB partition with nothing on it: `mkfs.ext4` said its node did not exist yet | Nothing new |
+| Debian 13.7 | Nothing. `live-boot` has no `mkfs` or `sfdisk` in its initrd | Not changed |
+| Ubuntu 26.04.1, with a recovery partition ending the disk | Nothing | Not run |
+| Ubuntu 26.04.1, with a recovery partition then 2 GB free | 2 GB `writable` in that | Nothing new |
+
+**The installer really can't use the space.** On Ubuntu with `writable` there, an autoinstall with `layout: {name: direct, mode:
+use_gap}` chose the 1 MiB left and failed with `No space left on device`.
+
+Fedora, Ultramarine, CachyOS and Arch weren't booted for this. Their initrds weren't read either, since none of them uses casper.
+
 ## Testing for real
 
 Use a virtual machine, not a PC you care about. It has to use UEFI:
@@ -72,6 +97,7 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 
 - [ ] Fresh Windows: install a `prepared` system (elementary OS) through to a working Linux
 - [ ] Fresh Windows: install a `freespace` system (Ubuntu) through to a working Linux
+- [ ] Windows with no partition after C:: Ubuntu's live system makes no `writable` partition
 - [ ] Fresh Windows: install a system whose boot menu hop changes (Fedora, CachyOS or Arch) through to a working Linux
 - [ ] Fedora or Ultramarine: click through **Share disk with other operating systems**, which automated tests don't reach
 - [ ] Windows still starts afterwards, from the firmware's boot menu

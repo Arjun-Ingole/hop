@@ -304,7 +304,7 @@ try {
     Check 'D: shrank by the installer and no more' ([int64]$d.Size - [int64]$afterD.Size -eq [int64]4GB) ([int64]$d.Size - [int64]$afterD.Size)
     Check 'the state says what this is' ($state.FullDisk -eq $true -and $state.LinuxGB -eq 0) ($state | ConvertTo-Json -Compress)
     Check 'only the installer is hop''s' (@(Get-HopPartitions).Count -eq 1) @(Get-HopPartitions).Count
-    Check 'the menu on the partition asks for the copy to memory' ((Get-Content "$($installer.Letter):\boot\grub\grub.cfg" -Raw) -match '/casper/vmlinuz toram\s+--- quiet') (Get-Content "$($installer.Letter):\boot\grub\grub.cfg" -Raw)
+    Check 'the menu on the partition asks for the copy to memory' ((Get-Content "$($installer.Letter):\boot\grub\grub.cfg" -Raw) -match '/casper/vmlinuz toram nopersistent\s+--- quiet') (Get-Content "$($installer.Letter):\boot\grub\grub.cfg" -Raw)
     Check 'the steps say to erase, and name the disk' (((Get-StateSteps).Steps -join ' ') -like "*Erase disk and install*$($state.DiskName) ($($state.DiskGB) GB)*") ((Get-StateSteps).Steps -join ' ')
     Check 'status is ready, like any other' ((Get-InstallStatus) -eq 'ready') (Get-InstallStatus)
     Invoke-Cleanup
@@ -517,7 +517,6 @@ try {
     $start = [int64]([math]::Ceiling(([int64]$last.Offset + [int64]$last.Size) / $unit)) * $unit
     $casper = New-Partition -DiskNumber $b -Offset $start -UseMaximumSize -GptType $LinuxPartitionTypes[0]
     Write-Output "  layout: $(Get-Layout $b)"
-    Check 'hop ties an empty one to this setup, as casper leaves when its mkfs fails' ((Get-CasperPartition (Read-State) @(Storage\Get-Partition -DiskNumber $b)).Guid -eq $casper.Guid) ''
     Add-Type -TypeDefinition @'
 using System; using System.IO; using System.Runtime.InteropServices; using Microsoft.Win32.SafeHandles;
 public static class HopProbeRaw {
@@ -538,6 +537,9 @@ public static class HopProbeRaw {
         [Text.Encoding]::ASCII.GetBytes($Label).CopyTo($bytes, 1144)
         , $bytes
     }
+    # An earlier step's file system may still be here, as old data is on a used disk, where this wouldn't count as empty.
+    [HopProbeRaw]::Write($b, $start, (New-Object byte[] (128KB)))
+    Check 'hop ties an empty one to this setup, as casper leaves when its mkfs fails' ((Get-CasperPartition (Read-State) @(Storage\Get-Partition -DiskNumber $b)).Guid -eq $casper.Guid) ''
     [HopProbeRaw]::Write($b, $start, (New-ExtBytes 'mydata'))
     Check 'one holding another name is not' ($null -eq (Get-CasperPartition (Read-State) @(Storage\Get-Partition -DiskNumber $b))) ''
     Check 'and counts as Linux, as it always has' (Test-LinuxInstalled (Read-State)) ''
