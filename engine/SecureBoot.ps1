@@ -32,9 +32,11 @@ function Get-SecureBootDb {
 
 # Where the ISO's menu says the first kernel is. Memory testers also use the linux command.
 function Get-IsoKernelPath([string]$Root) {
-    $menu = Join-Path $Root 'boot\grub\grub.cfg'
-    if (-not (Test-Path -LiteralPath $menu)) { return }
-    $m = [regex]::Match((Get-Content -LiteralPath $menu -Raw), '(?m)^\s*linux(?:efi)?\s+(/(?!boot/memtest)\S+)')
+    # Fedora keeps its menu in grub2, and writes ($root) before its paths.
+    $menu = @('boot\grub\grub.cfg', 'boot\grub2\grub.cfg') | ForEach-Object { Join-Path $Root $_ } |
+        Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if (-not $menu) { return }
+    $m = [regex]::Match((Get-Content -LiteralPath $menu -Raw), '(?m)^\s*linux(?:efi)?\s+(?:\(\$root\))?(/(?!boot/memtest)\S+)')
     if ($m.Success) { Join-Path $Root ($m.Groups[1].Value.TrimStart('/') -replace '/', '\') }
 }
 

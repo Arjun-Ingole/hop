@@ -51,7 +51,9 @@ function Get-ReturnedHelp {
 # What to click in the Linux installer. The app shows Steps as a numbered list
 # and Notes underneath; text between ** is shown in a heavier weight.
 function Get-Steps($Distro, [int]$LinuxGB) {
-    if ($Distro.Strategy -eq 'prepared') {
+    if ($Distro.Steps) {
+        $steps = @($Distro.Steps | ForEach-Object { $_ -replace '\{GB\}', $LinuxGB })
+    } elseif ($Distro.Strategy -eq 'prepared') {
         $steps = @(
             "Pick your language and keyboard, then choose **$($Distro.Mode)**."
             "Click the $($LinuxGB - 1) GB partition named **$RootLabel**. Use it as Root (/) and format it as ext4."

@@ -26,7 +26,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
     try {
         # Nothing on the disk changes until New-LinuxSpace.
         Set-Stage 2
-        $iso = Read-Iso $IsoPath
+        $iso = Read-Iso $IsoPath $distro
         $plan = Get-Plan $LinuxGB $iso.InstallerGB
         Use-Esp {
             param($root)
@@ -55,6 +55,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
 
         Set-Stage 4
         Copy-Installer $iso $letter
+        Update-BootConfig $distro "$letter`:\"
         $state.Copied = $true
         Save-State $state
     } catch {
@@ -75,7 +76,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB) {
     # long after someone clicked Later.
     Set-Stage 5
     try {
-        $state.BootNumber = Register-Installer $distro.Name
+        $state.BootNumber = Register-Installer $distro.Name $distro
         Save-State $state
     } catch {
         Write-Log "Could not add the installer to the startup menu yet: $($_.Exception.Message)"
@@ -122,12 +123,16 @@ function Test-CameBack($State) {
     (Get-CimInstance Win32_OperatingSystem).LastBootUpTime -gt [datetime]$State.RestartedAt
 }
 
+# A system removed from the catalog since the install still needs its steps and boot loader.
+function Get-StateDistro($State) {
+    $distro = Get-Distro $State.DistroId $State.IsoPath
+    if (-not $distro) { $distro = Get-Distro 'custom' "$($State.Distro).iso" }
+    $distro
+}
+
 function Get-StateSteps {
     $state = Read-State
-    # A system removed from the catalog since the install still needs its steps.
-    $distro = Get-Distro $state.DistroId $state.IsoPath
-    if (-not $distro) { $distro = Get-Distro 'custom' "$($state.Distro).iso" }
-    Get-Steps $distro $state.LinuxGB
+    Get-Steps (Get-StateDistro $state) $state.LinuxGB
 }
 
 function Restart-IntoInstaller {
@@ -149,7 +154,7 @@ function Set-InstallerForNextStart {
     foreach ($other in $others) { Write-Log "Another installer is on $($other.Name); the PC could start that one instead." }
     $state = Read-State
     Suspend-BitLockerForRestart $state
-    $state.BootNumber = Register-Installer $state.Distro
+    $state.BootNumber = Register-Installer $state.Distro (Get-StateDistro $state)
     Set-BootOnce ([int]$state.BootNumber)
     # Builds before this one didn't have the field, so it may need adding.
     $state | Add-Member -NotePropertyName RestartedAt -NotePropertyValue (Get-Date).ToString('s') -Force
