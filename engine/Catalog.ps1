@@ -107,7 +107,13 @@ function Get-Catalog {
         New-Entry 'fedora' 'Fedora Workstation' 'Up to date' 'fedoraproject.org' '#51A2DA' 'fedora' ((Get-DracutBoot 'boot/grub2') + @{
             Kind = 'fedora'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps })
         New-Entry 'debian' 'Debian' 'Rock solid' 'cdimage.debian.org' '#A80030' 'debian' @{
-            Kind = 'debian'; Live = 'live/filesystem.squashfs'; Manual = 'Manual partitioning'; ManualExtra = $EspExtra; Steps = @(
+            Kind = 'debian'; Live = 'live/filesystem.squashfs'; Manual = 'Manual partitioning'; ManualExtra = $EspExtra
+            FullDisk = (Get-FullDiskBoot 'liveboot') + @{ IsoGB = 3; Steps = @(
+                'At the menu that appears after restarting, press Enter on **Live system**. It waits until you do, then takes a few minutes to copy itself to memory.'
+                'On the desktop, open **Install Debian**, then pick your language and keyboard.'
+                'At **Partitions**, choose **{DISK}** under **Select storage device**, then choose **Erase disk**.'
+                'Fill in your name and password. Check the **Summary** names only that drive, then click **Install**.') }
+            Steps = @(
                 'At the menu that appears after restarting, press Enter on **Live system**. It waits until you do.'
                 'On the desktop, open **Install Debian**, then pick your language and keyboard.') + $CalamaresSteps }
         New-Entry 'cachyos' 'CachyOS' 'Fast, for gaming' 'cachyos.org' '#008066' 'cachyos' ((Get-ArchisoBoot @('boot/grub/grub.cfg')) + @{

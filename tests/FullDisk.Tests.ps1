@@ -25,7 +25,7 @@ BeforeAll {
 
 Describe 'Which systems are offered' {
     It 'only offers what was really seen erasing a disk and starting afterwards' {
-        @(Get-Catalog | Where-Object FullDisk).Id | Should -Be @('ubuntu', 'arch')
+        @(Get-Catalog | Where-Object FullDisk).Id | Should -Be @('ubuntu', 'debian', 'arch')
     }
     It 'has what the install needs for every system it offers' {
         foreach ($distro in Get-Catalog | Where-Object FullDisk) {
@@ -427,7 +427,7 @@ Describe 'Coming back to Windows without erasing' {
 }
 
 Describe 'Get-FullDiskSteps' {
-    It 'says what to do if the disk was not let go, in place of forcing it' {
+    It 'says what to do if the disk is not offered, in place of forcing it' {
         $steps = Get-FullDiskSteps (New-Offered) ([pscustomobject]@{ DiskName = 'WD Blue'; DiskGB = 500 })
         ($steps.Notes -join ' ') | Should -BeLike "*WD Blue (500 GB)** isn't offered*don't force it*Windows, which is still there*"
         $steps.Steps | Should -Be @('Erase **WD Blue (500 GB)**.')
