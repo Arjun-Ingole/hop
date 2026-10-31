@@ -166,9 +166,7 @@ function Start-MakeRoom([string]$Drive) {
                 Set-Status 'Turning off the paging file...'
                 Set-PagingOff $room
             }
-            Register-RunAfterRestart
-            Set-Status 'Restarting...'
-            Invoke-Shutdown '/r', '/t', '0'
+            Request-RoomRestart
             return 'restarting'
         }
         Invoke-Defrag $room
@@ -178,6 +176,20 @@ function Start-MakeRoom([string]$Drive) {
     } catch {
         Write-Log "Failed: $($_.Exception.Message)"
         Restore-RoomSettings
+        throw
+    }
+}
+
+# Windows asks every window before it restarts. RoomRestarting tells hop's that this restart is its
+# own, and to let it go. Something else can still stop the restart, so the window can ask again.
+function Request-RoomRestart {
+    $Sync.RoomRestarting = $true
+    try {
+        Register-RunAfterRestart
+        Set-Status 'Restarting...'
+        Invoke-Shutdown '/r', '/t', '0'
+    } catch {
+        $Sync.RoomRestarting = $false
         throw
     }
 }
@@ -234,6 +246,7 @@ function Clear-RestorePoints([string]$Drive) {
 
 # Puts back whatever Make room changed. One failure must not stop the rest.
 function Restore-RoomSettings {
+    $Sync.RoomRestarting = $false
     $state = Read-RoomState
     if (-not $state) { return }
     Unregister-RunAfterRestart

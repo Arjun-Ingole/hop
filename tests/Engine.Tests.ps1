@@ -291,6 +291,29 @@ A volume shrink analysis was initiated on volume Windows (C:).
         Should -Invoke Set-PagingOff -Times 1
         Should -Invoke Invoke-Shutdown -Times 1
     }
+    It 'says the restart is its own before asking Windows for it, so the window lets it through' {
+        $Sync.RoomRestarting = $false
+        Mock Invoke-Shutdown { $Sync.RoomRestarting | Should -BeTrue }
+        Start-MakeRoom
+        Should -Invoke Invoke-Shutdown -Times 1
+    }
+    It 'stops saying so when the restart could not be asked for' {
+        Mock Invoke-Shutdown { throw 'no' }
+        { Start-MakeRoom } | Should -Throw 'no'
+        $Sync.RoomRestarting | Should -BeFalse
+    }
+    It 'can ask again after a restart was cancelled, with its settings still saved' {
+        Start-MakeRoom
+        Request-RoomRestart
+        Should -Invoke Invoke-Shutdown -Times 2
+        Should -Invoke Set-Hibernation -ParameterFilter { $On } -Times 0
+        Get-RoomPhase | Should -Be 'continue'
+    }
+    It 'stops saying so once its settings have gone back' {
+        Start-MakeRoom
+        Restore-RoomSettings
+        $Sync.RoomRestarting | Should -BeFalse
+    }
     It 'only takes paging off the system drive' {
         $files = Get-PagingWithoutSystemDrive @("$env:SystemDrive\pagefile.sys 0 0", 'Z:\pagefile.sys 0 0', '?:\pagefile.sys')
         $files | Should -Be @('Z:\pagefile.sys 0 0')
@@ -1246,6 +1269,14 @@ Describe 'Engine' {
             $invoke = [Hop.Engine].GetMethod('Invoke', [Reflection.BindingFlags]'NonPublic,Instance')
             { $invoke.Invoke($engine, @('Get-NoSuchHopCommand', $null)) } | Should -Throw
             ($engine.Log -join "`n") | Should -BeLike '*Stopped:*Get-NoSuchHopCommand*'
+        } finally { $engine.Dispose() }
+    }
+    It 'tells the window when a restart is hop''s own' {
+        $engine = New-Object Hop.Engine
+        try {
+            $engine.RoomRestarting | Should -BeFalse
+            $engine.Sync['RoomRestarting'] = $true
+            $engine.RoomRestarting | Should -BeTrue
         } finally { $engine.Dispose() }
     }
     It 'keeps a missing value missing, so a sentence can leave it out' {

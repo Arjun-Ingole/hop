@@ -16,6 +16,7 @@ namespace Hop
         // --- Choose -----------------------------------------------------------------------
 
         const int StuckWorthExplainingGB = 20;
+        const int RoomRestartWaitSeconds = 60;
 
         const string WindowsLetter = "C";
 
@@ -280,7 +281,11 @@ namespace Hop
             try
             {
                 // The restart is on its way, and Windows closes hop. Only another drive gets past this.
-                if (await engine.StartMakeRoomAsync(target.Letter)) return;
+                if (await engine.StartMakeRoomAsync(target.Letter))
+                {
+                    await WaitForRoomRestartAsync();
+                    return;
+                }
                 roomLetter = target.Letter;
                 await ReloadAsync();
                 EndWork();
@@ -291,6 +296,56 @@ namespace Hop
                 EndWork();
                 Arrange(new[] { new[] { Run.Gray("Couldn't"), Run.Black("make room") } }, Describe(ex), Danger, null, 0);
                 Footer("Back", ShowChoose, null, null);
+            }
+        }
+
+        /// <summary>Windows closes hop as it restarts. If that's cancelled, hop mustn't say "Restarting" for good.</summary>
+        async Task WaitForRoomRestartAsync()
+        {
+            await Task.Delay(RoomRestartWaitSeconds * 1000);
+            EndWork();
+            ShowRoomRestartStopped(null);
+        }
+
+        void ShowRoomRestartStopped(string problem)
+        {
+            roomLetter = target.Letter;   // so closing hop now puts its settings back
+            Arrange(new[] { new[] { Run.Gray("This PC"), Run.Black("didn't restart.") } },
+                problem ?? "Something stopped Windows restarting, so hop hasn't finished making room. Save your work and restart, or go back and hop puts its settings back.",
+                problem == null ? Secondary : Danger, null, 0);
+            Footer("Back", () => _ = CancelRoomRestartAsync(), "Restart now", () => _ = RetryRoomRestartAsync());
+        }
+
+        async Task RetryRoomRestartAsync()
+        {
+            BeginWork(new[] { new[] { Run.Gray("Making"), Run.Black("room") } }, "Starting…");
+            try
+            {
+                await engine.RestartForRoomAsync();
+                await WaitForRoomRestartAsync();
+            }
+            catch (Exception ex)
+            {
+                EndWork();
+                ShowRoomRestartStopped(Describe(ex));
+            }
+        }
+
+        async Task CancelRoomRestartAsync()
+        {
+            BeginWork(new[] { new[] { Run.Gray("Putting"), Run.Black("settings back") } }, "Starting…");
+            try
+            {
+                await engine.RestoreRoomSettingsAsync();
+                roomLetter = null;
+                await ReloadAsync();
+                EndWork();
+                ShowChoose();
+            }
+            catch (Exception ex)
+            {
+                EndWork();
+                ShowRoomRestartStopped(Describe(ex));
             }
         }
 

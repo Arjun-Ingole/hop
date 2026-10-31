@@ -226,6 +226,9 @@ namespace Hop
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             base.OnFormClosing(e);
+            // hop asked for this restart. Refusing would have Windows say hop is preventing it,
+            // and Make room carries on afterwards, so nothing goes back yet.
+            if (e.CloseReason == CloseReason.WindowsShutDown && engine != null && engine.RoomRestarting) return;
             if (!busy)
             {
                 if (roomMade) try { engine.RestoreRoomSettings(); } catch { }

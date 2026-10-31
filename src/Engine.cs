@@ -190,6 +190,7 @@ namespace Hop
         public int Stage => Convert.ToInt32(Sync["Stage"]);
         public long Bytes => Convert.ToInt64(Sync["Bytes"] ?? 0L);
         public long TotalBytes => Convert.ToInt64(Sync["TotalBytes"] ?? 0L);
+        public bool RoomRestarting => Sync["RoomRestarting"] is bool restarting && restarting;
 
         Collection Invoke(string command, IDictionary parameters = null)
         {
@@ -349,6 +350,8 @@ namespace Hop
         /// <summary>True when the PC is restarting; another drive may not need that.</summary>
         public async Task<bool> StartMakeRoomAsync(string letter) =>
             (await InvokeAsync("Start-MakeRoom", new Hashtable { ["Drive"] = letter ?? "" })).Single.ToString() == "restarting";
+
+        public Task RestartForRoomAsync() => InvokeAsync("Request-RoomRestart");
 
         public Task CompleteMakeRoomAsync() => InvokeAsync("Complete-MakeRoom");
 
