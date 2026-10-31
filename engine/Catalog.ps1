@@ -103,7 +103,12 @@ function Get-Catalog {
         New-Entry 'pop' 'Pop!_OS' 'Gaming' 'pop-os.org' '#48B9C7' 'pop' @{
             Kind = 'pop'; Version = '24.04'; Strategy = 'prepared'; Mode = 'Custom (Advanced)'; SecureBootOff = $true }
         New-Entry 'zorin' 'Zorin OS' 'Windows-like' 'the Zorin OS mirror at kernel.org' '#15A6F0' 'zorin' @{
-            Kind = 'zorin'; Alongside = 'Install Zorin OS alongside Windows Boot Manager'; Manual = 'Something else' }
+            Kind = 'zorin'; Alongside = 'Install Zorin OS alongside Windows Boot Manager'; Manual = 'Something else'
+            FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 3; Steps = @(
+                'Pick your language and keyboard, then start the installer.'
+                'When asked how to install, choose **Erase disk and install Zorin OS**.'
+                'If it lists more than one drive, choose **{DISK}**. Leave any other drive alone.'
+                'Click **Install Now**, check that only **{DISK}** is in the list of changes, then click **Continue**.') } }
         New-Entry 'fedora' 'Fedora Workstation' 'Up to date' 'fedoraproject.org' '#51A2DA' 'fedora' ((Get-DracutBoot 'boot/grub2') + @{
             Kind = 'fedora'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps })
         New-Entry 'debian' 'Debian' 'Rock solid' 'cdimage.debian.org' '#A80030' 'debian' @{
