@@ -257,6 +257,9 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
     # With Linux staying, the installer's space goes to that drive, if it's next to it: builds
     # before InstallerNextToWindows put it after Linux, where Windows can't reach it.
     $growWindows = if ($InstallerOnly) { $state.InstallerNextToWindows } else { $null -eq $state -or $state.WindowsShrunk -ne $false }
+    # Growing over the installer also takes whatever was left free before it. Another drive that
+    # never gave anything up keeps its size, so that free space stays free for someone to use.
+    if ($owner -and -not $owner.Windows -and $state.WindowsShrunk -eq $false) { $growWindows = $false }
     if ($growWindows -and $owner) {
         try {
             # Looked up again now: numbers can shift once partitions have gone, and offsets can't.

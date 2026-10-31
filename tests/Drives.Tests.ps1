@@ -425,6 +425,11 @@ Describe 'Invoke-Cleanup on another drive' {
         Should -Invoke Add-LinuxDisk -ParameterFilter { $Guid -eq '{disk-4}' } -Times 1
         Should -Invoke Resize-Partition -Times 1
     }
+    It 'leaves a drive that never gave anything up at its size when Linux stays, so free space stays free' {
+        Mock Read-State { [pscustomobject]@{ Partitions = @(); WindowsShrunk = $false; InstallerNextToWindows = $true; DiskGuid = '{disk-4}'; TargetKind = 'volume'; TargetOffset = [int64]1GB; OnWindowsDisk = $false } }
+        Invoke-Cleanup -InstallerOnly
+        Should -Invoke Resize-Partition -Times 0
+    }
     It 'does not remember a disk that was only used on the Windows disk' {
         Mock Read-State { [pscustomobject]@{ Partitions = @(); WindowsShrunk = $true; InstallerNextToWindows = $true; DiskGuid = '{disk-4}'; TargetKind = 'volume'; TargetOffset = [int64]1GB; OnWindowsDisk = $true } }
         Invoke-Cleanup -InstallerOnly
