@@ -49,8 +49,10 @@ function Get-ReturnedHelp {
 }
 
 # What to click in the Linux installer. The app shows Steps as a numbered list
-# and Notes underneath; text between ** is shown in a heavier weight.
-function Get-Steps($Distro, [int]$LinuxGB) {
+# and Notes underneath; text between ** is shown in a heavier weight. $Place is the
+# saved state, which says where Linux is going; without it, that's next to C:.
+function Get-Steps($Distro, [int]$LinuxGB, $Place) {
+    $otherDisk = $Place.OnWindowsDisk -eq $false
     if ($Distro.Strategy -eq 'prepared') {
         $steps = @(
             "Pick your language and keyboard, then choose **$($Distro.Mode)**."
@@ -61,7 +63,9 @@ function Get-Steps($Distro, [int]$LinuxGB) {
     } else {
         $manual = "choose **$($Distro.Manual)**, select the $LinuxGB GB of free space, click **+** and create an ext4 partition mounted at **/**."
         $steps = @('Pick your language and keyboard, then start the installer.')
-        if ($Distro.Alongside) {
+        if ($otherDisk) {
+            $steps += Get-OtherDiskSteps $Distro $LinuxGB "$($Place.DiskName) ($($Place.DiskGB) GB)"
+        } elseif ($Distro.Alongside -and $Place.AlongsideOk -ne $false) {
             $steps += "Choose **$($Distro.Alongside)**. It uses the $LinuxGB GB hop set aside."
             $steps += "If that option is missing, $manual"
         } else {
@@ -70,8 +74,21 @@ function Get-Steps($Distro, [int]$LinuxGB) {
         if ($Distro.ManualExtra) { $steps += $Distro.ManualExtra }
         $steps += "Don't choose **Erase disk**. The installer is running from this drive."
     }
-    [pscustomobject]@{
-        Steps = $steps
-        Notes = @('If the PC starts Windows again or shows a security error, turn off Secure Boot in the BIOS, then open hop and restart again.')
+    $notes = @('If the PC starts Windows again or shows a security error, turn off Secure Boot in the BIOS, then open hop and restart again.')
+    if ($otherDisk) { $notes += 'If it stops at a **grub>** prompt, turn off **Fast Boot** in the BIOS, because it can hide a second drive. Hold the power button to get back to Windows.' }
+    [pscustomobject]@{ Steps = $steps; Notes = $notes }
+}
+
+# The easy "alongside" option takes the largest free space on any disk and is often missing on
+# a second one, so these go straight to the manual screen and name the disk. Ubuntu's asks where
+# its boot loader goes, and only makes a partition for it in free space that's still there. So
+# that comes first. Linux Mint's has no real choice: it always uses the first EFI partition.
+function Get-OtherDiskSteps($Distro, [int]$LinuxGB, [string]$Disk) {
+    $bootLoader = if ($Distro.Manual -eq 'Something else') {
+        " Leave **Device for boot loader installation** as it is: this installer puts its startup files on the first EFI partition it finds, usually Windows'."
+    } elseif (-not $Distro.ManualExtra) {
+        " If there's a **Device for boot loader installation** list, choose **$Disk** there first."
     }
+    "When asked how to install, choose **$($Distro.Manual)**.$bootLoader"
+    "Select the $LinuxGB GB of free space on **$Disk**, click **+** and create an ext4 partition mounted at **/**."
 }

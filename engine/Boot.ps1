@@ -70,8 +70,10 @@ function Get-OtherInstallers {
 # Puts the installer in the startup menu. Many firmwares (MSI's included) only start
 # files from the EFI system partition, and some delete entries that point anywhere
 # else, so the installer's signed boot loader is copied to \EFI\hop there. The config
-# built into Ubuntu's signed GRUB finds the installer partition by its /.disk/info file;
-# grub.cfg here is only its last resort. Safe to run again: old hop entries are replaced.
+# built into Ubuntu's signed GRUB finds the installer partition by its /.disk/info file,
+# on any disk the firmware has started; grub.cfg here is only its last resort. So the
+# loader stays on Windows' EFI partition, the one this firmware is known to start, wherever
+# Linux goes. Safe to run again: old hop entries are replaced.
 function Register-Installer([string]$Name) {
     Set-Status 'Adding the installer to the startup menu...'
     $installer = Get-HopPartitions | Where-Object { $_.Label -in $InstallerLabels } | Select-Object -First 1
