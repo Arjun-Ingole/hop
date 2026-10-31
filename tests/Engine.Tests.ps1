@@ -1248,6 +1248,14 @@ Describe 'Engine' {
             ($engine.Log -join "`n") | Should -BeLike '*Stopped:*Get-NoSuchHopCommand*'
         } finally { $engine.Dispose() }
     }
+    It 'keeps a missing value missing, so a sentence can leave it out' {
+        $engine = New-Object Hop.Engine
+        try {
+            $catalog = $engine.GetCatalog()
+            $null -eq ($catalog | Where-Object Id -eq 'mint-cinnamon').Version | Should -BeTrue
+            ($catalog | Where-Object Id -eq 'ubuntu').Version | Should -Be '26.04 LTS'
+        } finally { $engine.Dispose() }
+    }
 }
 
 Describe 'Firmware load option' {
