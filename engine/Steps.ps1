@@ -48,6 +48,16 @@ function Get-ReturnedHelp {
     [pscustomobject]@{ Steps = $steps; Notes = $notes }
 }
 
+# A catalog entry's own Steps are written for the disk Windows is on: some say to use "the existing EFI
+# partition" on the drive with free space, which a second disk hasn't got. None of these systems has
+# been tried on a second disk, so it's refused rather than guessed at. Replacing Windows isn't affected:
+# its installer always goes on Windows' disk.
+function Assert-SystemFitsDrive($Distro, [string]$Target) {
+    if (-not $Distro.Steps -or -not $Target) { return }
+    if ((Resolve-Target $Target).Partition.DiskNumber -eq (Get-WindowsPartition).DiskNumber) { return }
+    throw "hop's steps for $($Distro.Name) are for the disk Windows is on, and it hasn't been tried on a second disk. Choose a drive on that disk, or another system."
+}
+
 # What to click in the Linux installer. The app shows Steps as a numbered list
 # and Notes underneath; text between ** is shown in a heavier weight. $Place is the
 # saved state, which says where Linux is going; without it, that's next to C:.

@@ -147,6 +147,9 @@ function Get-MakeRoomSteps([string]$Drive) {
 
 # Says 'restarting' when the PC is on its way down, or 'done' when another drive didn't need it to be.
 function Start-MakeRoom([string]$Drive) {
+    # An earlier run on another drive saved its settings in the same file. They go back first, so
+    # none are lost and what's saved next is what's really there.
+    if (Read-RoomState) { Restore-RoomSettings }
     $room = Get-RoomDrive $Drive
     $isWindows = $room -eq $env:SystemDrive
     $pagingOff = (Test-EnoughMemoryWithoutPaging) -and ($isWindows -or (Test-PagingFileOn $room))
@@ -166,9 +169,7 @@ function Start-MakeRoom([string]$Drive) {
                 Set-Status 'Turning off the paging file...'
                 Set-PagingOff $room
             }
-            Register-RunAfterRestart
-            Set-Status 'Restarting...'
-            Invoke-Shutdown '/r', '/t', '0'
+            Request-RoomRestart
             return 'restarting'
         }
         Invoke-Defrag $room
@@ -178,6 +179,20 @@ function Start-MakeRoom([string]$Drive) {
     } catch {
         Write-Log "Failed: $($_.Exception.Message)"
         Restore-RoomSettings
+        throw
+    }
+}
+
+# Windows asks every window before it restarts. RoomRestarting tells hop's that this restart is its
+# own, and to let it go. Something else can still stop the restart, so the window can ask again.
+function Request-RoomRestart {
+    $Sync.RoomRestarting = $true
+    try {
+        Register-RunAfterRestart
+        Set-Status 'Restarting...'
+        Invoke-Shutdown '/r', '/t', '0'
+    } catch {
+        $Sync.RoomRestarting = $false
         throw
     }
 }
@@ -194,15 +209,22 @@ function Unregister-RunAfterRestart {
     Remove-ItemProperty -Path $RunOnceKey -Name 'hop' -ErrorAction SilentlyContinue
 }
 
-# After the restart: the paging file has gone, so move what can be moved.
+# After the restart: the paging file has gone, so move what can be moved. Says 'done', or 'failed'
+# when it couldn't, for example because that drive has been unplugged. That can't be allowed to stop
+# hop opening every time from now on, so the settings go back and hop carries on without the room.
 function Complete-MakeRoom {
     Unregister-RunAfterRestart
     $state = Read-RoomState
-    Invoke-Defrag $state.Drive
+    try { Invoke-Defrag $state.Drive } catch {
+        Write-Log "Could not move files on drive $(Get-RoomDrive $state.Drive): $($_.Exception.Message)"
+        Restore-RoomSettings
+        return 'failed'
+    }
     if ($state) {
         $state.Phase = 'ready'
         Save-RoomState $state
     }
+    'done'
 }
 
 # It can run for a very long time. Whatever it moved before the limit still counts.
@@ -234,12 +256,18 @@ function Clear-RestorePoints([string]$Drive) {
 
 # Puts back whatever Make room changed. One failure must not stop the rest.
 function Restore-RoomSettings {
+    $Sync.RoomRestarting = $false
     $state = Read-RoomState
     if (-not $state) { return }
     Unregister-RunAfterRestart
-    if ($state.Hibernation) { try { Set-Hibernation $true } catch { Write-Log "Could not turn hibernation back on: $($_.Exception.Message)" } }
-    if ($state.PagingOff) { try { Restore-Paging $state.Paging } catch { Write-Log "Could not turn the paging file back on: $($_.Exception.Message)" } }
+    $back = @()
+    if ($state.Hibernation) {
+        try { Set-Hibernation $true; if (Test-HibernationOn) { $back += 'hibernation' } } catch { Write-Log "Could not turn hibernation back on: $($_.Exception.Message)" }
+    }
+    if ($state.PagingOff) {
+        try { Restore-Paging $state.Paging; $back += 'the paging file' } catch { Write-Log "Could not turn the paging file back on: $($_.Exception.Message)" }
+    }
     try { New-ChangeJournal $state.Drive } catch { Write-Log "Could not make a new change journal: $($_.Exception.Message)" }
     Remove-Item -LiteralPath $RoomPath -Force -ErrorAction SilentlyContinue
-    Write-Log 'Turned hibernation and the paging file back on.'
+    if ($back.Count) { Write-Log "Turned $($back -join ' and ') back on." }
 }

@@ -35,8 +35,14 @@ function Get-FullDiskBlocker($Distro) {
     # Erasing this disk then wouldn't take the startup files with it, and hop hasn't tried that.
     $esp = try { Get-WindowsEsp } catch { $null }
     if (-not $esp -or $esp.DiskNumber -ne $windows.DiskNumber) { return 'Windows starts from a different disk from the one it is on, so hop can''t tell what erasing it would leave behind. You can still install Linux next to Windows.' }
+    # The name and size are all hop can give the Linux installer's list, which then can't tell these apart.
+    $sameGB = Get-DiskGB $disk
+    $twin = @(Get-Disk | Where-Object { $_.Number -ne $disk.Number -and (Get-DiskLabel $_) -eq (Get-DiskLabel $disk) -and (Get-DiskGB $_) -eq $sameGB })
+    if ($twin.Count) { return "This PC has more than one disk called $(Get-DiskLabel $disk) ($sameGB GB). The Linux installer's list wouldn't show which of them holds Windows, and the wrong one could be erased. Disconnect the other one first, or install Linux next to Windows." }
     Get-FullDiskMemoryBlocker $Distro ([int64]$Distro.FullDisk.IsoGB * 1GB)
 }
+
+function Get-DiskGB($Disk) { [int][math]::Round([int64]$Disk.Size / 1GB) }
 
 # Whether BitLocker is on for a drive. Win32_EncryptableVolume only answers an administrator, which hop is.
 function Test-DriveEncrypted([string]$Letter) {
@@ -69,13 +75,51 @@ function Format-VolumeList($Volumes) {
     @($Volumes | ForEach-Object { if ($_.Name) { "**$($_.What)** ($($_.Name), $($_.SizeGB) GB)" } else { "**$($_.What)** ($($_.SizeGB) GB)" } }) -join ', '
 }
 
+# Folders on an EFI partition holding a Linux boot loader, and not hop's. Makers' own folders, such as
+# \EFI\Dell, have no such file, and aren't systems.
+function Get-EspLoaderFolders([string]$Root) {
+    $keep = @('Microsoft', 'Boot') + @($EspFolders | ForEach-Object { Split-Path $_ -Leaf })
+    foreach ($folder in @(Get-ChildItem -LiteralPath (Join-Path $Root 'EFI') -Directory -Force | Where-Object { $_.Name -notin $keep })) {
+        if (@(Get-ChildItem -LiteralPath $folder.FullName -File -Force | Where-Object { $_.Name -match $LinuxLoaderPattern }).Count) { $folder.Name }
+    }
+}
+
+# Other copies of Windows in the startup menu kept on this partition, as bcdedit lists them. Its field
+# names are translated and its values aren't. Windows' recovery system runs from a ramdisk, and isn't one.
+function Get-OtherWindowsLoaders {
+    foreach ($block in ((Invoke-Bcdedit /enum osloader) -split '(?:\r?\n){2,}')) {
+        if ($block -notmatch '(?i)\\winload\.efi' -or $block -match '\{current\}' -or $block -match '(?i)ramdisk=' -or $block -match $EntryPattern) { continue }
+        $found = [regex]::Match($block, '(?i)partition=([A-Z]:)')
+        if ($found.Success) { "Windows on drive $($found.Groups[1].Value)" } else { 'another copy of Windows' }
+    }
+}
+
+# What else starts from Windows' EFI partition, which goes with this disk. Linux Mint's installer puts
+# its files there whichever disk Linux is on, and a second Windows can share it. Throws if it can't tell.
+function Get-SystemsOnWindowsEsp {
+    $esp = Get-WindowsEsp
+    $entries = @(Get-BootEntries | Where-Object { $_.PartitionGuid -eq $esp.Guid -and $_.Path -and $_.Description -notmatch $EntryPattern })
+    $folders = @(Use-Esp { param($root) Get-EspLoaderFolders $root })
+    $linux = foreach ($folder in $folders) {
+        $entry = $entries | Where-Object { ($_.Path -split '\\')[2] -eq $folder } | Select-Object -First 1
+        if ($entry.Description) { $entry.Description } else { $folder }
+    }
+    @(@($linux) + @(Get-OtherWindowsLoaders) | Where-Object { $_ } | Select-Object -Unique)
+}
+
 # Everything the warning has to say, read fresh, and why not if it can't be done. $Target is the
 # drive chosen so far: the installer goes there if it's on Windows' disk, otherwise next to C:.
 function Get-FullDiskPlan([string]$DistroId, [string]$Target) {
     $distro = Get-Distro $DistroId ''
     $blocker = Get-FullDiskBlocker $distro
-    $plan = [pscustomobject]@{ Blocker = $blocker; Target = $null; DiskName = ''; DiskGB = 0; Points = @() }
+    $plan = [pscustomobject]@{ Blocker = $blocker; Target = $null; DiskName = ''; DiskGB = 0; Points = @(); StopsStarting = @() }
     if ($blocker) { return $plan }
+    # Better to refuse than to promise other systems are safe without having looked.
+    try { $plan.StopsStarting = @(Get-SystemsOnWindowsEsp) } catch {
+        Write-Log "Could not read what starts from the EFI partition: $($_.Exception.Message)"
+        $plan.Blocker = "hop couldn't read what starts from this disk's EFI partition, so it can't say what erasing the disk would stop. You can still install Linux next to Windows."
+        return $plan
+    }
 
     $windows = Get-WindowsPartition
     $disk = Get-Disk -Number $windows.DiskNumber
@@ -84,15 +128,17 @@ function Get-FullDiskPlan([string]$DistroId, [string]$Target) {
     if (-not $place -or $place.IsWindows -or $place.Partition.DiskNumber -ne $windows.DiskNumber) { $Target = '' }
     $plan.Target = Get-DriveSpace $Target
     $plan.DiskName = Get-DiskLabel $disk
-    $plan.DiskGB = [int][math]::Round([int64]$disk.Size / 1GB)
+    $plan.DiskGB = Get-DiskGB $disk
 
-    $others = @(Get-Disk | Where-Object { $_.Number -ne $disk.Number } | ForEach-Object { "**$(Get-DiskLabel $_)** ($([int][math]::Round([int64]$_.Size / 1GB)) GB)" })
+    $others = @(Get-Disk | Where-Object { $_.Number -ne $disk.Number } | ForEach-Object { "**$(Get-DiskLabel $_)** ($(Get-DiskGB $_) GB)" })
+    $stops = @($plan.StopsStarting | ForEach-Object { "**$_**" }) -join ', '
     $plan.Points = @(
         "**These go too:** $(Format-VolumeList @(Get-VolumesOnDisk $disk.Number))."
+        $(if ($stops) { "**These stop starting:** $stops. They start from the EFI partition on this disk, which goes too. Whatever of theirs is on another disk stays, but won't start until it's repaired." })
         "**Back up what you want to keep first.** A BitLocker recovery key won't help afterwards: an erased drive has nothing left to unlock."
-        $(if ($others.Count) { "**Other disks stay as they are:** $($others -join ', ')." } else { "This PC has no other disk, so nothing else is left to keep a copy on." })
+        $(if ($others.Count) { "**$(if ($stops) { 'What''s stored on other disks stays' } else { 'Other disks stay as they are' }):** $($others -join ', ')." } else { "This PC has no other disk, so nothing else is left to keep a copy on." })
         "**Nothing is erased yet.** hop only makes the installer. The Linux installer erases the disk when you choose that there, after the PC restarts. Undo works until then."
-    )
+    ) | Where-Object { $_ }
     $plan
 }
 

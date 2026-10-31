@@ -85,6 +85,9 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] Cancel during the download, then install again: it resumes
 - [ ] Disconnect the network during the download: the error says what to do
 - [ ] Close the window during the download, then reopen
+- [ ] After Make room, close the window during the download: hibernation and the paging file are back on straight away
+- [ ] Make room on C:, with another app blocking the restart: hop isn't listed as blocking it, Cancel leaves a "didn't restart" screen after a minute, and both of its buttons work
+- [ ] Make room on a second drive with its own paging file, and unplug that drive during the restart: hop opens, with the settings back
 - [ ] Turn the VM off during the copy, then reopen: "didn't finish", and Clean up restores everything
 - [ ] Fill C: until there isn't room: the window says how much to free
 - [ ] Pick an ISO that isn't Ubuntu-based, and one with a file over 4 GB: both refused before the disk changes
@@ -104,6 +107,9 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] Swap the disks' SATA ports after preparing: the setup is still recognised
 - [ ] A locked BitLocker data drive: refused, with how to unlock it
 - [ ] Undo with each: the space goes back to the right drive
+- [ ] Debian, CachyOS, Arch, Fedora or Ultramarine with a second disk chosen: refused before anything changes, with the reason
+- [ ] Make room on C:, then on D:: C:'s hibernation and paging file are back on before D: starts
+- [ ] Two Windows Boot Manager entries, each with its own EFI partition: `\EFI\hop` and the startup entry are on the same one, the one this Windows started from
 
 **Replacing Windows** (a VM you can lose, with a snapshot)
 
@@ -114,17 +120,23 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] Click **Undo changes** on the ready screen: everything is back
 - [ ] Restart, then turn the VM off in the installer without erasing: Windows starts, hop says it didn't start, and Undo works
 - [ ] A locked BitLocker data drive on the same disk is listed as going too
+- [ ] Two identical disks: refused, in plain words
+- [ ] Linux Mint on a second disk, with its loader on Windows' EFI partition: named as stopping on the warning and on the ERASE screen. The same for a second Windows
 
 **Undo**
 
 - [ ] Undo before installing Linux: C: gets all its space back, and no startup entry or `\EFI\hop` remains
 - [ ] Fast Startup is back on after undo, if it was on before
+- [ ] Undo straight after installing, without reopening hop: the result names the drive and how much it grew
+- [ ] Undo with the drive that gave up the space unplugged: it finishes, and says the space stays free
+- [ ] A drive of your own named HOPINSTALL or LINUXBOOT with files on it, and no setup: hop doesn't offer to clean it up
 - [ ] After installing Linux: reopen hop, it says installed, and removing the installer leaves Linux working and grows C:
 
 **Another Linux**
 
 - [ ] Another Linux on the drive is offered for removal, and goes
 - [ ] A locked BitLocker data partition with no letter is **not** offered for removal
+- [ ] Pond on the Windows disk and Mint on a second disk, sharing Windows' EFI partition: removing Pond leaves Mint starting, and the screen names Pond, or says what it left
 
 **Upgrades**
 

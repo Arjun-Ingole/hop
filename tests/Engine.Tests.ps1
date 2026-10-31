@@ -291,6 +291,56 @@ A volume shrink analysis was initiated on volume Windows (C:).
         Should -Invoke Set-PagingOff -Times 1
         Should -Invoke Invoke-Shutdown -Times 1
     }
+    It 'says the restart is its own before asking Windows for it, so the window lets it through' {
+        $Sync.RoomRestarting = $false
+        Mock Invoke-Shutdown { $Sync.RoomRestarting | Should -BeTrue }
+        Start-MakeRoom
+        Should -Invoke Invoke-Shutdown -Times 1
+    }
+    It 'stops saying so when the restart could not be asked for' {
+        Mock Invoke-Shutdown { throw 'no' }
+        { Start-MakeRoom } | Should -Throw 'no'
+        $Sync.RoomRestarting | Should -BeFalse
+    }
+    It 'can ask again after a restart was cancelled, with its settings still saved' {
+        Start-MakeRoom
+        Request-RoomRestart
+        Should -Invoke Invoke-Shutdown -Times 2
+        Should -Invoke Set-Hibernation -ParameterFilter { $On } -Times 0
+        Get-RoomPhase | Should -Be 'continue'
+    }
+    It 'stops saying so once its settings have gone back' {
+        Start-MakeRoom
+        Restore-RoomSettings
+        $Sync.RoomRestarting | Should -BeFalse
+    }
+    It 'puts an earlier run on C: back before starting on another drive' {
+        Mock Get-PagingSettings { @('?:\pagefile.sys') }
+        Start-MakeRoom
+        Start-MakeRoom 'Y' | Should -Be 'done'
+        Should -Invoke Set-Hibernation -ParameterFilter { $On } -Times 1
+        Should -Invoke Restore-Paging -ParameterFilter { ($Saved -join '|') -eq '?:\pagefile.sys' } -Times 1
+        $state = Read-RoomState
+        $state.Drive | Should -Be 'Y:'
+        $state.Hibernation | Should -BeFalse
+        $state.PagingOff | Should -BeFalse
+    }
+    It 'only says it turned back on what it did' {
+        $script:logged = @()
+        Mock Write-Log { $script:logged += $Message }
+        Mock Test-HibernationOn { $false }
+        Start-MakeRoom
+        Restore-RoomSettings
+        ($script:logged -join ' ') | Should -BeLike '*Turned the paging file back on.*'
+        ($script:logged -join ' ') | Should -Not -BeLike '*hibernation back on*'
+    }
+    It 'says nothing was turned back on when another drive changed neither' {
+        $script:logged = @()
+        Mock Write-Log { $script:logged += $Message }
+        Start-MakeRoom 'Y'
+        Restore-RoomSettings
+        ($script:logged -join ' ') | Should -Not -BeLike '*back on*'
+    }
     It 'only takes paging off the system drive' {
         $files = Get-PagingWithoutSystemDrive @("$env:SystemDrive\pagefile.sys 0 0", 'Z:\pagefile.sys 0 0', '?:\pagefile.sys')
         $files | Should -Be @('Z:\pagefile.sys 0 0')
@@ -319,6 +369,19 @@ A volume shrink analysis was initiated on volume Windows (C:).
         Complete-MakeRoom
         Should -Invoke Invoke-Defrag -Times 1
         (Read-RoomState).Phase | Should -Be 'ready'
+    }
+    It 'puts everything back and lets hop open when the drive has gone by the restart' {
+        Start-MakeRoom
+        Mock Invoke-Defrag { throw 'No MSFT_Partition objects found with property DriveLetter equal to E.' }
+        Complete-MakeRoom | Should -Be 'failed'
+        Should -Invoke Set-Hibernation -ParameterFilter { $On } -Times 1
+        Should -Invoke Restore-Paging -Times 1
+        Test-Path $RoomPath | Should -BeFalse
+        Get-RoomPhase | Should -BeNullOrEmpty
+    }
+    It 'says so when it finished' {
+        Start-MakeRoom
+        Complete-MakeRoom | Should -Be 'done'
     }
     It 'restores if the restart never happened' {
         Start-MakeRoom
@@ -612,6 +675,15 @@ Describe 'Read-Iso' {
     }
 }
 
+Describe 'The window''s figure for the installer' {
+    It 'matches Read-Iso for an ISO of <gb> GB' -ForEach @(
+        @{ gb = 1; expected = 4 }, @{ gb = 3.5; expected = 4 }, @{ gb = 6; expected = 7 }, @{ gb = 6.5; expected = 7 }, @{ gb = 12; expected = 13 }
+    ) {
+        [Hop.Engine]::InstallerGBFor([int64]($gb * 1GB)) | Should -Be $expected
+        [int][math]::Max([double]4, [math]::Ceiling(([int64]($gb * 1GB) + 512MB) / 1GB)) | Should -Be $expected
+    }
+}
+
 Describe 'Get-StateDistro' {
     It 'finds the system an install was for' {
         (Get-StateDistro ([pscustomobject]@{ DistroId = 'fedora'; Distro = 'Fedora Workstation' })).GrubDir | Should -Be 'boot/grub2'
@@ -721,6 +793,18 @@ Describe 'Get-StartupInfo' {
         Mock Get-InstallStatus { 'leftover' }
         (Get-StartupInfo).Status | Should -Be 'leftover'
     }
+    It 'says which drive a setup took its space from, for Undo to report on' {
+        Mock Get-InstallStatus { 'ready' }
+        Mock Get-StateDisk { 0 }
+        Mock Read-State { [pscustomobject]@{ TargetOffset = [int64]1GB; TargetLetter = 'D' } }
+        (Get-StartupInfo).StateLetter | Should -Be 'D'
+    }
+    It 'takes a setup from before that was recorded to mean C:' {
+        Mock Get-InstallStatus { 'ready' }
+        Mock Get-StateDisk { 0 }
+        Mock Read-State { [pscustomobject]@{ Copied = $true } }
+        (Get-StartupInfo).StateLetter | Should -Be $env:SystemDrive.TrimEnd(':')
+    }
 }
 
 Describe 'Get-WindowsEsp' {
@@ -735,7 +819,23 @@ Describe 'Get-WindowsEsp' {
     It 'finds the one Windows starts from, even on another disk' {
         (Get-WindowsEsp).Guid | Should -Be '{first}'
     }
+    It 'takes the one Use-Esp opens over the lowest Windows Boot Manager entry, when there are two' {
+        Mock Get-BootEntries {
+            [pscustomobject]@{ Number = 0; Path = '\EFI\Microsoft\Boot\bootmgfw.efi'; PartitionGuid = '{other}' }
+            [pscustomobject]@{ Number = 1; Path = '\EFI\Microsoft\Boot\bootmgfw.efi'; PartitionGuid = '{first}' }
+        }
+        (Get-WindowsEsp).Guid | Should -Be '{first}'
+    }
+    It 'goes by the startup entry when Windows does not say which it started from' {
+        Mock Get-Partition {
+            [pscustomobject]@{ Guid = '{other}'; DiskNumber = 1; GptType = $EspType; IsSystem = $false }
+            [pscustomobject]@{ Guid = '{first}'; DiskNumber = 0; GptType = $EspType; IsSystem = $false }
+        }
+        Mock Get-BootEntries { [pscustomobject]@{ Number = 0; Path = '\EFI\Microsoft\Boot\bootmgfw.efi'; PartitionGuid = '{first}' } }
+        (Get-WindowsEsp).Guid | Should -Be '{first}'
+    }
     It 'falls back to the Windows disk' {
+        Mock Get-BootEntries { }
         Mock Get-Partition { [pscustomobject]@{ Guid = '{other}'; DiskNumber = 1; GptType = $EspType; IsSystem = $false } }
         (Get-WindowsEsp).Guid | Should -Be '{other}'
     }
@@ -786,6 +886,142 @@ Describe 'Invoke-Cleanup' {
         Mock Test-LinuxInstalled { $true }
         Invoke-Cleanup
         $script:removed | Should -Be @([int64]160GB)
+    }
+    Context 'when the space cannot go back' {
+        BeforeEach {
+            Mock Test-LinuxInstalled { $false }
+            Mock Read-State { [pscustomobject]@{ Partitions = @(); WindowsShrunk = $true; FastStartupWasOn = $true; BitLockerPaused = $true } }
+            Mock Restore-FastStartup { }
+            Mock Resume-BitLockerAfterUndo { }
+            Mock Remove-Item { }
+            Mock Test-Path { $true } -ParameterFilter { $Path -eq $StatePath }
+            Mock Get-PartitionSupportedSize { [pscustomobject]@{ SizeMax = [int64]160GB } }
+        }
+        It 'finishes the rest and reports it when the resize fails' {
+            Mock Resize-Partition { throw 'Size Not Supported' }
+            { Invoke-Cleanup } | Should -Not -Throw
+            Should -Invoke Restore-FastStartup -Times 1
+            Should -Invoke Resume-BitLockerAfterUndo -Times 1
+            Should -Invoke Remove-Item -ParameterFilter { $LiteralPath -eq $StatePath } -Times 1
+            $Sync.SpaceNote | Should -BeLike '*stays free*'
+        }
+        It 'finishes the rest and reports it when the drive has gone' {
+            Mock Read-State { [pscustomobject]@{ Partitions = @(); WindowsShrunk = $true; FastStartupWasOn = $true; BitLockerPaused = $false; DiskGuid = '{disk-4}'; TargetKind = 'volume'; TargetOffset = [int64]1GB; OnWindowsDisk = $false } }
+            Mock Get-StateDisk { 4 }
+            Mock Get-PartitionAt { $null }
+            Mock Resize-Partition { }
+            { Invoke-Cleanup } | Should -Not -Throw
+            Should -Invoke Resize-Partition -Times 0
+            Should -Invoke Restore-FastStartup -Times 1
+            Should -Invoke Remove-Item -ParameterFilter { $LiteralPath -eq $StatePath } -Times 1
+            $Sync.SpaceNote | Should -BeLike '*stays free*'
+        }
+        It 'still forgets the setup when a setting cannot go back' {
+            Mock Get-PartitionSupportedSize { [pscustomobject]@{ SizeMax = [int64]100GB } }
+            Mock Restore-FastStartup { throw 'no' }
+            { Invoke-Cleanup } | Should -Not -Throw
+            Should -Invoke Resume-BitLockerAfterUndo -Times 1
+            Should -Invoke Remove-Item -ParameterFilter { $LiteralPath -eq $StatePath } -Times 1
+        }
+        It 'has nothing to report when the space went back' {
+            Mock Resize-Partition { }
+            Invoke-Cleanup
+            $Sync.SpaceNote | Should -BeNullOrEmpty
+        }
+        It 'still stops when a partition could not be removed, because trying again can help' {
+            Mock Remove-PartitionAt { throw 'in use' }
+            { Invoke-Cleanup } | Should -Throw 'in use'
+            Should -Invoke Remove-Item -Times 0
+        }
+    }
+}
+
+Describe 'Removing one Linux when another shares Windows'' EFI partition' {
+    BeforeAll {
+        $linuxType = '{0fc63daf-8483-4772-8e79-3d69d8477de4}'
+        function New-PondEntry { [pscustomobject]@{ Number = 3; Description = 'Pond'; PartitionGuid = '{esp}'; Path = '\EFI\pond\shimx64.efi' } }
+        function New-MintEntry { [pscustomobject]@{ Number = 4; Description = 'Linux Mint'; PartitionGuid = '{esp}'; Path = '\EFI\ubuntu\shimx64.efi' } }
+    }
+    BeforeEach {
+        $script:esp = Join-Path $TestDrive ([guid]::NewGuid())
+        New-Item -ItemType Directory -Path "$esp\EFI\pond", "$esp\EFI\ubuntu" -Force | Out-Null
+        Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } }
+        Mock Get-WindowsEsp { [pscustomobject]@{ Guid = '{esp}' } }
+        Mock Use-Esp { & $Action $script:esp }
+        Mock Get-LinuxDisks { }
+        Mock Get-Disk {
+            if ($null -ne $Number) { [pscustomobject]@{ Number = $Number[0]; Guid = "{disk-$($Number[0])}" } }
+            else { [pscustomobject]@{ Number = 0; Guid = '{disk-0}' }; [pscustomobject]@{ Number = 1; Guid = '{disk-1}' } }
+        }
+        Mock Get-Partition {
+            if ($DiskNumber -contains 0) {
+                [pscustomobject]@{ Guid = '{esp}'; DiskNumber = 0; GptType = $EspType; Size = [int64]100MB; Offset = [int64]1MB }
+                [pscustomobject]@{ Guid = '{pond}'; DiskNumber = 0; GptType = $linuxType; Size = [int64]40GB; Offset = [int64]200GB }
+            } else {
+                [pscustomobject]@{ Guid = '{mint}'; DiskNumber = 1; GptType = $linuxType; Size = [int64]60GB; Offset = [int64]1GB }
+            }
+        }
+        Mock Get-FileSystemUuid { if ($Partition.Guid -eq '{pond}') { '11111111-1111-1111-1111-111111111111' } else { '22222222-2222-2222-2222-222222222222' } }
+        Mock Get-BootEntries {
+            [pscustomobject]@{ Number = 0; Description = 'Windows Boot Manager'; PartitionGuid = '{esp}'; Path = '\EFI\Microsoft\Boot\bootmgfw.efi' }
+            New-MintEntry
+            New-PondEntry
+        }
+    }
+    It 'takes only the loader that names the system being removed, and the right name' {
+        Set-Content "$esp\EFI\pond\grub.cfg" "search.fs_uuid 11111111-1111-1111-1111-111111111111 root hd0,gpt3"
+        Set-Content "$esp\EFI\ubuntu\grub.cfg" "search.fs_uuid 22222222-2222-2222-2222-222222222222 root hd1,gpt1"
+        $found = Find-OtherSystem 0
+        $found.Name | Should -Be 'Pond'
+        @($found.Entries).Number | Should -Be @(3)
+        $found.Kept | Should -Be 'Linux Mint'
+        @($found.Partitions).Guid | Should -Be @('{pond}')
+    }
+    It 'keeps every loader and says so when it cannot tie them to the system' {
+        $found = Find-OtherSystem 0
+        @($found.Entries).Count | Should -Be 0
+        $found.Kept | Should -Be @('Linux Mint', 'Pond')
+        $found.Name | Should -Be 'the other Linux'
+    }
+    It 'keeps them too when the EFI partition cannot be read' {
+        Mock Use-Esp { throw 'blocked' }
+        @((Find-OtherSystem 0).Entries).Count | Should -Be 0
+    }
+    It 'needs nothing from the EFI partition when there is no other Linux they could belong to' {
+        Mock Get-Disk { [pscustomobject]@{ Number = 0; Guid = '{disk-0}' } }
+        Mock Get-BootEntries { New-PondEntry }
+        $found = Find-OtherSystem 0
+        $found.Name | Should -Be 'Pond'
+        @($found.Entries).Number | Should -Be @(3)
+        Should -Invoke Use-Esp -Times 0
+    }
+    It 'keeps them when a disk hop put Linux on is not connected' {
+        Mock Get-Disk { [pscustomobject]@{ Number = 0; Guid = '{disk-0}' } }
+        Mock Get-LinuxDisks { '{disk-gone}' }
+        Mock Get-BootEntries { New-PondEntry }
+        (Find-OtherSystem 0).Kept | Should -Be 'Pond'
+    }
+    It 'leaves kept loaders on the EFI partition and in the startup menu when removing' {
+        Mock Remove-PartitionByGuid { }
+        Mock Set-Status { }
+        Mock Get-OtherSystem { [pscustomobject]@{ Name = 'the other Linux'; Entries = @(); Kept = @('Linux Mint'); WindowsEsp = '{esp}'; OnWindowsDisk = $true; Partitions = @([pscustomobject]@{ Guid = '{pond}'; DiskNumber = 0; Size = [int64]40GB }) } }
+        Remove-OtherSystem
+        Should -Invoke Use-Esp -Times 0
+        Test-Path "$esp\EFI\ubuntu" | Should -BeTrue
+        Should -Invoke Remove-PartitionByGuid -ParameterFilter { $Guid -eq '{pond}' -and $DiskNumber -eq 0 } -Times 1
+    }
+}
+
+Describe 'Remove-PartitionByGuid' {
+    It 'removes it from the disk it was found on, not a clone with the same GUID' {
+        Mock Get-Partition {
+            if ($DiskNumber -contains 1) { [pscustomobject]@{ Guid = '{same}'; DiskNumber = 1; PartitionNumber = 5 } }
+            else { [pscustomobject]@{ Guid = '{same}'; DiskNumber = 0; PartitionNumber = 2 } }
+        }
+        Mock Remove-Partition { }
+        Remove-PartitionByGuid '{same}' 1
+        Should -Invoke Remove-Partition -ParameterFilter { $DiskNumber -contains 1 -and $PartitionNumber -contains 5 } -Times 1
+        Should -Invoke Remove-Partition -Times 1
     }
 }
 
@@ -1151,6 +1387,35 @@ Describe 'Get-Steps' {
     }
 }
 
+Describe 'Assert-SystemFitsDrive' {
+    BeforeEach {
+        Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } }
+        Mock Resolve-Target { [pscustomobject]@{ Partition = [pscustomobject]@{ DiskNumber = 1 } } }
+    }
+    It 'refuses <id> on a second disk, with the reason, and claims nothing it has not seen' -ForEach @(
+        @{ id = 'debian' }, @{ id = 'cachyos' }, @{ id = 'arch' }, @{ id = 'fedora' }, @{ id = 'ultramarine' }
+    ) {
+        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Throw "*for the disk Windows is on*hasn't been tried on a second disk*"
+    }
+    It 'lets them on another drive on the disk Windows is on' {
+        Mock Resolve-Target { [pscustomobject]@{ Partition = [pscustomobject]@{ DiskNumber = 0 } } }
+        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq 'arch') 'volume:{disk-0}:1048576' } | Should -Not -Throw
+    }
+    It 'lets them on C: without looking anything up' {
+        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq 'arch') '' } | Should -Not -Throw
+        Should -Invoke Resolve-Target -Times 0
+    }
+    It 'leaves systems with steps for a second disk alone' {
+        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq 'ubuntu') 'gap:{disk-1}:1048576' } | Should -Not -Throw
+    }
+    It 'tells the window which systems this is' {
+        $engine = New-Object Hop.Engine
+        try {
+            @($engine.GetCatalog() | Where-Object WindowsDiskOnly | ForEach-Object { $_.Id } | Sort-Object) | Should -Be @('arch', 'cachyos', 'debian', 'fedora', 'ultramarine')
+        } finally { $engine.Dispose() }
+    }
+}
+
 Describe 'Remove-PersonalNames' {
     It 'takes out the user and computer names' {
         $text = "C:\Users\$env:USERNAME\Downloads on $env:COMPUTERNAME"
@@ -1187,6 +1452,15 @@ Describe 'DiskProbe' {
     }
     It 'is not fooled by the ext magic number alone' {
         [Hop.DiskProbe]::Identify((New-Head 1080 ([byte[]](0x53, 0xEF)))) | Should -BeNullOrEmpty
+    }
+    It 'reads the ID of the file system GRUB would look for' {
+        $head = New-Head 1080 ([byte[]](0x53, 0xEF))
+        [BitConverter]::GetBytes([uint32]1000).CopyTo($head, 1024)
+        ([byte[]](0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0)).CopyTo($head, 1128)
+        [Hop.DiskProbe]::IdentifyUuid($head) | Should -Be '12345678-9abc-def0-1234-56789abcdef0'
+    }
+    It 'has no ID to give for a partition it does not recognise' {
+        [Hop.DiskProbe]::IdentifyUuid((New-Object byte[] (128KB))) | Should -BeNullOrEmpty
     }
     It 'says nothing about an empty partition' {
         [Hop.DiskProbe]::Identify((New-Object byte[] (128KB))) | Should -BeNullOrEmpty
@@ -1246,6 +1520,22 @@ Describe 'Engine' {
             $invoke = [Hop.Engine].GetMethod('Invoke', [Reflection.BindingFlags]'NonPublic,Instance')
             { $invoke.Invoke($engine, @('Get-NoSuchHopCommand', $null)) } | Should -Throw
             ($engine.Log -join "`n") | Should -BeLike '*Stopped:*Get-NoSuchHopCommand*'
+        } finally { $engine.Dispose() }
+    }
+    It 'tells the window when a restart is hop''s own' {
+        $engine = New-Object Hop.Engine
+        try {
+            $engine.RoomRestarting | Should -BeFalse
+            $engine.Sync['RoomRestarting'] = $true
+            $engine.RoomRestarting | Should -BeTrue
+        } finally { $engine.Dispose() }
+    }
+    It 'keeps a missing value missing, so a sentence can leave it out' {
+        $engine = New-Object Hop.Engine
+        try {
+            $catalog = $engine.GetCatalog()
+            $null -eq ($catalog | Where-Object Id -eq 'mint-cinnamon').Version | Should -BeTrue
+            ($catalog | Where-Object Id -eq 'ubuntu').Version | Should -Be '26.04 LTS'
         } finally { $engine.Dispose() }
     }
 }

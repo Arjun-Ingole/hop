@@ -20,6 +20,7 @@ namespace Hop
     {
         const int DesignWidth = 880, DesignHeight = 560, Gutter = 56, TitleHeight = 44;
         const int MinLinuxGB = 25, InstallerGB = 8, IsoDownloadGB = 8;
+        const int RestoreBeforeExitMilliseconds = 15000;
 
         static readonly string[] StageVerbs =
         {
@@ -223,9 +224,30 @@ namespace Hop
 
         // --- Closing -------------------------------------------------------------------------
 
+        /// <summary>
+        /// The install holds the engine until it stops, so that comes first. A stop that hangs can't
+        /// keep hop open: Make room's settings then go back the next time hop opens.
+        /// </summary>
+        void RestoreRoomBeforeExit()
+        {
+            if (!roomMade) return;
+            try
+            {
+                Task.Run(() =>
+                {
+                    engine.StopAndWait();
+                    engine.RestoreRoomSettings();
+                }).Wait(RestoreBeforeExitMilliseconds);
+            }
+            catch (Exception) { }
+        }
+
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             base.OnFormClosing(e);
+            // hop asked for this restart. Refusing would have Windows say hop is preventing it,
+            // and Make room carries on afterwards, so nothing goes back yet.
+            if (e.CloseReason == CloseReason.WindowsShutDown && engine != null && engine.RoomRestarting) return;
             if (!busy)
             {
                 if (roomMade) try { engine.RestoreRoomSettings(); } catch { }
@@ -234,6 +256,7 @@ namespace Hop
             if (installing && engine.TryCancel())
             {
                 StopDownload();
+                RestoreRoomBeforeExit();
                 Environment.Exit(0);
             }
             e.Cancel = true;

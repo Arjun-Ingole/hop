@@ -25,8 +25,8 @@ namespace Hop
                 startup = await engine.GetStartupInfoAsync();
                 if (startup.RoomPhase == "continue")
                 {
-                    await engine.CompleteMakeRoomAsync();
-                    roomLetter = string.IsNullOrEmpty(startup.RoomLetter) ? WindowsLetter : startup.RoomLetter;
+                    if (await engine.CompleteMakeRoomAsync())
+                        roomLetter = string.IsNullOrEmpty(startup.RoomLetter) ? WindowsLetter : startup.RoomLetter;
                     startup = await engine.GetStartupInfoAsync();
                 }
                 else if (startup.RoomPhase == "restore")
@@ -71,9 +71,11 @@ namespace Hop
 
         void ShowLeftover()
         {
-            string text = "It left partitions or a startup entry on this PC. Clean them up to start fresh. Windows and your files stay.";
-            if (startup.StateDiskMissing) text = "It was using a drive that isn't connected now. If you unplugged it, plug it back in and open hop again. Otherwise, clean up to start fresh. Windows and your files stay.";
-            Arrange(new[] { new[] { Run.Gray("An earlier attempt"), Run.Black("didn't finish.") } }, text, Secondary, null, 0);
+            string text = "Clean up deletes these, and everything on them, to start fresh. Windows and your other files stay.";
+            if (startup.StateDiskMissing) text = "It was using a drive that isn't connected now. If you unplugged it, plug it back in and open hop again. Otherwise, clean up deletes these to start fresh.";
+            var items = startup.Leftovers ?? new string[0];
+            if (items.Length > 0) steps.Set(items, null);
+            Arrange(new[] { new[] { Run.Gray("An earlier attempt"), Run.Black("didn't finish.") } }, text, Secondary, items.Length > 0 ? steps : null, 24);
             Footer(null, null, "Clean up", () => _ = CleanupAsync(false, afterwards: null));
         }
 
@@ -84,17 +86,28 @@ namespace Hop
             try
             {
                 await engine.CleanupAsync(installerOnly);
-                await ReloadAsync();
-                EndWork();
-                if (afterwards != null) afterwards();
-                else ShowChoose();
             }
             catch (Exception ex)
             {
                 EndWork();
                 Arrange(new[] { new[] { Run.Gray("Couldn't clean up"), Run.Black("everything") } }, Describe(ex), Danger, null, 0);
-                Footer(null, null, "Try again", () => _ = CleanupAsync(installerOnly, afterwards));
+                Footer("Copy a bug report", () => _ = CopyReportAsync(), "Try again", () => _ = CleanupAsync(installerOnly, afterwards));
+                return;
             }
+            // It's done now, so a problem from here on, such as what stops a new install, isn't one to retry.
+            try
+            {
+                await ReloadAsync();
+            }
+            catch (Exception ex)
+            {
+                EndWork();
+                ShowBlocked("hop's changes are removed. " + Describe(ex));
+                return;
+            }
+            EndWork();
+            if (afterwards != null) afterwards();
+            else ShowChoose();
         }
     }
 }

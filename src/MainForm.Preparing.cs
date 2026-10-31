@@ -62,6 +62,13 @@ namespace Hop
             {
                 var download = DownloadSpot;
                 await engine.InstallAsync(selected?.Id ?? "custom", isoPath, linuxGB, target.Id, download == null || download.IsDefault ? "" : download.Letter, fullDisk);
+                // What hop knows is from before the install, and Undo has to say what it changed.
+                try
+                {
+                    startup = await engine.GetStartupInfoAsync();
+                    target = startup.Drives.FirstOrDefault(d => d.Id == target.Id) ?? WindowsDrive;
+                }
+                catch (Exception) { }
                 poll.Stop();
                 busy = installing = false;
                 prepared = system;
@@ -156,7 +163,7 @@ namespace Hop
                 new[] { Run.Red("Something went wrong.") },
             }, message, Secondary, log, 40);
             // The engine undoes its own changes after a failure; if something is still left, offer to clean up.
-            if (changed) Footer("Copy a bug report", () => _ = CopyReportAsync(), "Clean up", () => _ = CleanupAsync(false, afterwards: null));
+            if (changed) Footer("Copy a bug report", () => _ = CopyReportAsync(), "Clean up", ShowLeftover);
             else Footer("Copy a bug report", () => _ = CopyReportAsync(), "Try again", ShowChoose);
         }
     }

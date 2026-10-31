@@ -300,8 +300,41 @@ Describe 'Get-HopPartitions on any disk' {
         Mock Get-Disk { New-TestDisk -Number 0; New-TestDisk -Number 1; New-TestDisk -Number 2 -Bus 'USB' }
         Mock Get-Partition {
             $number = [int]@($DiskNumber)[0]
-            [pscustomobject]@{ DiskNumber = $number; Offset = [int64]100GB * ($number + 1); DriveLetter = 'H' }
+            [pscustomobject]@{ DiskNumber = $number; Offset = [int64]100GB * ($number + 1); Size = [int64]8GB; DriveLetter = 'H' }
         }
+        Mock Read-State { }
+        Mock Get-VolumeEntries { @() }
+    }
+    It 'does not take someone''s own drive for hop''s because of its name' {
+        Mock Get-Volume { [pscustomobject]@{ FileSystemLabel = 'LINUXBOOT'; FileSystemType = 'FAT32' } }
+        Mock Get-VolumeEntries { 'Photos', 'taxes.xlsx' }
+        @(Get-HopPartitions).Count | Should -Be 0
+    }
+    It 'does not take a drive named for the installer with no boot loader on it' {
+        Mock Get-Volume { [pscustomobject]@{ FileSystemLabel = 'HOPINSTALL'; FileSystemType = 'FAT32' } }
+        Mock Get-VolumeEntries { 'Photos' }
+        @(Get-HopPartitions).Count | Should -Be 0
+    }
+    It 'knows the installer by its boot loader with no state file' {
+        Mock Get-Volume { [pscustomobject]@{ FileSystemLabel = 'HOPINSTALL'; FileSystemType = 'FAT32' } }
+        Mock Get-VolumeEntries { 'casper', 'EFI', 'boot' }
+        @(Get-HopPartitions).Partition.DiskNumber | Should -Be @(0, 1)
+    }
+    It 'counts a drive with only what Windows puts on every drive as empty' {
+        Mock Get-Volume { [pscustomobject]@{ FileSystemLabel = 'LINUXROOT'; FileSystemType = 'exFAT' } }
+        Mock Get-VolumeEntries { 'System Volume Information', '$RECYCLE.BIN' }
+        @(Get-HopPartitions).Partition.DiskNumber | Should -Be @(0, 1)
+    }
+    It 'does not take a drive it cannot look inside' {
+        Mock Get-Volume { [pscustomobject]@{ FileSystemLabel = 'LINUXBOOT'; FileSystemType = 'FAT32' } }
+        Mock Get-VolumeEntries { throw 'denied' }
+        @(Get-HopPartitions).Count | Should -Be 0
+    }
+    It 'trusts its own record of a partition, whatever is on it now' {
+        Mock Get-Volume { [pscustomobject]@{ FileSystemLabel = 'HOPINSTALL'; FileSystemType = 'FAT32' } }
+        Mock Get-VolumeEntries { 'half-copied' }
+        Mock Read-State { [pscustomobject]@{ Partitions = @([pscustomobject]@{ Role = 'installer'; Offset = [int64]200GB; Size = [int64]8GB }) } }
+        @(Get-HopPartitions).Partition.DiskNumber | Should -Be @(1)
     }
     It 'finds hop''s partitions on a second disk' {
         Mock Get-Volume { [pscustomobject]@{ FileSystemLabel = 'HOPINSTALL'; FileSystemType = 'FAT32'; DriveLetter = 'H' } }
@@ -318,6 +351,62 @@ Describe 'Get-HopPartitions on any disk' {
     It 'expects exFAT for the Linux placeholder' {
         Mock Get-Volume { [pscustomobject]@{ FileSystemLabel = 'LINUXROOT'; FileSystemType = 'exFAT' } }
         @(Get-HopPartitions).Partition.DiskNumber | Should -Be @(0, 1)
+    }
+}
+
+Describe 'Remembering what a drive really has' {
+    BeforeAll {
+        function New-Row([string]$Id, [int]$UsableGB, [bool]$Estimated) {
+            $row = New-Object Hop.DriveChoice
+            $row.Id = $Id; $row.UsableGB = $UsableGB; $row.Estimated = $Estimated
+            $row
+        }
+    }
+    It 'replaces the estimate, so two stuck drives stop suggesting each other' {
+        $drives = New-Object 'Collections.Generic.List[Hop.DriveChoice]'
+        $drives.Add((New-Row 'a' 300 $true))
+        $drives.Add((New-Row 'b' 200 $true))
+        [Hop.DriveChoice]::Remember($drives, (New-Row 'a' 5 $false))
+        $drives[0].UsableGB | Should -Be 5
+        $drives[0].Estimated | Should -BeFalse
+        $drives[1].UsableGB | Should -Be 200
+    }
+    It 'adds nothing for a drive no longer listed' {
+        $drives = New-Object 'Collections.Generic.List[Hop.DriveChoice]'
+        $drives.Add((New-Row 'a' 300 $true))
+        [Hop.DriveChoice]::Remember($drives, (New-Row 'gone' 5 $false))
+        $drives.Count | Should -Be 1
+    }
+}
+
+Describe 'Get-LeftoverList' {
+    BeforeEach {
+        Mock Read-State { }
+        Mock Get-Disk { New-TestDisk -Number 0 }
+        Mock Get-RecordedPartitions { }
+        Mock Get-FirmwareEntries { }
+        Mock Get-BcdEntries { }
+    }
+    It 'says what would be deleted, with its size and drive' {
+        Mock Get-HopPartitions {
+            [pscustomobject]@{ Label = 'HOPINSTALL'; Partition = New-TestPartition -Letter 'H' -Disk 0 -Size ([int64]8GB) }
+            [pscustomobject]@{ Label = 'LINUXROOT'; Partition = New-TestPartition -Letter '' -Disk 0 -Size ([int64]59GB) }
+        }
+        $list = @(Get-LeftoverList)
+        $list[0] | Should -BeLike '`*`*HOPINSTALL`*`*, 8 GB, drive H:, on *'
+        $list[1] | Should -BeLike '`*`*LINUXROOT`*`*, 59 GB, on *'
+    }
+    It 'lists what has no name yet, and a startup entry' {
+        Mock Get-HopPartitions { }
+        Mock Get-RecordedPartitions { New-TestPartition -Letter '' -Disk 0 -Size ([int64]8GB) }
+        Mock Get-FirmwareEntries { 7 }
+        $list = @(Get-LeftoverList)
+        $list[0] | Should -BeLike '*unfinished partition*8 GB*'
+        $list[1] | Should -BeLike '*startup menu*'
+    }
+    It 'has nothing to list on a clean PC' {
+        Mock Get-HopPartitions { }
+        @(Get-LeftoverList).Count | Should -Be 0
     }
 }
 
