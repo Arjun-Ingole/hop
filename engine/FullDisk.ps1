@@ -35,8 +35,14 @@ function Get-FullDiskBlocker($Distro) {
     # Erasing this disk then wouldn't take the startup files with it, and hop hasn't tried that.
     $esp = try { Get-WindowsEsp } catch { $null }
     if (-not $esp -or $esp.DiskNumber -ne $windows.DiskNumber) { return 'Windows starts from a different disk from the one it is on, so hop can''t tell what erasing it would leave behind. You can still install Linux next to Windows.' }
+    # The name and size are all hop can give the Linux installer's list, which then can't tell these apart.
+    $sameGB = Get-DiskGB $disk
+    $twin = @(Get-Disk | Where-Object { $_.Number -ne $disk.Number -and (Get-DiskLabel $_) -eq (Get-DiskLabel $disk) -and (Get-DiskGB $_) -eq $sameGB })
+    if ($twin.Count) { return "This PC has more than one disk called $(Get-DiskLabel $disk) ($sameGB GB). The Linux installer's list wouldn't show which of them holds Windows, and the wrong one could be erased. Disconnect the other one first, or install Linux next to Windows." }
     Get-FullDiskMemoryBlocker $Distro ([int64]$Distro.FullDisk.IsoGB * 1GB)
 }
+
+function Get-DiskGB($Disk) { [int][math]::Round([int64]$Disk.Size / 1GB) }
 
 # Whether BitLocker is on for a drive. Win32_EncryptableVolume only answers an administrator, which hop is.
 function Test-DriveEncrypted([string]$Letter) {
@@ -84,9 +90,9 @@ function Get-FullDiskPlan([string]$DistroId, [string]$Target) {
     if (-not $place -or $place.IsWindows -or $place.Partition.DiskNumber -ne $windows.DiskNumber) { $Target = '' }
     $plan.Target = Get-DriveSpace $Target
     $plan.DiskName = Get-DiskLabel $disk
-    $plan.DiskGB = [int][math]::Round([int64]$disk.Size / 1GB)
+    $plan.DiskGB = Get-DiskGB $disk
 
-    $others = @(Get-Disk | Where-Object { $_.Number -ne $disk.Number } | ForEach-Object { "**$(Get-DiskLabel $_)** ($([int][math]::Round([int64]$_.Size / 1GB)) GB)" })
+    $others = @(Get-Disk | Where-Object { $_.Number -ne $disk.Number } | ForEach-Object { "**$(Get-DiskLabel $_)** ($(Get-DiskGB $_) GB)" })
     $plan.Points = @(
         "**These go too:** $(Format-VolumeList @(Get-VolumesOnDisk $disk.Number))."
         "**Back up what you want to keep first.** A BitLocker recovery key won't help afterwards: an erased drive has nothing left to unlock."

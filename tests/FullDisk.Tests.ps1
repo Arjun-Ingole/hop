@@ -166,6 +166,18 @@ Describe 'Get-FullDiskBlocker' {
         Mock Get-WindowsEsp { throw 'Could not find the EFI system partition.' }
         Get-FullDiskBlocker (New-Offered) | Should -BeLike '*different disk*'
     }
+    It 'refuses when another disk has the same name and size, and says why' {
+        Mock Get-Disk { if ($null -ne $Number) { New-WinDisk } else { (New-WinDisk), (New-WinDisk -Number 1) } }
+        Get-FullDiskBlocker (New-Offered) | Should -BeLike "*more than one disk called WD Blue (500 GB)*wrong one could be erased*next to Windows*"
+    }
+    It 'still treats names as the same when only their spacing differs' {
+        Mock Get-Disk { if ($null -ne $Number) { New-WinDisk } else { (New-WinDisk), (New-WinDisk -Number 1 -Name 'WD Blue') } }
+        Get-FullDiskBlocker (New-Offered) | Should -BeLike '*more than one disk*'
+    }
+    It 'lets through a disk with the same name and another size, or the same size and another name' {
+        Mock Get-Disk { if ($null -ne $Number) { New-WinDisk } else { (New-WinDisk), (New-WinDisk -Number 1 -Size ([int64]1000GB)), (New-WinDisk -Number 2 -Name 'Samsung') } }
+        Get-FullDiskBlocker (New-Offered) | Should -BeNullOrEmpty
+    }
     It 'refuses a disk too small for Linux' {
         Mock Get-Disk { New-WinDisk -Size ([int64]20GB) }
         Get-FullDiskBlocker (New-Offered) | Should -BeLike '*too small*'
