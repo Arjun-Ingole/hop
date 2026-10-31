@@ -56,7 +56,7 @@ Describe 'Catalog' {
         foreach ($distro in $catalog | Where-Object BootEdits) {
             $distro.BootConfigs | Should -Not -BeNullOrEmpty
             $distro.Live | Should -Not -BeNullOrEmpty
-            @($distro.BootEdits.Values)[0] | Should -BeLike "*$InstallerLabel"
+            @($distro.BootEdits.Values)[0] | Should -Match "=$InstallerLabel(\s|$)"
         }
     }
     It 'keeps Ubuntu and its flavours exactly as they were' {
