@@ -114,6 +114,9 @@ function Get-StartupInfo {
         $windowsRow.ShrinkBlocker = $blocker; $windowsRow.BlockerKind = Get-BlockerKind $blocker
     }
     $stateDisk = if ($state) { Get-StateDisk $state }
+    # Free space gives no drive anything back. An older file can only mean C:.
+    $stateLetter = $null
+    if ($state) { $stateLetter = if ($state.TargetOffset) { $state.TargetLetter } else { $env:SystemDrive.TrimEnd(':') } }
     [pscustomobject]@{
         UsableGB  = $space.UsableGB
         WindowsGB = [int][math]::Floor($space.Partition.Size / 1GB)
@@ -133,7 +136,7 @@ function Get-StartupInfo {
         Drives    = $drives
         DownloadDrives = @(try { Get-DownloadDrives } catch { Write-Log "Could not list the drives for the download: $($_.Exception.Message)" })
         RoomLetter = (Read-RoomState).Drive -replace ':', ''
-        StateLetter = if ($state -and $state.TargetOffset) { $state.TargetLetter } elseif ($state) { $env:SystemDrive.TrimEnd(':') }
+        StateLetter = $stateLetter
         StateDiskMissing = $state -and $null -eq $stateDisk
     }
 }
