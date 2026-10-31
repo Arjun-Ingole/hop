@@ -210,8 +210,10 @@ function Invoke-Defrag([string]$Drive) {
     $room = Get-RoomDrive $Drive
     Set-Status 'Moving files out of the way. This can take several minutes...'
     $process = Start-Process defrag.exe -ArgumentList "$room /X" -WindowStyle Hidden -PassThru
+    $null = $process.Handle   # keeps ExitCode readable after the process exits
     try {
-        if (-not $process.WaitForExit($DefragLimitSeconds * 1000)) { Write-Log "Stopped moving files after $DefragLimitSeconds seconds." }
+        if ($process.WaitForExit($DefragLimitSeconds * 1000)) { Write-Log "Finished moving files (code $($process.ExitCode))." }
+        else { Write-Log "Stopped moving files after $DefragLimitSeconds seconds." }
     } finally {
         if (-not $process.HasExited) { $process.Kill() }
     }

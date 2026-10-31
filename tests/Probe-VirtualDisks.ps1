@@ -344,16 +344,16 @@ try {
     Check 'status is ready' ((Get-InstallStatus) -eq 'ready') (Get-InstallStatus)
     $text = (Get-StateSteps | ForEach-Object { $_.Steps + $_.Notes }) -join "`n  "
     Write-Output "  steps:`n  $text"
-    Check 'steps go to manual and name the disk' ($text -like '*Manual installation*Msft Virtual Disk*' -and $text -notlike '*Choose **Install*') ''
+    Check 'steps go to manual and name the disk' ($text -like '*Manual installation*Msft Virtual Disk*' -and $text -notmatch 'alongside') ''
 
     Step 'B2: the disk number changes between restarts'
     $xPathsBefore = $xLetter
     Dismount-VDisk 'second'
     Check 'with the disk gone, the setup is a leftover' ((Get-InstallStatus) -eq 'leftover') (Get-InstallStatus)
     Check 'and hop can tell the disk is missing' ($null -eq (Get-StateDisk (Read-State))) ''
-    Dismount-VDisk 'mbr'
+    # Another disk arriving first takes its number, as can happen at any restart.
+    New-VDisk 'shift' 5 | Out-Null
     Mount-VDisk 'second'
-    Mount-VDisk 'mbr'
     Start-Sleep -Seconds 3
     $moved = (Get-RealVDisk $script:VDisks['second']).Number
     Write-Output "  second disk was $b, now $moved"
@@ -448,6 +448,30 @@ try {
     Check 'not removed by a clean-up' ($null -ne (Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$mine.Offset })) ''
     Remove-PartitionAt $b $mine.Offset
 
+    Step 'B9: Linux installed on the second disk, then removed'
+    Reset-Run
+    $beforeLinux = Get-Layout $b
+    Invoke-Install 'ubuntu' $iso 6 $target ''
+    $state = Read-State
+    $inst = @(Get-HopPartitions) | Where-Object Label -eq $InstallerLabel
+    # What a Linux installer leaves: a Linux partition in the space hop set aside.
+    $linuxPart = New-Partition -DiskNumber $b -Offset ([int64]$inst.Partition.Offset + [int64]$inst.Partition.Size) -Size 5GB -GptType '{0fc63daf-8483-4772-8e79-3d69d8477de4}'
+    Check 'hop sees Linux on the second disk' (Test-LinuxInstalled $state) ''
+    Check 'status is installed' ((Get-InstallStatus) -eq 'installed') (Get-InstallStatus)
+    Check 'Linux on this disk is not offered before it has been kept' ($null -eq (Get-OtherSystem)) ''
+    Invoke-Cleanup
+    Check 'clean-up noticed and only took the installer' ($null -ne (Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$linuxPart.Offset })) ''
+    Check 'the installer is gone' (@(Get-HopPartitions).Count -eq 0) ''
+    Check 'X: never gave anything up, so it keeps its size' ((Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$x.Offset }).Size -eq $x.Size) ''
+    Check 'the disk is remembered' (@(Get-LinuxDisks) -contains $vdiskB.Guid) (@(Get-LinuxDisks) -join ',')
+    $other = Get-OtherSystem
+    Check 'and that Linux is now offered for removal' ($null -ne $other -and -not $other.OnWindowsDisk) ''
+    Check 'the disk is refused while it has Linux on it' ((Get-DriveBlocker (Get-Disk -Number $b) $null) -like '*already has Linux*') ''
+    Remove-OtherSystem
+    Check 'removing it gives the disk back as it was' ((Get-Layout $b) -eq $beforeLinux) "$(Get-Layout $b) vs $beforeLinux"
+    Check 'and forgets the disk' (@(Get-LinuxDisks).Count -eq 0) ''
+    Check 'data survived' ((Get-TestHash $xLetter) -eq $xHash) ''
+
     Step 'C: Make room on a data drive, for real and with a limit'
     Reset-Run
     & fsutil.exe usn createjournal m=0x1000000 a=0x100000 "$dLetter`:" | Out-Null
@@ -465,7 +489,14 @@ try {
     & fsutil.exe usn queryjournal "$dLetter`:" 2>&1 | Out-Null
     Check 'and comes back afterwards' ($LASTEXITCODE -eq 0) $LASTEXITCODE
     Check 'the file is gone' (-not (Test-Path $RoomPath)) ''
-    Check 'the defrag limit really stops it' ((Measure-Command { Invoke-Defrag $dLetter }).TotalSeconds -lt $DefragLimitSeconds + 45) ''
+    Write-Output "  what defrag said: $(@($Sync.Log | Where-Object { $_ -like '*moving files*' }) | Select-Object -Last 1)"
+    # Files have to be scattered to give defrag something to do, and even then it can finish first.
+    # A limit of nothing shows the limit is what stops it, however long it would have run.
+    $DefragLimitSeconds = 0
+    $took = Measure-Command { Invoke-Defrag $dLetter }
+    $DefragLimitSeconds = 90
+    Check 'a limit stops defrag and moves on' (@($Sync.Log | Where-Object { $_ -like 'Stopped moving*' -or $_ -like '*Stopped moving files after 0*' }).Count -ge 1 -and $took.TotalSeconds -lt 45) $took.TotalSeconds
+    Check 'with no defrag left running' (@(Get-Process defrag -ErrorAction SilentlyContinue).Count -eq 0) ''
 
     Step 'D: Expand a drive into its free space'
     $tailBefore = Get-TailFree (Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$x.Offset })
