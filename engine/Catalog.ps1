@@ -115,7 +115,13 @@ function Get-Catalog {
             # Its other boot loaders keep kernels on the EFI partition, which Windows made too small for them.
             Steps = @('In the CachyOS Hello window, click **Launch installer**, then pick your language and keyboard.', 'On the **Bootloader** screen, choose **GRUB**.') + $CalamaresSteps })
         New-Entry 'arch' 'Arch Linux' 'Do it yourself' 'geo.mirror.pkgbuild.com' '#1793D1' 'arch' ((Get-ArchisoBoot @('loader/entries/*.conf')) + @{
-            Kind = 'arch'; SecureBootOff = $true; EspShell = 'shellx64.efi'; Manual = 'Manual Partitioning'; ManualExtra = $EspExtra; Steps = @(
+            Kind = 'arch'; SecureBootOff = $true; EspShell = 'shellx64.efi'; Manual = 'Manual Partitioning'; ManualExtra = $EspExtra
+            FullDisk = (Get-FullDiskBoot 'archiso') + @{ IsoGB = 2; Steps = @(
+                "Arch has no graphical installer. It starts at a text prompt, and it needs the internet: plug in a network cable, or connect to Wi-Fi with **iwctl**."
+                'Type **archinstall** and press Enter.'
+                'Open **Disk configuration**, then **Partitioning**. Choose **Use a best-effort default partition layout**, select **{DISK}** and choose **ext4**. This wipes that drive.'
+                'Under **Bootloader**, choose **Grub**. Set up the rest of the menu as you like, including a Profile if you want a desktop, then choose **Install**.') }
+            Steps = @(
                 "Arch has no graphical installer. It starts at a text prompt, and it needs the internet: plug in a network cable, or connect to Wi-Fi with **iwctl**."
                 'Type **archinstall** and press Enter.'
                 "Open **Disk configuration**, then **Partitioning**. Choose **Manual Partitioning** and select the drive with the free space."
