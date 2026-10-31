@@ -26,13 +26,14 @@ namespace Hop
                 if (startup.RoomPhase == "continue")
                 {
                     await engine.CompleteMakeRoomAsync();
-                    roomMade = true;
+                    roomLetter = string.IsNullOrEmpty(startup.RoomLetter) ? WindowsLetter : startup.RoomLetter;
                     startup = await engine.GetStartupInfoAsync();
                 }
                 else if (startup.RoomPhase == "restore")
                 {
                     await engine.RestoreRoomSettingsAsync();
                 }
+                await ChooseFirstTargetAsync();
             }
             catch (Exception ex)
             {
@@ -43,7 +44,7 @@ namespace Hop
             EndWork();
 
             selected = catalog[0];
-            int max = startup.UsableGB - InstallerGB - IsoDownloadGB;
+            int max = MaxLinuxGB;
             linuxGB = Math.Max(MinLinuxGB, Math.Min(max, Math.Max(60, (max / 2) / 10 * 10)));
 
             await ShowStartScreenAsync();
@@ -70,9 +71,9 @@ namespace Hop
 
         void ShowLeftover()
         {
-            Arrange(new[] { new[] { Run.Gray("An earlier attempt"), Run.Black("didn't finish.") } },
-                "It left partitions or a startup entry on this PC. Clean them up to start fresh. Windows and your files stay.",
-                Secondary, null, 0);
+            string text = "It left partitions or a startup entry on this PC. Clean them up to start fresh. Windows and your files stay.";
+            if (startup.StateDiskMissing) text = "It was using a drive that isn't connected now. If you unplugged it, plug it back in and open hop again. Otherwise, clean up to start fresh. Windows and your files stay.";
+            Arrange(new[] { new[] { Run.Gray("An earlier attempt"), Run.Black("didn't finish.") } }, text, Secondary, null, 0);
             Footer(null, null, "Clean up", () => _ = CleanupAsync(false, afterwards: null));
         }
 
@@ -83,7 +84,7 @@ namespace Hop
             try
             {
                 await engine.CleanupAsync(installerOnly);
-                startup = await engine.GetStartupInfoAsync();
+                await ReloadAsync();
                 EndWork();
                 if (afterwards != null) afterwards();
                 else ShowChoose();

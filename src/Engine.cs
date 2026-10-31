@@ -23,6 +23,38 @@ namespace Hop
         public System.Drawing.Color Color;
     }
 
+    /// <summary>One place Linux could go, or a drive it can't go on and why.</summary>
+    public sealed class DriveChoice
+    {
+        public string Id;               // what the engine calls it; "" is C:
+        public string Kind;             // "volume", "gap" (free space) or "disk" (a whole disk that's refused)
+        public string Letter;
+        public string Title;            // "Drive D:", "Free space"
+        public string Blocker;          // why it can't be used, or null
+        public string DiskName;
+        public int DiskGB;
+        public bool OnWindowsDisk;
+        public bool Estimated;          // only from its free space; Windows hasn't been asked how far it shrinks
+        public int SizeGB;
+        public int UsedGB;
+        public int FreeGB;
+        public int TailFreeGB;          // unallocated space right after it
+        public int UsableGB;            // how much it can give up while keeping its reserve
+        public int StuckGB;             // free on it, but Windows can't release it
+        public string ShrinkBlocker;    // the file in the way, as Windows names it
+        public string BlockerKind;      // hibernation, paging, restore, journal, ntfs, file or unknown
+
+        public bool IsFreeSpace => Kind == "gap";
+        public bool IsWindows => Id == "";
+    }
+
+    public sealed class DownloadDrive
+    {
+        public string Letter;
+        public int FreeGB;
+        public bool IsDefault;          // holds the user's Downloads folder
+    }
+
     public sealed class StartupInfo
     {
         public int UsableGB;            // how much C: can give up while Windows keeps its reserve
@@ -34,8 +66,14 @@ namespace Hop
         public string Blocker;          // the file in the way, as Windows names it
         public string BlockerKind;      // hibernation, paging, restore, journal, ntfs, file or unknown
         public string RoomPhase;        // Make room: "continue" after its restart, "restore" if it stopped early
-        public string OtherName;        // another Linux on this drive, such as Pond
+        public string OtherName;        // another Linux on this PC, such as Pond
         public int OtherGB;
+        public bool OtherOnWindowsDisk;
+        public List<DriveChoice> Drives;
+        public List<DownloadDrive> DownloadDrives;
+        public string RoomLetter;       // the drive Make room is working on
+        public string StateLetter;      // the drive a setup took its space from, if it took any
+        public bool StateDiskMissing;   // that setup's disk isn't connected
         public string Status;           // "ready", "leftover" (from an attempt that didn't finish) or "none"
         public string PreparedDistro;   // set when an installer is ready
         public string PreparedId;
@@ -48,6 +86,7 @@ namespace Hop
     {
         public string[] Steps;
         public string[] Notes;
+        public bool Restart;            // Make room: the PC restarts
     }
 
     /// <summary>
@@ -209,6 +248,17 @@ namespace Hop
                 RoomPhase = Get<string>(info, "RoomPhase"),
                 OtherName = other == null ? null : Get<string>(other, "Name"),
                 OtherGB = other == null ? 0 : Get<int>(other, "SizeGB"),
+                OtherOnWindowsDisk = other == null || Get<bool>(other, "OnWindowsDisk"),
+                Drives = ItemsOf(info, "Drives").Select(ToDrive).ToList(),
+                DownloadDrives = ItemsOf(info, "DownloadDrives").Select(o => new DownloadDrive
+                {
+                    Letter = Get<string>(o, "Letter"),
+                    FreeGB = Get<int>(o, "FreeGB"),
+                    IsDefault = Get<bool>(o, "IsDefault"),
+                }).ToList(),
+                RoomLetter = Get<string>(info, "RoomLetter"),
+                StateLetter = Get<string>(info, "StateLetter"),
+                StateDiskMissing = Get<bool>(info, "StateDiskMissing"),
                 PreparedDistro = state == null ? null : Get<string>(state, "Distro"),
                 PreparedId = state == null ? null : Get<string>(state, "DistroId"),
                 CameBack = Get<bool>(info, "CameBack"),
@@ -217,12 +267,44 @@ namespace Hop
             };
         }
 
-        public Task InstallAsync(string distroId, string isoPath, int linuxGB) =>
+        static DriveChoice ToDrive(PSObject o) => new DriveChoice
+        {
+            Id = Get<string>(o, "Id") ?? "",
+            Kind = Get<string>(o, "Kind"),
+            Letter = Get<string>(o, "Letter") ?? "",
+            Title = Get<string>(o, "Title"),
+            Blocker = Get<string>(o, "Blocker") is string blocker && blocker.Length > 0 ? blocker : null,
+            DiskName = Get<string>(o, "DiskName"),
+            DiskGB = Get<int>(o, "DiskGB"),
+            OnWindowsDisk = Get<bool>(o, "OnWindowsDisk"),
+            Estimated = Get<bool>(o, "Estimated"),
+            SizeGB = Get<int>(o, "SizeGB"),
+            UsedGB = Get<int>(o, "UsedGB"),
+            FreeGB = Get<int>(o, "FreeGB"),
+            TailFreeGB = Get<int>(o, "TailFreeGB"),
+            UsableGB = Get<int>(o, "UsableGB"),
+            StuckGB = Get<int>(o, "StuckGB"),
+            ShrinkBlocker = Get<string>(o, "ShrinkBlocker"),
+            BlockerKind = Get<string>(o, "BlockerKind"),
+        };
+
+        static IEnumerable<PSObject> ItemsOf(PSObject o, string name) =>
+            o.Properties[name]?.Value is IEnumerable items
+                ? items.Cast<object>().Where(i => i != null).Select(PSObject.AsPSObject)
+                : Enumerable.Empty<PSObject>();
+
+        /// <summary>The real figures for one place, which can take Windows a while to work out.</summary>
+        public async Task<DriveChoice> GetDriveSpaceAsync(string target) =>
+            ToDrive((await InvokeAsync("Get-DriveSpace", new Hashtable { ["Target"] = target })).Single);
+
+        public Task InstallAsync(string distroId, string isoPath, int linuxGB, string target, string downloadDrive) =>
             InvokeAsync("Invoke-Install", new Hashtable
             {
                 ["DistroId"] = distroId,
                 ["IsoPath"] = isoPath ?? "",
                 ["LinuxGB"] = linuxGB,
+                ["Target"] = target ?? "",
+                ["DownloadDrive"] = downloadDrive ?? "",
             });
 
         public Task CleanupAsync(bool installerOnly) =>
@@ -232,30 +314,35 @@ namespace Hop
 
         public Task<InstallSteps> GetReturnedHelpAsync() => GetStepsFromAsync("Get-ReturnedHelp");
 
-        public Task<InstallSteps> GetMakeRoomStepsAsync() => GetStepsFromAsync("Get-MakeRoomSteps");
+        public Task<InstallSteps> GetMakeRoomStepsAsync(string letter) =>
+            GetStepsFromAsync("Get-MakeRoomSteps", new Hashtable { ["Drive"] = letter ?? "" });
 
-        public Task StartMakeRoomAsync() => InvokeAsync("Start-MakeRoom");
+        /// <summary>True when the PC is restarting; another drive may not need that.</summary>
+        public async Task<bool> StartMakeRoomAsync(string letter) =>
+            (await InvokeAsync("Start-MakeRoom", new Hashtable { ["Drive"] = letter ?? "" })).Single.ToString() == "restarting";
 
         public Task CompleteMakeRoomAsync() => InvokeAsync("Complete-MakeRoom");
 
-        public Task ClearRestorePointsAsync() => InvokeAsync("Clear-RestorePoints");
+        public Task ClearRestorePointsAsync(string letter) =>
+            InvokeAsync("Clear-RestorePoints", new Hashtable { ["Drive"] = letter ?? "" });
 
         public Task RestoreRoomSettingsAsync() => InvokeAsync("Restore-RoomSettings");
 
         public void RestoreRoomSettings() => Invoke("Restore-RoomSettings");
 
-        async Task<InstallSteps> GetStepsFromAsync(string command)
+        async Task<InstallSteps> GetStepsFromAsync(string command, IDictionary parameters = null)
         {
-            var steps = (await InvokeAsync(command)).Single;
+            var steps = (await InvokeAsync(command, parameters)).Single;
             return new InstallSteps
             {
                 Steps = Get<string[]>(steps, "Steps"),
                 Notes = Get<string[]>(steps, "Notes"),
+                Restart = Get<bool>(steps, "Restart"),
             };
         }
 
-        public async Task<string[]> GetWarningsAsync() =>
-            (await InvokeAsync("Get-Warnings")).Items.Select(o => o.ToString()).ToArray();
+        public async Task<string[]> GetWarningsAsync(string target) =>
+            (await InvokeAsync("Get-Warnings", new Hashtable { ["Target"] = target ?? "" })).Items.Select(o => o.ToString()).ToArray();
 
         public async Task<string> GetReportAsync() => (await InvokeAsync("Get-Report")).Single.ToString();
 
@@ -265,7 +352,8 @@ namespace Hop
 
         public Task RemoveOtherSystemAsync() => InvokeAsync("Remove-OtherSystem");
 
-        public Task ExpandWindowsAsync() => InvokeAsync("Expand-Windows");
+        public Task ExpandWindowsAsync(string target) =>
+            InvokeAsync("Expand-Windows", new Hashtable { ["Target"] = target ?? "" });
 
         /// <summary>False once the install has started changing the disk.</summary>
         public bool TryCancel() => ((CancelGate)Sync["Gate"]).TryCancel();

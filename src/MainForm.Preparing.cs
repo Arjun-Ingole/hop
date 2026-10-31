@@ -60,7 +60,8 @@ namespace Hop
             poll.Start();
             try
             {
-                await engine.InstallAsync(selected?.Id ?? "custom", isoPath, linuxGB);
+                var download = DownloadSpot;
+                await engine.InstallAsync(selected?.Id ?? "custom", isoPath, linuxGB, target.Id, download == null || download.IsDefault ? "" : download.Letter);
                 poll.Stop();
                 busy = installing = false;
                 prepared = system;
@@ -143,7 +144,7 @@ namespace Hop
             bool changed = false;
             try
             {
-                startup = await engine.GetStartupInfoAsync();
+                await ReloadAsync();
                 changed = startup.Status != "none";
             }
             catch { }

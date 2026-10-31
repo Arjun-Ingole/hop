@@ -45,6 +45,8 @@ namespace Hop
         Engine engine;
         List<Distro> catalog;
         StartupInfo startup;
+        DriveChoice target;       // where Linux goes
+        string pickedDownload;    // the drive chosen for the download, if not left to hop
         Distro selected;
         string isoPath;
         int linuxGB = 60;
@@ -86,13 +88,13 @@ namespace Hop
             log.ForeColor = Secondary;
             log.Font = new System.Drawing.Font("Consolas", 8.5f);
             removeAll = new OptionRow("Linux isn't installed yet",
-                "Remove everything hop made and give the space back to Windows.", width);
+                "Remove everything hop made and give the space back.", width);
             removeInstaller = new OptionRow("Linux is installed",
                 "Remove only the installer and its startup entry. Linux stays.", width);
             removeAll.Chosen += (s, e) => PickUndo(removeAll);
             removeInstaller.Chosen += (s, e) => PickUndo(removeInstaller);
 
-            sentence.PickerClicked += (s, e) => OpenPicker();
+            sentence.PickerClicked += picker => { if (picker == 0) OpenPicker(); else OpenDrivePicker(); };
             drive.ValueChanged += (s, e) =>
             {
                 if (drive.Mode != DriveMode.Edit) return;

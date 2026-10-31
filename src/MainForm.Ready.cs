@@ -27,7 +27,7 @@ namespace Hop
             Arrange(new[]
             {
                 new[] { new Run { Text = prepared.Name, Color = Ink, Logo = Logo(prepared.Logo) }, Run.Gray("is ready.") },
-            }, "Restart to open its installer. These are the choices to make there.", Secondary, steps, 40);
+            }, "Restart to open its installer. These are the choices to make there.", Secondary, steps, installSteps.Notes.Length > 1 ? 24 : 40);
             Footer("Undo changes", () => ShowUndo(() => _ = ShowReadyAsync()), "Restart now", () => _ = RestartAsync(),
                 "Later", Close, Secondary);
         }
@@ -85,7 +85,7 @@ namespace Hop
             {
                 new[] { new Run { Text = prepared.Name, Color = Ink, Logo = Logo(prepared.Logo) }, Run.Gray("is installed.") },
             }, "The installer is still on this drive and isn't needed any more. Remove it to free the space. Linux stays.", Secondary, null, 0);
-            Footer(null, null, "Remove the installer", () => { int before = startup.WindowsGB; _ = CleanupAsync(true, () => ShowRemoved(true, before)); }, "Later", Close);
+            Footer(null, null, "Remove the installer", () => RemoveChanges(true), "Later", Close);
         }
 
         // --- Undo ----------------------------------------------------------------------------
@@ -105,14 +105,24 @@ namespace Hop
             removeInstaller.Selected = row == removeInstaller;
             bool installerOnly = row == removeInstaller;
             primary.Enabled = true;
-            onPrimary = () => { int before = startup.WindowsGB; _ = CleanupAsync(installerOnly, () => ShowRemoved(installerOnly, before)); };
+            onPrimary = () => RemoveChanges(installerOnly);
         }
 
-        /// <summary>Says what actually happened: C: may have grown, or the space may just be free.</summary>
-        void ShowRemoved(bool installerOnly, int windowsGBBefore)
+        /// <summary>Remembers the size of the drive the space came from, because hop forgets which one it was.</summary>
+        void RemoveChanges(bool installerOnly)
         {
-            int grew = startup.WindowsGB - windowsGBBefore;
-            string result = grew > 0 ? $"Drive C: is {grew} GB bigger."
+            string letter = startup.StateLetter;
+            int before = SizeOfDrive(letter);
+            _ = CleanupAsync(installerOnly, () => ShowRemoved(installerOnly, letter, before));
+        }
+
+        int SizeOfDrive(string letter) => startup.Drives.FirstOrDefault(d => d.Letter == letter)?.SizeGB ?? 0;
+
+        /// <summary>Says what actually happened: the drive may have grown, or the space may just be free.</summary>
+        void ShowRemoved(bool installerOnly, string letter, int sizeBefore)
+        {
+            int grew = SizeOfDrive(letter) - sizeBefore;
+            string result = grew > 0 ? $"Drive {letter}: is {grew} GB bigger."
                 : installerOnly ? "The space it used is free, but Windows can't reach it from here."
                 : "The space is free on this drive.";
             Arrange(new[] { new[] { Run.Black("Changes removed.") } }, result, Secondary, null, 0);
