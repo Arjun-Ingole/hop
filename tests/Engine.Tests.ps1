@@ -784,6 +784,18 @@ Describe 'Get-StartupInfo' {
         Mock Get-InstallStatus { 'leftover' }
         (Get-StartupInfo).Status | Should -Be 'leftover'
     }
+    It 'says which drive a setup took its space from, for Undo to report on' {
+        Mock Get-InstallStatus { 'ready' }
+        Mock Get-StateDisk { 0 }
+        Mock Read-State { [pscustomobject]@{ TargetOffset = [int64]1GB; TargetLetter = 'D' } }
+        (Get-StartupInfo).StateLetter | Should -Be 'D'
+    }
+    It 'takes a setup from before that was recorded to mean C:' {
+        Mock Get-InstallStatus { 'ready' }
+        Mock Get-StateDisk { 0 }
+        Mock Read-State { [pscustomobject]@{ Copied = $true } }
+        (Get-StartupInfo).StateLetter | Should -Be $env:SystemDrive.TrimEnd(':')
+    }
 }
 
 Describe 'Get-WindowsEsp' {

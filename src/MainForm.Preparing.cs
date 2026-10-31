@@ -62,6 +62,13 @@ namespace Hop
             {
                 var download = DownloadSpot;
                 await engine.InstallAsync(selected?.Id ?? "custom", isoPath, linuxGB, target.Id, download == null || download.IsDefault ? "" : download.Letter, fullDisk);
+                // What hop knows is from before the install, and Undo has to say what it changed.
+                try
+                {
+                    startup = await engine.GetStartupInfoAsync();
+                    target = startup.Drives.FirstOrDefault(d => d.Id == target.Id) ?? WindowsDrive;
+                }
+                catch (Exception) { }
                 poll.Stop();
                 busy = installing = false;
                 prepared = system;
