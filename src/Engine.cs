@@ -357,7 +357,9 @@ namespace Hop
 
         public Task RestartForRoomAsync() => InvokeAsync("Request-RoomRestart");
 
-        public Task CompleteMakeRoomAsync() => InvokeAsync("Complete-MakeRoom");
+        /// <summary>False when it couldn't finish, and has put the settings back.</summary>
+        public async Task<bool> CompleteMakeRoomAsync() =>
+            (await InvokeAsync("Complete-MakeRoom")).Single.ToString() == "done";
 
         public Task ClearRestorePointsAsync(string letter) =>
             InvokeAsync("Clear-RestorePoints", new Hashtable { ["Drive"] = letter ?? "" });

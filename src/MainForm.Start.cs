@@ -25,8 +25,8 @@ namespace Hop
                 startup = await engine.GetStartupInfoAsync();
                 if (startup.RoomPhase == "continue")
                 {
-                    await engine.CompleteMakeRoomAsync();
-                    roomLetter = string.IsNullOrEmpty(startup.RoomLetter) ? WindowsLetter : startup.RoomLetter;
+                    if (await engine.CompleteMakeRoomAsync())
+                        roomLetter = string.IsNullOrEmpty(startup.RoomLetter) ? WindowsLetter : startup.RoomLetter;
                     startup = await engine.GetStartupInfoAsync();
                 }
                 else if (startup.RoomPhase == "restore")

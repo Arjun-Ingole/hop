@@ -370,6 +370,19 @@ A volume shrink analysis was initiated on volume Windows (C:).
         Should -Invoke Invoke-Defrag -Times 1
         (Read-RoomState).Phase | Should -Be 'ready'
     }
+    It 'puts everything back and lets hop open when the drive has gone by the restart' {
+        Start-MakeRoom
+        Mock Invoke-Defrag { throw 'No MSFT_Partition objects found with property DriveLetter equal to E.' }
+        Complete-MakeRoom | Should -Be 'failed'
+        Should -Invoke Set-Hibernation -ParameterFilter { $On } -Times 1
+        Should -Invoke Restore-Paging -Times 1
+        Test-Path $RoomPath | Should -BeFalse
+        Get-RoomPhase | Should -BeNullOrEmpty
+    }
+    It 'says so when it finished' {
+        Start-MakeRoom
+        Complete-MakeRoom | Should -Be 'done'
+    }
     It 'restores if the restart never happened' {
         Start-MakeRoom
         Mock Get-LastBoot { [datetime]'2000-01-01' }

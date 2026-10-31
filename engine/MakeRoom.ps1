@@ -209,15 +209,22 @@ function Unregister-RunAfterRestart {
     Remove-ItemProperty -Path $RunOnceKey -Name 'hop' -ErrorAction SilentlyContinue
 }
 
-# After the restart: the paging file has gone, so move what can be moved.
+# After the restart: the paging file has gone, so move what can be moved. Says 'done', or 'failed'
+# when it couldn't, for example because that drive has been unplugged. That can't be allowed to stop
+# hop opening every time from now on, so the settings go back and hop carries on without the room.
 function Complete-MakeRoom {
     Unregister-RunAfterRestart
     $state = Read-RoomState
-    Invoke-Defrag $state.Drive
+    try { Invoke-Defrag $state.Drive } catch {
+        Write-Log "Could not move files on drive $(Get-RoomDrive $state.Drive): $($_.Exception.Message)"
+        Restore-RoomSettings
+        return 'failed'
+    }
     if ($state) {
         $state.Phase = 'ready'
         Save-RoomState $state
     }
+    'done'
 }
 
 # It can run for a very long time. Whatever it moved before the limit still counts.
