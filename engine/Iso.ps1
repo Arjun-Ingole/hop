@@ -20,7 +20,7 @@ function Mount-Iso([string]$Path) {
     throw 'Windows could not open the ISO file.'
 }
 
-function Read-Iso([string]$Path) {
+function Read-Iso([string]$Path, $Distro) {
     Set-Status 'Checking the ISO file...'
     $letter = Mount-Iso $Path
     $root = "$letter`:\"
@@ -29,15 +29,22 @@ function Read-Iso([string]$Path) {
     if (-not (Test-Path -LiteralPath (Join-Path $root 'EFI\BOOT\BOOTX64.EFI'))) {
         throw 'This ISO cannot start on a modern (UEFI) PC.'
     }
-    # The boot loader finds the installer partition by this file.
-    if (-not (Test-Path -LiteralPath (Join-Path $root '.disk\info'))) {
-        throw 'This ISO is not an Ubuntu-style live system. hop only supports Ubuntu-based systems (Ubuntu, Mint, elementary, Pop!_OS, Zorin...).'
+    if ($Distro.Live) {
+        if (-not (Test-Path -LiteralPath (Join-Path $root $Distro.Live))) { throw "This ISO doesn't look like $($Distro.Name): it has no $($Distro.Live). Check it's the right file." }
+    } else {
+        # The boot loader finds the installer partition by this file.
+        if (-not (Test-Path -LiteralPath (Join-Path $root '.disk\info'))) {
+            throw 'This ISO is not an Ubuntu-style live system. hop only supports Ubuntu-based systems (Ubuntu, Mint, elementary, Pop!_OS, Zorin...).'
+        }
+        $live = Get-ChildItem -LiteralPath $root -Directory -Force | Where-Object {
+            $_.Name -like 'casper*' -and (Get-ChildItem -LiteralPath $_.FullName -Filter '*.squashfs' -Force)
+        }
+        if (-not $live) {
+            throw 'This ISO is not an Ubuntu-style live system. hop only supports Ubuntu-based systems (Ubuntu, Mint, elementary, Pop!_OS, Zorin...).'
+        }
     }
-    $live = Get-ChildItem -LiteralPath $root -Directory -Force | Where-Object {
-        $_.Name -like 'casper*' -and (Get-ChildItem -LiteralPath $_.FullName -Filter '*.squashfs' -Force)
-    }
-    if (-not $live) {
-        throw 'This ISO is not an Ubuntu-style live system. hop only supports Ubuntu-based systems (Ubuntu, Mint, elementary, Pop!_OS, Zorin...).'
+    if (-not (Test-BootConfigKnown $Distro $root)) {
+        throw "This version of $($Distro.Name) starts in a way hop doesn't know yet, so it couldn't start from the installer partition. Nothing has been changed. Try a different system."
     }
     # FAT32 can't hold links, and Windows can't see them in an ISO, so a kernel reached
     # through one wouldn't be there at startup. Checked on the catalog's ISOs: none do this.

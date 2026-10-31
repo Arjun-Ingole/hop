@@ -8,7 +8,8 @@ function New-Entry([string]$Id, [string]$Name, [string]$Note, [string]$Source, [
     $entry = [ordered]@{
         Id = $Id; Name = $Name; Version = $null; Note = $Note; Source = $Source; Color = $Color; Logo = $Logo
         Strategy = 'freespace'; SecureBootOff = $false; Kind = $null; Base = $null; Prefix = $null; Edition = $null
-        Mode = $null; Alongside = $null; Manual = $null; ManualExtra = $null
+        Mode = $null; Alongside = $null; Manual = $null; ManualExtra = $null; Steps = $null
+        Live = $null; BootConfigs = $null; BootEdits = $null; GrubDir = $null; EspShell = $null
     }
     foreach ($key in $More.Keys) { $entry[$key] = $More[$key] }
     [pscustomobject]$entry
@@ -27,11 +28,52 @@ function New-MintEdition([string]$Edition, [string]$Name, [string]$Note) {
         Kind = 'mint'; Edition = $Edition; Alongside = 'Install Linux Mint alongside Windows Boot Manager'; Manual = 'Something else' }
 }
 
+# How live systems that don't search every partition, as casper does, find the installer.
+# Dracut needs the name in root=live:. Its GRUB also runs a media check by default, which is for discs.
+function Get-DracutBoot([string]$GrubDir) {
+    @{
+        Live = 'LiveOS/squashfs.img'; GrubDir = $GrubDir; BootConfigs = @("$GrubDir/grub.cfg")
+        BootEdits = [ordered]@{
+            'root=live:CDLABEL=\S+' = "root=live:LABEL=$InstallerLabel"
+            '\s+rd\.live\.check' = ''
+            '(?m)^[ \t]*search\s.*$' = "search --no-floppy --label --set=root $InstallerLabel"
+        }
+    }
+}
+
+# Archiso needs the name in archisolabel=, instead of the date stamp it looks for on a disc.
+function Get-ArchisoBoot([string[]]$Configs) {
+    @{
+        Live = 'arch/x86_64/airootfs.sfs'; BootConfigs = $Configs
+        BootEdits = [ordered]@{ 'archisosearchuuid=\S+' = "archisolabel=$InstallerLabel" }
+    }
+}
+
 # Color is the project's brand color, used for its part of the drive in the app.
 # Logo names an embedded image (assets/logos/<Logo>.png).
-# SecureBootOff: its kernel isn't signed, as in Pop!_OS 24.04's ISO, so it can't start with Secure Boot on.
-# Kubuntu is missing on purpose: its ISO has a file over 4 GB, which FAT32 cannot hold.
+# SecureBootOff: its boot loader or kernel isn't signed, as in Pop!_OS 24.04's ISO, so it can't start with Secure Boot on.
+# Live: a file its ISO must have, for systems that aren't Ubuntu-style. Empty means casper, which Read-Iso checks for.
+# BootConfigs and BootEdits: which copied boot files to change, and how (regex = replacement). The first
+#   edit is the one the system can't start without. See Update-BootConfig.
+# GrubDir: where its menu is, when GRUB should find the installer partition by label and not /.disk/info.
+# EspShell: the ISO's EFI Shell, for a boot loader that can't leave its own partition. See Get-EspShellScript.
+# Steps: the words to show when the usual choices don't fit its installer. {GB} is the size hop set aside.
+# Kubuntu and Omarchy are missing on purpose: their ISOs have a file over 4 GB, which FAT32 cannot hold.
 function Get-Catalog {
+    $EspExtra = 'Also click the existing **EFI System Partition**, choose Edit, set the mount point to **/boot/efi** and keep it unformatted.'
+    $CalamaresSteps = @(
+        'When asked about partitions, choose **Manual partitioning**. If it lists several drives, pick the one with the {GB} GB of free space.'
+        'Click the {GB} GB of **Free Space**, click **Create** and make an **ext4** partition mounted at **/**.'
+        'Click the existing **EFI System Partition**, click **Edit**, set the mount point to **/boot/efi** and keep its contents. If the installer then says this partition is small, click **OK**: there is room.'
+        "Don't choose **Erase disk**. The installer is running from this drive.")
+    # Anaconda protects the whole disk behind the mount point the live system starts from, so it
+    # wouldn't install on the drive holding the installer partition until that's unmounted.
+    $AnacondaSteps = @(
+        'On the welcome screen, choose **Not Now**.'
+        'Open **Terminal**, type **sudo umount -l /run/initramfs/live** and press Enter. Without this, the installer refuses the drive the installer partition is on.'
+        'Open the install app from the dock, then pick your language.'
+        "Select the drive with the {GB} GB hop set aside and choose **Share disk with other operating systems**."
+        "Don't choose **Use entire disk**. The installer is running from this drive.")
     @(
         New-Entry 'elementary' 'elementary OS' 'Mac-like' 'elementary.io' '#3689E6' 'elementary' @{
             Kind = 'elementary'; Strategy = 'prepared'; Mode = 'Custom Install (Advanced)' }
@@ -39,11 +81,33 @@ function Get-Catalog {
         New-MintEdition 'cinnamon' 'Linux Mint' 'Windows-like'
         New-Entry 'pop' 'Pop!_OS' 'Gaming' 'pop-os.org' '#48B9C7' 'pop' @{
             Kind = 'pop'; Version = '24.04'; Strategy = 'prepared'; Mode = 'Custom (Advanced)'; SecureBootOff = $true }
+        New-Entry 'zorin' 'Zorin OS' 'Windows-like' 'the Zorin OS mirror at kernel.org' '#15A6F0' 'zorin' @{
+            Kind = 'zorin'; Alongside = 'Install Zorin OS alongside Windows Boot Manager'; Manual = 'Something else' }
+        New-Entry 'fedora' 'Fedora Workstation' 'Up to date' 'fedoraproject.org' '#51A2DA' 'fedora' ((Get-DracutBoot 'boot/grub2') + @{
+            Kind = 'fedora'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps })
+        New-Entry 'debian' 'Debian' 'Rock solid' 'cdimage.debian.org' '#A80030' 'debian' @{
+            Kind = 'debian'; Live = 'live/filesystem.squashfs'; Manual = 'Manual partitioning'; ManualExtra = $EspExtra; Steps = @(
+                'At the menu that appears after restarting, press Enter on **Live system**. It waits until you do.'
+                'On the desktop, open **Install Debian**, then pick your language and keyboard.') + $CalamaresSteps }
+        New-Entry 'cachyos' 'CachyOS' 'Fast, for gaming' 'cachyos.org' '#008066' 'cachyos' ((Get-ArchisoBoot @('boot/grub/grub.cfg')) + @{
+            Kind = 'cachyos'; SecureBootOff = $true; GrubDir = 'boot/grub'; Manual = 'Manual partitioning'; ManualExtra = $EspExtra
+            # Its other boot loaders keep kernels on the EFI partition, which Windows made too small for them.
+            Steps = @('In the CachyOS Hello window, click **Launch installer**, then pick your language and keyboard.', 'On the **Bootloader** screen, choose **GRUB**.') + $CalamaresSteps })
+        New-Entry 'arch' 'Arch Linux' 'Do it yourself' 'geo.mirror.pkgbuild.com' '#1793D1' 'arch' ((Get-ArchisoBoot @('loader/entries/*.conf')) + @{
+            Kind = 'arch'; SecureBootOff = $true; EspShell = 'shellx64.efi'; Manual = 'Manual Partitioning'; ManualExtra = $EspExtra; Steps = @(
+                "Arch has no graphical installer. It starts at a text prompt, and it needs the internet: plug in a network cable, or connect to Wi-Fi with **iwctl**."
+                'Type **archinstall** and press Enter.'
+                "Open **Disk configuration**, then **Partitioning**. Choose **Manual Partitioning** and select the drive with the free space."
+                'Select the {GB} GB of free space and make an **ext4** partition with the mountpoint **/**.'
+                'Select the existing **fat32** EFI partition, choose **Assign mountpoint** and type **/boot/efi**. Keep it unformatted.'
+                'Under **Bootloader**, choose **Grub**. Set up the rest of the menu as you like, including a Profile if you want a desktop, then choose **Install**.'
+                "Don't change any other partition. The installer is running from this drive.") })
+        New-Entry 'ultramarine' 'Ultramarine' 'Fedora made easy' 'images.fyralabs.com' '#00078F' 'ultramarine' ((Get-DracutBoot 'boot/grub') + @{
+            Kind = 'ultramarine'; Edition = 'gnome'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps })
         New-UbuntuFlavor 'ubuntu-budgie' 'Ubuntu Budgie' 'Dock at the bottom' '#404552'
         New-UbuntuFlavor 'xubuntu' 'Xubuntu' 'Lightweight' '#0044AA'
         New-UbuntuFlavor 'lubuntu' 'Lubuntu' 'Lightest' '#0068C8' @{
-            Alongside = $null; Manual = 'Manual partitioning'
-            ManualExtra = 'Also click the existing **EFI System Partition**, choose Edit, set the mount point to **/boot/efi** and keep it unformatted.' }
+            Alongside = $null; Manual = 'Manual partitioning'; ManualExtra = $EspExtra }
         New-UbuntuFlavor 'ubuntucinnamon' 'Ubuntu Cinnamon' 'Windows-like layout' '#DD682A'
         New-UbuntuFlavor 'ubuntu-unity' 'Ubuntu Unity' 'Classic Ubuntu' '#5A06C3'
         New-MintEdition 'xfce' 'Linux Mint Xfce' 'Lighter Mint'

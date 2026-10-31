@@ -54,6 +54,89 @@ function Assert-EspWritable([string]$Root) {
     }
 }
 
+# The boot config files a system's boot loader reads, on the ISO or the installer partition.
+function Get-BootConfigFiles($Distro, [string]$Root) {
+    foreach ($pattern in $Distro.BootConfigs) { Get-Item -Path (Join-Path $Root $pattern) -Force -ErrorAction SilentlyContinue }
+}
+
+# Latin-1 keeps every byte as it was. GRUB chokes on a byte order mark, and menu titles aren't always ASCII.
+function Read-BootConfig([string]$Path) { [Text.Encoding]::GetEncoding(28591).GetString([IO.File]::ReadAllBytes($Path)) }
+
+function Get-EditedBootConfig($Distro, [string]$Text) {
+    foreach ($edit in $Distro.BootEdits.GetEnumerator()) { $Text = $Text -replace $edit.Key, $edit.Value }
+    $Text
+}
+
+# Whether this ISO's boot files are the ones hop knows how to edit. The first edit is what
+# points the live system at the installer partition, so without it the system wouldn't start.
+# A new release could change this, and it's better found before the disk changes.
+function Test-BootConfigKnown($Distro, [string]$Root) {
+    if (-not $Distro.BootEdits) { return $true }
+    $first = @($Distro.BootEdits.Keys)[0]
+    foreach ($file in @(Get-BootConfigFiles $Distro $Root)) {
+        if ((Read-BootConfig $file.FullName) -match $first) { return $true }
+    }
+    $false
+}
+
+# Live systems that look for their USB stick by name wouldn't find the installer partition,
+# whose FAT32 label is short and fixed. So the copied config, per the catalog, names that
+# label instead. Shim only checks the signatures of programs, so this is safe with Secure Boot.
+function Update-BootConfig($Distro, [string]$Root) {
+    if (-not $Distro.BootEdits) { return }
+    foreach ($file in @(Get-BootConfigFiles $Distro $Root)) {
+        $text = Read-BootConfig $file.FullName
+        $edited = Get-EditedBootConfig $Distro $text
+        if ($edited -ceq $text) { continue }
+        # Copied from a read-only ISO, so it may have come out read-only.
+        $file.IsReadOnly = $false
+        [IO.File]::WriteAllBytes($file.FullName, [Text.Encoding]::GetEncoding(28591).GetBytes($edited))
+        Write-Log "Pointed $($file.Name) at the installer partition."
+    }
+}
+
+# What goes in grub.cfg next to the boot loader, which is how it finds the installer partition.
+function Get-EspGrubConfig($Distro) {
+    if ($Distro.GrubDir) {
+        return @(
+            "search --no-floppy --label --set=root $InstallerLabel"
+            "set prefix=(`$root)/$($Distro.GrubDir)"
+            'configfile $prefix/grub.cfg')
+    }
+    @(
+        'search --no-floppy --file --set=root /.disk/info'
+        'set prefix=($root)/boot/grub'
+        'configfile $prefix/grub.cfg')
+}
+
+# systemd-boot only reads its menu and kernels from its own partition, and they don't fit on
+# Windows' EFI partition. So what starts first is the ISO's EFI Shell, whose script finds the
+# installer partition and starts systemd-boot there. Neither is signed: these need Secure Boot off.
+function Get-EspShellScript($Distro) {
+    $marker = $Distro.Live -replace '/', '\'
+    @(
+        '@echo -off'
+        'for %a in 0 1 2 3 4 5 6 7 8 9 A B C D E F 10 11 12 13 14 15 16 17 18 19 1A 1B 1C 1D 1E 1F'
+        "  if exist fs%a:\$marker then"
+        '    fs%a:'
+        '    \EFI\BOOT\BOOTx64.EFI'
+        '  endif'
+        'endfor')
+}
+
+# Fills \EFI\hop from the installer partition's \EFI\BOOT at $Source.
+function Copy-EspLoader($Distro, [string]$Source, [string]$Folder) {
+    New-Item -ItemType Directory -Path $Folder -Force | Out-Null
+    if ($Distro.EspShell) {
+        $partition = Split-Path (Split-Path $Source -Parent) -Parent
+        Copy-Item -LiteralPath (Join-Path $partition $Distro.EspShell) -Destination (Join-Path $Folder 'BOOTX64.EFI') -Force
+        Set-Content -LiteralPath (Join-Path $Folder 'startup.nsh') -Encoding ASCII -Value (Get-EspShellScript $Distro)
+        return
+    }
+    Get-ChildItem -LiteralPath $Source -Force | Where-Object Extension -eq '.efi' | Copy-Item -Destination $Folder -Force
+    Set-Content -LiteralPath (Join-Path $Folder 'grub.cfg') -Encoding ASCII -Value (Get-EspGrubConfig $Distro)
+}
+
 # GRUB starts the first partition it finds with /.disk/info, and hop can't choose the order, so
 # a USB installer left plugged in, or another tool's leftovers, could start instead of hop's.
 function Get-OtherInstallers {
@@ -71,10 +154,11 @@ function Get-OtherInstallers {
 # files from the EFI system partition, and some delete entries that point anywhere
 # else, so the installer's signed boot loader is copied to \EFI\hop there. The config
 # built into Ubuntu's signed GRUB finds the installer partition by its /.disk/info file,
-# on any disk the firmware has started; grub.cfg here is only its last resort. So the
-# loader stays on Windows' EFI partition, the one this firmware is known to start, wherever
-# Linux goes. Safe to run again: old hop entries are replaced.
-function Register-Installer([string]$Name) {
+# on any disk the firmware has started; grub.cfg here is only its last resort, though
+# Fedora's GRUB does read it first. So the loader stays on Windows' EFI partition, the one
+# this firmware is known to start, wherever Linux goes. Safe to run again: old hop entries
+# are replaced.
+function Register-Installer([string]$Name, $Distro) {
     Set-Status 'Adding the installer to the startup menu...'
     $installer = Get-HopPartitions | Where-Object { $_.Label -in $InstallerLabels } | Select-Object -First 1
     $letter = if (-not $installer) { $null } elseif ($installer.Letter) { $installer.Letter } else { Get-DriveLetter $installer.Partition }
@@ -89,13 +173,7 @@ function Register-Installer([string]$Name) {
             $path = Join-Path $root $old
             if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
         }
-        $folder = Join-Path $root $EspFolder
-        New-Item -ItemType Directory -Path $folder -Force | Out-Null
-        Get-ChildItem -LiteralPath $source -Filter '*.efi' -Force | Copy-Item -Destination $folder -Force
-        Set-Content -LiteralPath (Join-Path $folder 'grub.cfg') -Encoding ASCII -Value @(
-            'search --no-floppy --file --set=root /.disk/info'
-            'set prefix=($root)/boot/grub'
-            'configfile $prefix/grub.cfg')
+        Copy-EspLoader $Distro $source (Join-Path $root $EspFolder)
     }
     Write-Log "Copied the installer's boot loader to \$EspFolder on the EFI system partition."
 

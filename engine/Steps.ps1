@@ -53,7 +53,9 @@ function Get-ReturnedHelp {
 # saved state, which says where Linux is going; without it, that's next to C:.
 function Get-Steps($Distro, [int]$LinuxGB, $Place) {
     $otherDisk = $Place.OnWindowsDisk -eq $false
-    if ($Distro.Strategy -eq 'prepared') {
+    if ($Distro.Steps) {
+        $steps = @($Distro.Steps | ForEach-Object { $_ -replace '\{GB\}', $LinuxGB })
+    } elseif ($Distro.Strategy -eq 'prepared') {
         $steps = @(
             "Pick your language and keyboard, then choose **$($Distro.Mode)**."
             "Click the $($LinuxGB - 1) GB partition named **$RootLabel**. Use it as Root (/) and format it as ext4."

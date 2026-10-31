@@ -10,8 +10,9 @@
       4. Add a UEFI boot entry for HOPINSTALL and boot it once on the next restart.
     The Linux installer then runs from HOPINSTALL and installs into the room made.
 
-    Only Ubuntu-style ("casper") live ISOs work, and no file in the ISO may be
-    4 GB or larger (FAT32 limit). Both are checked before the disk is touched.
+    The catalog says how each system's live ISO finds its files, and a chosen ISO has
+    to be Ubuntu-style ("casper"). No file in the ISO may be 4 GB or larger (FAT32
+    limit). Both are checked before the disk is touched.
 #>
 
 $ErrorActionPreference = 'Stop'

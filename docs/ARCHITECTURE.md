@@ -17,12 +17,15 @@ The same layout works next to any drive, or at the end of free space. See [Where
 
 Three things limit what it can install:
 
-- **FAT32 can't hold a file of 4 GB or more,** which rules out Kubuntu's ISO.
+- **FAT32 can't hold a file of 4 GB or more,** which rules out the ISOs of Kubuntu and Omarchy, whose
+  `airootfs.sfs` is 6.1 GB. Omarchy's installer also hides the disk it started from, so it couldn't
+  use free space next to the installer, and it refuses a disk with BitLocker on it, even paused.
 - **The firmware has to start it.** Many firmwares only start files from the EFI system partition, so
-  the ISO's signed boot loader is copied to `\EFI\hop` there. It then finds the installer partition
-  by looking for `/.disk/info`.
-- **The live system has to find itself.** Ubuntu's `casper` searches every partition for its files,
-  which is why this works. Fedora and Arch look for a specific USB label or device, so they don't.
+  the ISO's signed boot loader is copied to `\EFI\hop` there. It then has to find the installer partition,
+  and how it does that depends on the system.
+- **The live system has to find itself.** Ubuntu's `casper` and Debian's `live-boot` search every
+  partition, so they just work. Fedora's `dracut` and Arch's `archiso` look for a specific label or disc
+  stamp, so `Update-BootConfig` changes the copy of their boot menu to name `HOPINSTALL`.
 
 ## Two languages, one exe
 
@@ -47,7 +50,7 @@ in a runspace and calls their functions one at a time. Progress comes back throu
 | `SecureBoot.ps1` | Works out whether Secure Boot will let the ISO start |
 | `Drives.ps1` | Which drives Linux can go on, and why not, and where the ISO can go |
 | `Disk.ps1` | Plans the space, makes partitions, copies files |
-| `Boot.ps1` | The EFI partition and the startup entry |
+| `Boot.ps1` | The copied boot menu, the EFI partition and the startup entry |
 | `State.ps1` | What hop left on this PC, and `state.json` |
 | `OtherLinux.ps1` | Finds and removes another Linux, such as Pond |
 | `Install.ps1` | The main flows: install, restart and undo |
@@ -106,6 +109,28 @@ Read from the boot files of the ISOs in the catalog (October 2026):
 5. Casper searches the partitions of every disk, NVMe included, for its files. It accepts FAT and
    matches the ID in `.disk/casper-uuid-*` where the ISO has one. (Read in Ubuntu 26.04.1, Mint 22.3
    and elementary OS 8.1.)
+
+Other systems differ in steps 2, 3 and 5. The catalog holds what differs (`Live`, `BootConfigs`,
+`BootEdits`, `GrubDir`, `EspShell`), so a similar system is one entry. Read from the October 2026 ISOs:
+
+| System | Boot loader, signed by | How it finds the installer partition | How the live system finds itself |
+| --- | --- | --- | --- |
+| Zorin OS 18.1 | shim and GRUB, Microsoft and Canonical | `/.disk/info` | `casper` searches |
+| Debian 13 | shim and GRUB, Microsoft and Debian | `/.disk/info` | `live-boot` searches |
+| Fedora 44, Ultramarine 44 | shim and GRUB, Microsoft and Fedora | `grub.cfg` next to GRUB, by label | `root=live:LABEL=HOPINSTALL` |
+| CachyOS | GRUB, unsigned | Its own built-in config, by a marker file | `archisolabel=HOPINSTALL` |
+| Arch Linux | systemd-boot, unsigned | See below | `archisolabel=HOPINSTALL` |
+
+Fedora's and Ultramarine's installer, Anaconda, protects the whole disk behind `/run/initramfs/live`,
+and so refuses the disk holding the installer partition. Its log says so, and after
+`umount -l /run/initramfs/live` it no longer does, which is why their steps have that command.
+
+The edits only touch the copy on the installer partition. Shim checks the signatures of programs, not of
+GRUB's config, so a changed menu still starts with Secure Boot on.
+
+Arch is the odd one. systemd-boot only reads its menu and kernels from its own partition, and they
+need 270 MB, which Windows' EFI partition doesn't have. So `\EFI\hop\BOOTX64.EFI` is the EFI Shell from
+Arch's ISO, whose `startup.nsh` finds the installer partition and starts systemd-boot there.
 
 A problem from step 3 onwards stops at GRUB or the Linux console. **Coming straight back to Windows
 means step 1 or 2 failed, or the firmware never tried:** firmware moves on to the next startup entry
