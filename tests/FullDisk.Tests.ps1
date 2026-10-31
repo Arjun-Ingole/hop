@@ -80,7 +80,7 @@ Describe 'Boot config for a full disk' {
     It 'adds the word to Fedora''s, once it names the installer partition' {
         $distro = (Get-Catalog | Where-Object Id -eq 'fedora')
         $distro.FullDisk = Get-FullDiskBoot 'dracut'
-        Get-EditedBootConfig $distro "linux /x root=live:CDLABEL=F44 rd.live.image" -FullDisk | Should -Be "linux /x root=live:LABEL=$InstallerLabel rd.live.ram=1 rd.live.image"
+        Get-EditedBootConfig $distro "linux /x root=live:CDLABEL=F44 rd.live.image" -FullDisk | Should -BeLike "linux /x root=live:LABEL=$InstallerLabel rd.live.ram=1 *umount* rd.live.image"
     }
     It 'adds copytoram to Arch''s' {
         Edit-With 'archiso' 'options  archisobasedir=arch archisolabel=HOPINSTALL' | Should -Be 'options  archisobasedir=arch copytoram archisolabel=HOPINSTALL'
