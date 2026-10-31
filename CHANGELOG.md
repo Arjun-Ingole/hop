@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.1 - 2026-10-31
+
+### Fixed
+
+- The Secure Boot check turned off the permission hop needs for the startup menu, and hop assumed it
+  still had it. Adding the startup entry could then fail after the disk had changed, on any PC. hop now
+  asks for the permission before every firmware read and write.
+- A PC whose startup menu can't be changed was only caught after the disk had changed. hop now checks
+  before the download and stops with nothing changed.
+- Firmware errors now include the Windows error code.
+- The reason hop stopped wasn't in the log, so bug reports didn't show it.
+
+### Changed
+
+- Pop!_OS says it needs Secure Boot off as soon as it's picked, instead of after clicking Install.
+
 ## 0.1.0 - 2026-10-31
 
 ### Added

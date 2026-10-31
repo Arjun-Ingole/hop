@@ -12,7 +12,7 @@
     <AssemblyName>hop</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>assets\hop.ico</ApplicationIcon>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Product>hop</Product>
     <Description>Install Linux next to Windows without a USB stick</Description>
     <Copyright>Copyright 2026 Arjun Ingole</Copyright>
