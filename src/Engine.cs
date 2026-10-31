@@ -193,6 +193,7 @@ namespace Hop
         public int Stage => Convert.ToInt32(Sync["Stage"]);
         public long Bytes => Convert.ToInt64(Sync["Bytes"] ?? 0L);
         public long TotalBytes => Convert.ToInt64(Sync["TotalBytes"] ?? 0L);
+        public string SpaceNote => Sync["SpaceNote"] as string;   // why Undo left the space free, if it had to
         public bool RoomRestarting => Sync["RoomRestarting"] is bool restarting && restarting;
 
         Collection Invoke(string command, IDictionary parameters = null)

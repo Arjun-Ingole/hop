@@ -125,6 +125,7 @@ namespace Hop
         {
             int grew = SizeOfDrive(letter) - sizeBefore;
             string result = grew > 0 ? $"Drive {letter}: is {grew} GB bigger."
+                : engine.SpaceNote != null ? engine.SpaceNote
                 : installerOnly ? "The space it used is free, but Windows can't reach it from here."
                 : "The space is free on this drive.";
             Arrange(new[] { new[] { Run.Black("Changes removed.") } }, result, Secondary, null, 0);

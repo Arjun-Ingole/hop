@@ -234,6 +234,7 @@ function Get-SpaceOwner($State, $HopPartitions) {
 # With -InstallerOnly, Linux and its partitions stay.
 function Invoke-Cleanup([switch]$InstallerOnly) {
     $state = Read-State
+    $Sync.SpaceNote = $null
     # Choosing "Linux isn't installed yet" by mistake must not take its boot partition with it.
     if (-not $InstallerOnly -and $state -and (Test-LinuxInstalled $state)) {
         Write-Log 'Linux is installed, so only the installer will be removed.'
@@ -260,7 +261,7 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
     $labels = if ($InstallerOnly) { $InstallerLabels } else { $InstallerLabels + $RootLabel, $BootLabel }
     $hopPartitions = @(Get-HopPartitions | Where-Object { $_.Label -in $labels })
     # Before anything goes: with no state file, the neighbours say whose space it was.
-    $owner = Get-SpaceOwner $state $hopPartitions
+    $owner = try { Get-SpaceOwner $state $hopPartitions } catch { Write-Log "Could not tell whose space it was: $($_.Exception.Message)"; $null }
     foreach ($found in $hopPartitions) {
         Set-Status "Removing the $($found.Label) partition..."
         Remove-PartitionAt $found.Partition.DiskNumber $found.Partition.Offset
@@ -292,9 +293,9 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
                 Write-Log 'The freed space is not next to the drive, so Windows cannot use it directly.'
             }
         } catch {
-            # The installer is gone by now, and that's what was asked for.
-            if (-not $InstallerOnly) { throw }
-            Write-Log "Could not give the installer's space to Windows: $($_.Exception.Message)"
+            # The partitions are gone by now, so trying again couldn't help, and the rest still has to happen.
+            Write-Log "Could not give the space back: $($_.Exception.Message)"
+            $Sync.SpaceNote = "The space it used stays free, because hop couldn't give it back to the drive it came from. That drive may be gone, or Windows may have refused."
         }
     }
 
@@ -303,8 +304,8 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
 
     # Only without Linux: Fast Startup stays off for a dual boot, because it locks the Windows drive.
     if (-not $InstallerOnly) {
-        if ($state.FastStartupWasOn) { Restore-FastStartup }
-        if ($state.BitLockerPaused) { Resume-BitLockerAfterUndo }
+        if ($state.FastStartupWasOn) { try { Restore-FastStartup } catch { Write-Log "Could not turn Fast Startup back on: $($_.Exception.Message)" } }
+        if ($state.BitLockerPaused) { try { Resume-BitLockerAfterUndo } catch { Write-Log "Could not turn BitLocker back on: $($_.Exception.Message)" } }
     }
 
     foreach ($path in @($StatePath, $LegacyStatePath)) { if (Test-Path $path) { Remove-Item -LiteralPath $path -Force } }

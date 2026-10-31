@@ -84,17 +84,28 @@ namespace Hop
             try
             {
                 await engine.CleanupAsync(installerOnly);
-                await ReloadAsync();
-                EndWork();
-                if (afterwards != null) afterwards();
-                else ShowChoose();
             }
             catch (Exception ex)
             {
                 EndWork();
                 Arrange(new[] { new[] { Run.Gray("Couldn't clean up"), Run.Black("everything") } }, Describe(ex), Danger, null, 0);
-                Footer(null, null, "Try again", () => _ = CleanupAsync(installerOnly, afterwards));
+                Footer("Copy a bug report", () => _ = CopyReportAsync(), "Try again", () => _ = CleanupAsync(installerOnly, afterwards));
+                return;
             }
+            // It's done now, so a problem from here on, such as what stops a new install, isn't one to retry.
+            try
+            {
+                await ReloadAsync();
+            }
+            catch (Exception ex)
+            {
+                EndWork();
+                ShowBlocked("hop's changes are removed. " + Describe(ex));
+                return;
+            }
+            EndWork();
+            if (afterwards != null) afterwards();
+            else ShowChoose();
         }
     }
 }

@@ -866,6 +866,53 @@ Describe 'Invoke-Cleanup' {
         Invoke-Cleanup
         $script:removed | Should -Be @([int64]160GB)
     }
+    Context 'when the space cannot go back' {
+        BeforeEach {
+            Mock Test-LinuxInstalled { $false }
+            Mock Read-State { [pscustomobject]@{ Partitions = @(); WindowsShrunk = $true; FastStartupWasOn = $true; BitLockerPaused = $true } }
+            Mock Restore-FastStartup { }
+            Mock Resume-BitLockerAfterUndo { }
+            Mock Remove-Item { }
+            Mock Test-Path { $true } -ParameterFilter { $Path -eq $StatePath }
+            Mock Get-PartitionSupportedSize { [pscustomobject]@{ SizeMax = [int64]160GB } }
+        }
+        It 'finishes the rest and reports it when the resize fails' {
+            Mock Resize-Partition { throw 'Size Not Supported' }
+            { Invoke-Cleanup } | Should -Not -Throw
+            Should -Invoke Restore-FastStartup -Times 1
+            Should -Invoke Resume-BitLockerAfterUndo -Times 1
+            Should -Invoke Remove-Item -ParameterFilter { $LiteralPath -eq $StatePath } -Times 1
+            $Sync.SpaceNote | Should -BeLike '*stays free*'
+        }
+        It 'finishes the rest and reports it when the drive has gone' {
+            Mock Read-State { [pscustomobject]@{ Partitions = @(); WindowsShrunk = $true; FastStartupWasOn = $true; BitLockerPaused = $false; DiskGuid = '{disk-4}'; TargetKind = 'volume'; TargetOffset = [int64]1GB; OnWindowsDisk = $false } }
+            Mock Get-StateDisk { 4 }
+            Mock Get-PartitionAt { $null }
+            Mock Resize-Partition { }
+            { Invoke-Cleanup } | Should -Not -Throw
+            Should -Invoke Resize-Partition -Times 0
+            Should -Invoke Restore-FastStartup -Times 1
+            Should -Invoke Remove-Item -ParameterFilter { $LiteralPath -eq $StatePath } -Times 1
+            $Sync.SpaceNote | Should -BeLike '*stays free*'
+        }
+        It 'still forgets the setup when a setting cannot go back' {
+            Mock Get-PartitionSupportedSize { [pscustomobject]@{ SizeMax = [int64]100GB } }
+            Mock Restore-FastStartup { throw 'no' }
+            { Invoke-Cleanup } | Should -Not -Throw
+            Should -Invoke Resume-BitLockerAfterUndo -Times 1
+            Should -Invoke Remove-Item -ParameterFilter { $LiteralPath -eq $StatePath } -Times 1
+        }
+        It 'has nothing to report when the space went back' {
+            Mock Resize-Partition { }
+            Invoke-Cleanup
+            $Sync.SpaceNote | Should -BeNullOrEmpty
+        }
+        It 'still stops when a partition could not be removed, because trying again can help' {
+            Mock Remove-PartitionAt { throw 'in use' }
+            { Invoke-Cleanup } | Should -Throw 'in use'
+            Should -Invoke Remove-Item -Times 0
+        }
+    }
 }
 
 Describe 'Removing one Linux when another shares Windows'' EFI partition' {
