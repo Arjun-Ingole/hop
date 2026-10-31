@@ -174,14 +174,17 @@ Describe 'Get-DiskGaps' {
 Describe 'Get-DriveTargets' {
     BeforeEach {
         Mock Get-WindowsPartition { New-TestPartition -Letter 'C' -Disk 0 -Offset ([int64]1GB) -Size ([int64]200GB) }
-        Mock Get-Disk { New-TestDisk -Number 0; New-TestDisk -Number 1; New-TestDisk -Number 2 -Bus 'USB' }
+        Mock Get-Disk {
+            $all = @((New-TestDisk -Number 0), (New-TestDisk -Number 1), (New-TestDisk -Number 2 -Bus 'USB'))
+            if ($null -ne $Number) { $all | Where-Object { $Number -contains $_.Number } } else { $all }
+        }
         Mock Get-Partition {
-            if ($DiskNumber -eq 0) {
+            if ($DiskNumber -contains 0) {
                 New-TestPartition -Letter '' -Disk 0 -Offset ([int64]1MB) -Size ([int64]100MB) -Type $EspType
                 New-TestPartition -Letter 'C' -Disk 0 -Offset ([int64]1GB) -Size ([int64]200GB)
                 New-TestPartition -Letter '' -Disk 0 -Offset ([int64]201GB) -Size ([int64]1GB) -Type $RecoveryType
                 New-TestPartition -Letter 'D' -Disk 0 -Offset ([int64]202GB) -Size ([int64]798GB - 2MB)
-            } elseif ($DiskNumber -eq 1) {
+            } elseif ($DiskNumber -contains 1) {
                 New-TestPartition -Letter 'E' -Disk 1 -Offset ([int64]1GB) -Size ([int64]300GB)
             }
         }
@@ -296,7 +299,7 @@ Describe 'Get-HopPartitions on any disk' {
         Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } }
         Mock Get-Disk { New-TestDisk -Number 0; New-TestDisk -Number 1; New-TestDisk -Number 2 -Bus 'USB' }
         Mock Get-Partition {
-            $number = $DiskNumber
+            $number = [int]@($DiskNumber)[0]
             [pscustomobject]@{ DiskNumber = $number; Offset = [int64]100GB * ($number + 1); Name = "p$number" }
         }
     }
@@ -402,7 +405,7 @@ Describe 'Invoke-Cleanup on another drive' {
     It 'leaves C: alone' {
         Mock Read-State { [pscustomobject]@{ Partitions = @(); WindowsShrunk = $true; DiskGuid = '{disk-4}'; TargetKind = 'volume'; TargetOffset = [int64]1GB; OnWindowsDisk = $false } }
         Invoke-Cleanup
-        Should -Invoke Get-PartitionSupportedSize -ParameterFilter { $DiskNumber -eq 0 } -Times 0
+        Should -Invoke Get-PartitionSupportedSize -ParameterFilter { $DiskNumber -contains 0 } -Times 0
     }
     It 'grows nothing when Linux only used free space' {
         Mock Read-State { [pscustomobject]@{ Partitions = @(); WindowsShrunk = $false; DiskGuid = '{disk-4}'; TargetKind = 'gap'; TargetOffset = [int64]300GB; OnWindowsDisk = $false } }
@@ -432,7 +435,7 @@ Describe 'Invoke-Cleanup on another drive' {
 Describe 'Get-RecordedPartitions on another disk' {
     It 'looks on the disk the setup is on' {
         Mock Get-Disk { New-TestDisk -Number 2 }
-        Mock Get-Partition { New-TestPartition -Disk 2 -Offset ([int64]500GB) -Size ([int64]8GB) } -ParameterFilter { $DiskNumber -eq 2 }
+        Mock Get-Partition { New-TestPartition -Disk 2 -Offset ([int64]500GB) -Size ([int64]8GB) } -ParameterFilter { $DiskNumber -contains 2 }
         Mock Test-LinuxSignature { $false }
         Mock Get-Volume { $null }
         $state = [pscustomobject]@{ DiskGuid = '{disk-2}'; Partitions = @([pscustomobject]@{ Role = 'installer'; Offset = [int64]500GB; Size = [int64]8GB }) }
@@ -447,7 +450,7 @@ Describe 'Test-LinuxInstalled on another disk' {
         Mock Get-LinuxLoaders { }
     }
     It 'looks for Linux on the disk the setup is on, and for loaders there too' {
-        Mock Get-Partition { } -ParameterFilter { $DiskNumber -eq 2 }
+        Mock Get-Partition { } -ParameterFilter { $DiskNumber -contains 2 }
         Mock Get-LinuxPartitions { [pscustomobject]@{ Guid = '{new}' } }
         Test-LinuxInstalled ([pscustomobject]@{ DiskGuid = '{disk-2}'; LoadersBefore = @(); LinuxBefore = @() }) | Should -BeTrue
         Should -Invoke Get-LinuxLoaders -ParameterFilter { $Disks -contains 2 } -Times 1
@@ -530,7 +533,7 @@ Describe 'Get-Steps by where Linux goes' {
     }
     It 'goes to the manual screen when more is free elsewhere' {
         $text = Get-Text 'ubuntu' ([pscustomobject]@{ OnWindowsDisk = $true; AlongsideOk = $false })
-        $text | Should -Not -BeLike '*Choose **Install Ubuntu alongside*'
+        $text | Should -Not -Match 'Choose \*\*Install Ubuntu alongside'
         $text | Should -BeLike '*Manual installation*60 GB*'
     }
     It 'on a second disk, goes to manual, names the disk and asks for the boot loader first' {
@@ -543,7 +546,7 @@ Describe 'Get-Steps by where Linux goes' {
     It 'tells Mint''s users to leave the boot loader list, since it always uses the first EFI partition' {
         $text = Get-Text 'mint-cinnamon' $second
         $text | Should -BeLike '*Something else*Leave **Device for boot loader installation** as it is*'
-        $text | Should -Not -BeLike '*choose **WD Blue*'
+        $text | Should -Not -Match 'choose \*\*WD Blue'
     }
     It 'keeps Lubuntu''s step for the existing EFI partition' {
         $text = Get-Text 'lubuntu' $second

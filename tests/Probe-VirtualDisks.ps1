@@ -118,7 +118,7 @@ function Get-Layout($DiskNumber) {
     (Storage\Get-Partition -DiskNumber $DiskNumber | Sort-Object Offset | ForEach-Object { '{0}+{1}' -f $_.Offset, $_.Size }) -join ' '
 }
 
-function New-Volume([int]$Disk, [int64]$Size, [string]$Label, [string]$Format = 'NTFS', [string]$Type) {
+function New-ProbeVolume([int]$Disk, [int64]$Size, [string]$Label, [string]$Format = 'NTFS', [string]$Type) {
     $settings = @{ DiskNumber = $Disk; Size = $Size; AssignDriveLetter = $true }
     if ($Type) { $settings.GptType = $Type; $settings.Remove('AssignDriveLetter') }
     $partition = New-Partition @settings
@@ -183,11 +183,11 @@ try {
     # The "Windows disk": [ESP][W: pretends to be C:][D: data][recovery][E: data]
     $vdiskA = New-VDisk 'windows' 40
     $a = $vdiskA.Number
-    New-Volume $a 100MB '' '' $EspType | Out-Null
-    $w = New-Volume $a 10GB 'PRETENDC'
-    $d = New-Volume $a 14GB 'DATA'
-    $recovery = New-Volume $a 1GB '' '' $RecoveryType
-    $e = New-Volume $a 5GB 'AFTER'
+    New-ProbeVolume $a 100MB '' '' $EspType | Out-Null
+    $w = New-ProbeVolume $a 10GB 'PRETENDC'
+    $d = New-ProbeVolume $a 14GB 'DATA'
+    $recovery = New-ProbeVolume $a 1GB '' '' $RecoveryType
+    $e = New-ProbeVolume $a 5GB 'AFTER'
     $wLetter = [string]$w.DriveLetter; $dLetter = [string]$d.DriveLetter; $eLetter = [string]$e.DriveLetter
     Add-TestFiles $dLetter
     Add-TestFiles $eLetter 2 32
@@ -197,7 +197,7 @@ try {
     # The second disk: [X: data][free space][Y: exFAT, which hop can't shrink][free space]
     $vdiskB = New-VDisk 'second' 80
     $b = $vdiskB.Number
-    $x = New-Volume $b 20GB 'SECOND'
+    $x = New-ProbeVolume $b 20GB 'SECOND'
     $xLetter = [string]$x.DriveLetter
     Add-TestFiles $xLetter
     $xHash = Get-TestHash $xLetter
@@ -227,7 +227,7 @@ try {
     Check 'second disk volume is offered' (-not (Find-Row $xLetter).Blocker) ''
     Check 'second disk free space is folded into its volume' ((Find-Row $xLetter).TailFreeGB -ge 50) ''
 
-    $y = New-Volume $b 6GB 'NOTNTFS' 'exFAT'
+    $y = New-ProbeVolume $b 6GB 'NOTNTFS' 'exFAT'
     Check 'a real exFAT volume is refused and named' ((Find-Row ([string]$y.DriveLetter)).Blocker -like '*uses exFAT*') ((Find-Row ([string]$y.DriveLetter)).Blocker)
     $gapRow = @(Get-DriveTargets) | Where-Object { $_.Kind -eq 'gap' -and $_.DiskName } | Select-Object -First 1
     Check 'free space after a refused volume is offered on its own' ($null -ne $gapRow) ''
@@ -430,7 +430,7 @@ try {
 
     Step 'B8: someone''s own drive that happens to be called LINUXBOOT is safe'
     Reset-Run
-    $mine = New-Volume $b 2GB $BootLabel
+    $mine = New-ProbeVolume $b 2GB $BootLabel
     Add-TestFiles ([string]$mine.DriveLetter) 1 8
     Check 'not counted as hop''s' (@(Get-HopPartitions | Where-Object { [int64]$_.Partition.Offset -eq [int64]$mine.Offset }).Count -eq 0) ''
     Invoke-Cleanup
@@ -468,7 +468,7 @@ try {
     Write-Output $_.ScriptStackTrace
 } finally {
     $script:Pretend = $false
-    foreach ($name in @($script:VDisks.Keys)) { try { Dismount-VDisk $name } catch { Write-Output "Could not detach $name" } }
+    foreach ($name in @($script:VDisks.Keys)) { try { Dismount-VDisk $name } catch { Write-Output "Could not detach $name`: $($_.Exception.Message)" } }
     Write-Output ''
     Write-Output "=== $script:Passes passed, $($script:Failures.Count) failed, in $([int]((Get-Date) - $started).TotalMinutes) minutes"
     foreach ($failure in $script:Failures) { Write-Output "  FAILED: $failure" }

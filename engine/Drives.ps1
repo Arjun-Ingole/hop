@@ -228,6 +228,13 @@ function Assert-DriveUsable([string]$Target) {
     if ($reason) { throw $reason }
 }
 
+# hop keeps its state and logs on C: whichever drive Linux goes on, and a state file that can't be
+# written is a setup that can't be undone. It only takes a little, but a truly full C: hasn't got it.
+function Assert-StateRoom {
+    $free = ([IO.DriveInfo][IO.Path]::GetPathRoot($StateDir)).AvailableFreeSpace
+    if ($free -lt 50MB) { throw "Drive $($StateDir.Substring(0, 2)) is completely full, and hop needs a little room there to keep track of what it does. Free up 50 MB and try again. Linux can still go on another drive." }
+}
+
 # Asking Windows how far a volume can shrink has no limit of its own, and takes
 # longer the bigger and fuller the drive is, so it gets a separate runspace to be left behind in.
 function Get-SupportedSize($Partition) {
@@ -307,7 +314,8 @@ $LinuxDisksPath = Join-Path $StateDir 'linux-disks.json'
 
 function Get-LinuxDisks {
     if (-not (Test-Path -LiteralPath $LinuxDisksPath)) { return }
-    try { @(Get-Content -LiteralPath $LinuxDisksPath -Raw | ConvertFrom-Json) } catch { Write-Log "Could not read $LinuxDisksPath`: $($_.Exception.Message)" }
+    # Windows PowerShell passes a JSON list along as one object, so it's taken apart here.
+    try { Get-Content -LiteralPath $LinuxDisksPath -Raw | ConvertFrom-Json | ForEach-Object { $_ } } catch { Write-Log "Could not read $LinuxDisksPath`: $($_.Exception.Message)" }
 }
 
 function Set-LinuxDisks([string[]]$Guids) {

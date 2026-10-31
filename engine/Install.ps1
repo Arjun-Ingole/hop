@@ -9,6 +9,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
     Assert-SecureBootAllows $distro
     Assert-FirmwareAccess
     Assert-DriveUsable $Target
+    Assert-StateRoom
     $diskChanged = $false
 
     if (-not $IsoPath) {
