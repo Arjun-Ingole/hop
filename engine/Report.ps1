@@ -30,7 +30,10 @@ function Get-Report {
     Add-ReportSection $lines 'hop' {
         "Status: $(Get-InstallStatus)"
         $state = Read-State
-        if ($state) { "Distro: $($state.DistroId), $($state.LinuxGB) GB, copied: $($state.Copied), restarted: $($state.RestartedAt)" }
+        if ($state) {
+            "Distro: $($state.DistroId), $($state.LinuxGB) GB, copied: $($state.Copied), restarted: $($state.RestartedAt)"
+            "Target: $($state.TargetKind) $($state.TargetLetter) at $($state.TargetOffset), on the Windows disk: $($state.OnWindowsDisk), alongside finds it: $($state.AlongsideOk)"
+        }
     }
     Add-ReportSection $lines 'Disk' {
         $c = Get-WindowsPartition
@@ -43,6 +46,14 @@ function Get-Report {
             $volume = try { $p | Get-Volume -ErrorAction SilentlyContinue } catch { $null }
             $signature = try { [Hop.DiskProbe]::ReadSignature($p.DiskNumber, [int64]$p.Offset) } catch { 'unread' }
             '{0,2}  {1,8:N1} GB at {2,8:N1} GB  {3}  {4} {5} {6}' -f $p.PartitionNumber, ($p.Size / 1GB), ($p.Offset / 1GB), $p.GptType, $volume.FileSystemType, $volume.FileSystemLabel, $signature
+        }
+    }
+    Add-ReportSection $lines 'Drives' {
+        foreach ($row in Get-DriveTargets) {
+            "$($row.Title), $($row.DiskName), $($row.DiskGB) GB disk, about $($row.UsableGB) GB usable. $($row.Blocker)"
+        }
+        foreach ($disk in Get-Disk | Where-Object Number -ne (Get-WindowsPartition).DiskNumber) {
+            "Disk $($disk.Number): $($disk.BusType), $($disk.PartitionStyle), $([math]::Round($disk.Size / 1GB)) GB, $($disk.HealthStatus)"
         }
     }
     Add-ReportSection $lines 'Secure Boot' {

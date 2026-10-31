@@ -1,4 +1,4 @@
-# --- Another Linux on this drive (for example Pond) ------------------------
+# --- Another Linux on this PC (for example Pond) ---------------------------
 
 $LinuxPartitionTypes = @(
     '{0fc63daf-8483-4772-8e79-3d69d8477de4}'   # Linux file system
@@ -11,15 +11,18 @@ $LinuxPartitionTypes = @(
     '{a19d880f-05fc-4d3b-a006-743f0f84911e}'   # Linux RAID
 )
 
-# The partitions a Linux on this drive might start from, including an EFI partition on another disk.
-function Get-DiskGuids {
-    Get-Partition -DiskNumber (Get-WindowsPartition).DiskNumber | ForEach-Object { $_.Guid }
+# The partitions a Linux on these disks might start from, including an EFI partition on another
+# disk. Whichever else is named, the Windows disk counts, since Linux Mint starts from there.
+function Get-DiskGuids([object[]]$Disks) {
+    foreach ($disk in @(@($Disks) + (Get-WindowsPartition).DiskNumber | Where-Object { $null -ne $_ } | Sort-Object -Unique)) {
+        Get-Partition -DiskNumber $disk | ForEach-Object { $_.Guid }
+    }
     try { (Get-WindowsEsp).Guid } catch { }
 }
 
-# Startup entries for a Linux boot loader on the Windows drive, other than hop's own.
-function Get-LinuxLoaders {
-    $onDisk = @(Get-DiskGuids)
+# Startup entries for a Linux boot loader on these disks, other than hop's own.
+function Get-LinuxLoaders([object[]]$Disks) {
+    $onDisk = @(Get-DiskGuids $Disks)
     $entries = @(try { [Hop.Firmware]::ListEntries() } catch { Write-Log "Could not read startup entries: $($_.Exception.Message)" })
     @($entries | Where-Object {
             $_.PartitionGuid -and $onDisk -contains $_.PartitionGuid -and $_.Path -and
@@ -39,14 +42,25 @@ function Get-LinuxPartitions($Partitions) {
     $linux
 }
 
-# Linux partitions on the Windows drive, the startup entries that boot them, and a
-# separate EFI partition if that Linux made its own. Windows' EFI partition is never included.
+# Another Linux on the Windows disk, or on a disk where hop put it.
 function Get-OtherSystem {
-    $partitions = @(Get-Partition -DiskNumber (Get-WindowsPartition).DiskNumber)
-    $onDisk = @(Get-DiskGuids)
+    $windowsDisk = (Get-WindowsPartition).DiskNumber
+    $known = @(Get-LinuxDisks)
+    $disks = @($windowsDisk) + @(Get-Disk | Where-Object { $_.Number -ne $windowsDisk -and $known -contains $_.Guid } | ForEach-Object { $_.Number })
+    foreach ($disk in $disks) {
+        $found = Find-OtherSystem $disk
+        if ($found) { return $found }
+    }
+}
+
+# Linux partitions on a disk, the startup entries that boot them, and a separate
+# EFI partition if that Linux made its own. Windows' EFI partition is never included.
+function Find-OtherSystem([int]$Disk) {
+    $partitions = @(Get-Partition -DiskNumber $Disk)
+    $onDisk = @(Get-DiskGuids $Disk)
     $entries = @(try { [Hop.Firmware]::ListEntries() } catch { Write-Log "Could not read startup entries: $($_.Exception.Message)" })
     $windowsEsp = ($entries | Where-Object { $_.Path -like '\EFI\Microsoft\*' } | Select-Object -First 1).PartitionGuid
-    $loaders = @(Get-LinuxLoaders)
+    $loaders = @(Get-LinuxLoaders $Disk)
 
     $linux = @(Get-LinuxPartitions $partitions)
     if (-not $linux.Count) { return $null }
@@ -73,6 +87,8 @@ function Get-OtherSystem {
         Partitions = $all
         Entries    = $boot
         WindowsEsp = $windowsEsp
+        OnWindowsDisk = $Disk -eq (Get-WindowsPartition).DiskNumber
+        DiskGuid   = (Get-Disk -Number $Disk).Guid
     }
 }
 
@@ -88,7 +104,7 @@ function Test-LinuxSignature($Partition) {
 }
 
 function Remove-PartitionByGuid([string]$Guid) {
-    $partition = Get-Partition -DiskNumber (Get-WindowsPartition).DiskNumber | Where-Object Guid -eq $Guid
+    $partition = Get-Partition | Where-Object Guid -eq $Guid | Select-Object -First 1
     if (-not $partition) { return }
     try {
         Remove-Partition -DiskNumber $partition.DiskNumber -PartitionNumber $partition.PartitionNumber -Confirm:$false
@@ -131,15 +147,17 @@ function Remove-OtherSystem {
         Set-Status "Removing $($other.Name) ($([math]::Round($partition.Size / 1GB)) GB partition)..."
         Remove-PartitionByGuid $partition.Guid
     }
+    if (-not $other.OnWindowsDisk) { Set-LinuxDisks (@(Get-LinuxDisks) | Where-Object { $_ -ne $other.DiskGuid }) }
     Set-Status "$($other.Name) removed." 100
 }
 
-# Gives the free space right after C: to Windows.
-function Expand-Windows {
-    $c = Get-WindowsPartition
+# Gives the free space right after a drive, C: unless told otherwise, to that drive.
+function Expand-Windows([string]$Target) {
+    $c = (Resolve-Target $Target).Partition
+    $letter = Get-LetterOf $c
     $max = (Get-PartitionSupportedSize -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber).SizeMax
-    if ($max -le $c.Size + 1MB) { throw "The free space isn't next to drive C:, so Windows can't use it directly." }
-    Set-Status 'Giving the space to Windows...'
+    if ($max -le $c.Size + 1MB) { throw "The free space isn't next to drive $letter`:, so Windows can't use it directly." }
+    Set-Status "Giving the space to drive $letter`:..."
     Resize-Partition -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber -Size $max
     Set-Status 'Done.' 100
 }

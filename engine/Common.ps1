@@ -5,7 +5,7 @@
 
     How it works (what a USB installer does, but on the internal disk):
       1. Download the official ISO and check its checksum.
-      2. Shrink C: and make room for Linux plus a small FAT32 "HOPINSTALL" partition.
+      2. Shrink the chosen drive and make room for Linux plus a small FAT32 "HOPINSTALL" partition.
       3. Copy the ISO's files onto HOPINSTALL.
       4. Add a UEFI boot entry for HOPINSTALL and boot it once on the next restart.
     The Linux installer then runs from HOPINSTALL and installs into the room made.
