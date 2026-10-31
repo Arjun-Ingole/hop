@@ -828,6 +828,82 @@ Describe 'Invoke-Cleanup' {
     }
 }
 
+Describe 'Removing one Linux when another shares Windows'' EFI partition' {
+    BeforeAll {
+        $linuxType = '{0fc63daf-8483-4772-8e79-3d69d8477de4}'
+        function New-PondEntry { [pscustomobject]@{ Number = 3; Description = 'Pond'; PartitionGuid = '{esp}'; Path = '\EFI\pond\shimx64.efi' } }
+        function New-MintEntry { [pscustomobject]@{ Number = 4; Description = 'Linux Mint'; PartitionGuid = '{esp}'; Path = '\EFI\ubuntu\shimx64.efi' } }
+    }
+    BeforeEach {
+        $script:esp = Join-Path $TestDrive ([guid]::NewGuid())
+        New-Item -ItemType Directory -Path "$esp\EFI\pond", "$esp\EFI\ubuntu" -Force | Out-Null
+        Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } }
+        Mock Get-WindowsEsp { [pscustomobject]@{ Guid = '{esp}' } }
+        Mock Use-Esp { & $Action $script:esp }
+        Mock Get-LinuxDisks { }
+        Mock Get-Disk {
+            if ($null -ne $Number) { [pscustomobject]@{ Number = $Number[0]; Guid = "{disk-$($Number[0])}" } }
+            else { [pscustomobject]@{ Number = 0; Guid = '{disk-0}' }; [pscustomobject]@{ Number = 1; Guid = '{disk-1}' } }
+        }
+        Mock Get-Partition {
+            if ($DiskNumber -contains 0) {
+                [pscustomobject]@{ Guid = '{esp}'; DiskNumber = 0; GptType = $EspType; Size = [int64]100MB; Offset = [int64]1MB }
+                [pscustomobject]@{ Guid = '{pond}'; DiskNumber = 0; GptType = $linuxType; Size = [int64]40GB; Offset = [int64]200GB }
+            } else {
+                [pscustomobject]@{ Guid = '{mint}'; DiskNumber = 1; GptType = $linuxType; Size = [int64]60GB; Offset = [int64]1GB }
+            }
+        }
+        Mock Get-FileSystemUuid { if ($Partition.Guid -eq '{pond}') { '11111111-1111-1111-1111-111111111111' } else { '22222222-2222-2222-2222-222222222222' } }
+        Mock Get-BootEntries {
+            [pscustomobject]@{ Number = 0; Description = 'Windows Boot Manager'; PartitionGuid = '{esp}'; Path = '\EFI\Microsoft\Boot\bootmgfw.efi' }
+            New-MintEntry
+            New-PondEntry
+        }
+    }
+    It 'takes only the loader that names the system being removed, and the right name' {
+        Set-Content "$esp\EFI\pond\grub.cfg" "search.fs_uuid 11111111-1111-1111-1111-111111111111 root hd0,gpt3"
+        Set-Content "$esp\EFI\ubuntu\grub.cfg" "search.fs_uuid 22222222-2222-2222-2222-222222222222 root hd1,gpt1"
+        $found = Find-OtherSystem 0
+        $found.Name | Should -Be 'Pond'
+        @($found.Entries).Number | Should -Be @(3)
+        $found.Kept | Should -Be 'Linux Mint'
+        @($found.Partitions).Guid | Should -Be @('{pond}')
+    }
+    It 'keeps every loader and says so when it cannot tie them to the system' {
+        $found = Find-OtherSystem 0
+        @($found.Entries).Count | Should -Be 0
+        $found.Kept | Should -Be @('Linux Mint', 'Pond')
+        $found.Name | Should -Be 'the other Linux'
+    }
+    It 'keeps them too when the EFI partition cannot be read' {
+        Mock Use-Esp { throw 'blocked' }
+        @((Find-OtherSystem 0).Entries).Count | Should -Be 0
+    }
+    It 'needs nothing from the EFI partition when there is no other Linux they could belong to' {
+        Mock Get-Disk { [pscustomobject]@{ Number = 0; Guid = '{disk-0}' } }
+        Mock Get-BootEntries { New-PondEntry }
+        $found = Find-OtherSystem 0
+        $found.Name | Should -Be 'Pond'
+        @($found.Entries).Number | Should -Be @(3)
+        Should -Invoke Use-Esp -Times 0
+    }
+    It 'keeps them when a disk hop put Linux on is not connected' {
+        Mock Get-Disk { [pscustomobject]@{ Number = 0; Guid = '{disk-0}' } }
+        Mock Get-LinuxDisks { '{disk-gone}' }
+        Mock Get-BootEntries { New-PondEntry }
+        (Find-OtherSystem 0).Kept | Should -Be 'Pond'
+    }
+    It 'leaves kept loaders on the EFI partition and in the startup menu when removing' {
+        Mock Remove-PartitionByGuid { }
+        Mock Set-Status { }
+        Mock Get-OtherSystem { [pscustomobject]@{ Name = 'the other Linux'; Entries = @(); Kept = @('Linux Mint'); WindowsEsp = '{esp}'; OnWindowsDisk = $true; Partitions = @([pscustomobject]@{ Guid = '{pond}'; DiskNumber = 0; Size = [int64]40GB }) } }
+        Remove-OtherSystem
+        Should -Invoke Use-Esp -Times 0
+        Test-Path "$esp\EFI\ubuntu" | Should -BeTrue
+        Should -Invoke Remove-PartitionByGuid -ParameterFilter { $Guid -eq '{pond}' -and $DiskNumber -eq 0 } -Times 1
+    }
+}
+
 Describe 'Remove-PartitionByGuid' {
     It 'removes it from the disk it was found on, not a clone with the same GUID' {
         Mock Get-Partition {
@@ -1239,6 +1315,15 @@ Describe 'DiskProbe' {
     }
     It 'is not fooled by the ext magic number alone' {
         [Hop.DiskProbe]::Identify((New-Head 1080 ([byte[]](0x53, 0xEF)))) | Should -BeNullOrEmpty
+    }
+    It 'reads the ID of the file system GRUB would look for' {
+        $head = New-Head 1080 ([byte[]](0x53, 0xEF))
+        [BitConverter]::GetBytes([uint32]1000).CopyTo($head, 1024)
+        ([byte[]](0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0)).CopyTo($head, 1128)
+        [Hop.DiskProbe]::IdentifyUuid($head) | Should -Be '12345678-9abc-def0-1234-56789abcdef0'
+    }
+    It 'has no ID to give for a partition it does not recognise' {
+        [Hop.DiskProbe]::IdentifyUuid((New-Object byte[] (128KB))) | Should -BeNullOrEmpty
     }
     It 'says nothing about an empty partition' {
         [Hop.DiskProbe]::Identify((New-Object byte[] (128KB))) | Should -BeNullOrEmpty

@@ -140,7 +140,7 @@ function Get-StartupInfo {
         Blocker   = $blocker
         BlockerKind = Get-BlockerKind $blocker
         RoomPhase = Get-RoomPhase
-        Other     = Get-OtherSystem | Select-Object Name, SizeGB, OnWindowsDisk
+        Other     = Get-OtherSystem | Select-Object Name, SizeGB, OnWindowsDisk, Kept
         Status    = $status
         State     = $state
         CameBack  = $status -eq 'ready' -and (Test-CameBack $state)

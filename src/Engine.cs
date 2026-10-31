@@ -81,6 +81,7 @@ namespace Hop
         public string OtherName;        // another Linux on this PC, such as Pond
         public int OtherGB;
         public bool OtherOnWindowsDisk;
+        public string[] OtherKept;      // startup entries hop can't tie to it, which stay
         public List<DriveChoice> Drives;
         public List<DownloadDrive> DownloadDrives;
         public string RoomLetter;       // the drive Make room is working on
@@ -264,6 +265,7 @@ namespace Hop
                 OtherName = other == null ? null : Get<string>(other, "Name"),
                 OtherGB = other == null ? 0 : Get<int>(other, "SizeGB"),
                 OtherOnWindowsDisk = other == null || Get<bool>(other, "OnWindowsDisk"),
+                OtherKept = other == null ? null : Get<string[]>(other, "Kept"),
                 Drives = ItemsOf(info, "Drives").Select(ToDrive).ToList(),
                 DownloadDrives = ItemsOf(info, "DownloadDrives").Select(o => new DownloadDrive
                 {

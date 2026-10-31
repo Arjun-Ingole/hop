@@ -18,7 +18,12 @@ namespace Hop
         const uint GenericRead = 0x80000000, ShareRead = 1, ShareWrite = 2, OpenExisting = 3;
 
         /// <summary>"ext", "btrfs", "xfs", "luks", "lvm", "swap", "bitlocker" or null.</summary>
-        public static string ReadSignature(int diskNumber, long offset)
+        public static string ReadSignature(int diskNumber, long offset) => Identify(ReadHead(diskNumber, offset));
+
+        /// <summary>The ID of the file system on a partition, as GRUB's search.fs_uuid names it, or null.</summary>
+        public static string ReadUuid(int diskNumber, long offset) => IdentifyUuid(ReadHead(diskNumber, offset));
+
+        static byte[] ReadHead(int diskNumber, long offset)
         {
             var handle = CreateFile($@"\\.\PhysicalDrive{diskNumber}", GenericRead, ShareRead | ShareWrite, IntPtr.Zero, OpenExisting, 0, IntPtr.Zero);
             if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not read the disk.");
@@ -28,8 +33,25 @@ namespace Hop
                 var head = new byte[HeadSize];
                 int read = 0, count;
                 while (read < head.Length && (count = disk.Read(head, read, head.Length - read)) > 0) read += count;
-                return Identify(head);
+                return head;
             }
+        }
+
+        public static string IdentifyUuid(byte[] head)
+        {
+            switch (Identify(head))
+            {
+                case "ext": return Uuid(head, 1024 + 104);
+                case "xfs": return Uuid(head, 32);
+                case "btrfs": return Uuid(head, 65536 + 32);
+                default: return null;
+            }
+        }
+
+        static string Uuid(byte[] data, int offset)
+        {
+            string hex = BitConverter.ToString(data, offset, 16).Replace("-", "").ToLowerInvariant();
+            return $"{hex.Substring(0, 8)}-{hex.Substring(8, 4)}-{hex.Substring(12, 4)}-{hex.Substring(16, 4)}-{hex.Substring(20)}";
         }
 
         public static string Identify(byte[] head)

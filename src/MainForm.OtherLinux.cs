@@ -15,6 +15,11 @@ namespace Hop
     {
         // --- Another Linux (Pond) ----------------------------------------------------------
 
+        /// <summary>The startup entries left alone, because they may be how another system starts.</summary>
+        static string KeptNote(string[] kept) => kept != null && kept.Length > 0
+            ? $" hop can't tell whether {string.Join(", ", kept)} in the startup menu belongs to this Linux, so that stays. If it's left over, it may stop at a prompt when chosen."
+            : "";
+
         void ShowRemoveOther()
         {
             string name = startup.OtherName;
@@ -22,7 +27,7 @@ namespace Hop
             {
                 new[] { Run.Gray("Remove"), Run.Black(name) },
                 new[] { Run.Gray("and free"), Run.Black(startup.OtherGB + " GB") },
-            }, $"This deletes {name} and everything stored in it, and takes it out of the startup menu. Windows and your files stay.",
+            }, $"This deletes {name} and everything stored in it, and takes it out of the startup menu. Windows and your files stay.{KeptNote(startup.OtherKept)}",
                 Secondary, null, 0);
             Footer("Back", ShowChoose, "Remove " + name, () => _ = RemoveOtherAsync());
         }
@@ -32,6 +37,7 @@ namespace Hop
             string name = startup.OtherName;
             int freed = startup.OtherGB;
             bool onWindowsDisk = startup.OtherOnWindowsDisk;
+            string kept = KeptNote(startup.OtherKept);
             BeginWork(new[] { new[] { Run.Gray("Removing"), Run.Black(name) } }, "Starting…");
             try
             {
@@ -41,13 +47,13 @@ namespace Hop
                 if (onWindowsDisk)
                 {
                     Arrange(new[] { new[] { Run.Black(name), Run.Gray("is gone.") } },
-                        $"{freed} GB is free now. Use it for Linux, or give it back to Windows.", Secondary, null, 0);
+                        $"{freed} GB is free now. Use it for Linux, or give it back to Windows.{kept}", Secondary, null, 0);
                     target = startup.Drives.FirstOrDefault(d => d.IsWindows) ?? target;
                     Footer(null, null, "Use it for Linux", ShowChoose, "Give it to Windows", () => _ = ExpandWindowsAsync());
                 }
                 else
                 {
-                    Arrange(new[] { new[] { Run.Black(name), Run.Gray("is gone.") } }, $"{freed} GB is free now on that drive.", Secondary, null, 0);
+                    Arrange(new[] { new[] { Run.Black(name), Run.Gray("is gone.") } }, $"{freed} GB is free now on that drive.{kept}", Secondary, null, 0);
                     Footer(null, null, "Done", ShowChoose);
                 }
             }
