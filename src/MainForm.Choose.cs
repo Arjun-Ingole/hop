@@ -74,11 +74,18 @@ namespace Hop
             await MeasureTargetAsync();
         }
 
-        /// <summary>Windows is only asked how far a drive really shrinks once it has been chosen, because that can take a while.</summary>
+        string measureError;   // why Windows couldn't say how far the chosen drive shrinks
+
+        /// <summary>
+        /// Windows is only asked how far a drive really shrinks once it has been chosen, because that
+        /// can take a while. Not knowing only stops installing there: it must not hide Undo.
+        /// </summary>
         async Task MeasureTargetAsync()
         {
-            if (target.Estimated && target.Blocker == null)
-                target = await engine.GetDriveSpaceAsync(target.Id);
+            measureError = null;
+            if (!target.Estimated || target.Blocker != null) return;
+            try { target = await engine.GetDriveSpaceAsync(target.Id); }
+            catch (Exception ex) { measureError = Describe(ex); }
         }
 
         /// <summary>Reads the PC again and keeps the same drive chosen, if it's still there.</summary>
@@ -119,7 +126,8 @@ namespace Hop
             bool enoughSpace = usable && MaxLinuxGB >= MinLinuxGB;
             bool secureBootStops = selected != null && selected.SecureBootOff && startup.SecureBoot;
             bool secondDiskStops = usable && SecondDiskStops(target);
-            bool systemStops = secureBootStops || secondDiskStops;
+            bool unmeasured = usable && target.Estimated && measureError != null;
+            bool systemStops = secureBootStops || secondDiskStops || unmeasured;
             linuxGB = enoughSpace ? Math.Max(MinLinuxGB, Math.Min(MaxLinuxGB, linuxGB)) : MinLinuxGB;
 
             // The drive has the room, but Windows can't release it. Deleting files wouldn't help.
@@ -133,6 +141,8 @@ namespace Hop
                 noteText = $"{system.Name} doesn't start with Secure Boot on. Pick another system, or turn off Secure Boot in the BIOS and open hop again.";
             else if (secondDiskStops)
                 noteText = $"hop's steps for {system.Name} are for the disk Windows is on, and it hasn't been tried on a second disk. Choose a drive on that disk, or another system.";
+            else if (unmeasured)
+                noteText = $"hop couldn't work out how much room {target.Title.ToLowerInvariant()} can give up. {measureError} Choose another drive, or open hop again.";
             else if (!enoughSpace && better != null)
                 noteText = $"{target.Title} doesn't have room for Linux. {better.Title} on {better.DiskName} has {(better.Estimated ? "about " : "")}{better.UsableGB} GB to spare.";
             else if (stuck)
@@ -175,7 +185,7 @@ namespace Hop
 
             if (startup.OtherGB > 0)
                 Footer($"Remove {startup.OtherName} ({startup.OtherGB} GB)", ShowRemoveOther, primaryText, primaryAction);
-            else if (!usable || secondDiskStops)
+            else if (!usable || secondDiskStops || unmeasured)
                 Footer("Choose another drive", OpenDrivePicker, primaryText, primaryAction);
             else if (needRoom && better != null)
                 Footer("Make room", () => _ = ShowMakeRoomAsync(), primaryText, primaryAction);
