@@ -34,12 +34,14 @@ function Get-WindowsEsp {
     $esp
 }
 
-# Windows' EFI partition is small, and other systems may have filled it.
-function Assert-EspRoom([string]$Root, [string]$Source) {
-    $needed = (Get-ChildItem -LiteralPath $Source -Filter '*.efi' -Force | Measure-Object -Property Length -Sum).Sum + 1MB
+# Windows' EFI partition is small, and other systems may have filled it. $LinuxMB is what the Linux
+# installer will add there later, for those whose installer doesn't notice when it runs out. Only worth
+# asking before the disk changes: afterwards, hop's own boot loader may already be taking up the room.
+function Assert-EspRoom([string]$Root, [string]$Source, [int]$LinuxMB = 0) {
+    $needed = (Get-ChildItem -LiteralPath $Source -Filter '*.efi' -Force | Measure-Object -Property Length -Sum).Sum + 1MB + [int64]$LinuxMB * 1MB
     $free = ([IO.DriveInfo]$Root).AvailableFreeSpace
     if ($free -lt $needed) {
-        throw ('The EFI system partition is too full: the boot loader needs {0:N0} MB and {1:N0} MB is free. Remove boot files from other systems and try again.' -f ($needed / 1MB), ($free / 1MB))
+        throw ('The EFI system partition is too full: the startup files need {0:N0} MB and {1:N0} MB is free. Remove boot files from other systems and try again.' -f ($needed / 1MB), ($free / 1MB))
     }
 }
 

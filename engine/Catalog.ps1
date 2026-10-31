@@ -9,7 +9,7 @@ function New-Entry([string]$Id, [string]$Name, [string]$Note, [string]$Source, [
         Id = $Id; Name = $Name; Version = $null; Note = $Note; Source = $Source; Color = $Color; Logo = $Logo
         Strategy = 'freespace'; SecureBootOff = $false; Kind = $null; Base = $null; Prefix = $null; Edition = $null
         Mode = $null; Alongside = $null; Manual = $null; ManualExtra = $null; Steps = $null
-        Live = $null; BootConfigs = $null; BootEdits = $null; GrubDir = $null; EspShell = $null
+        Live = $null; BootConfigs = $null; BootEdits = $null; GrubDir = $null; EspShell = $null; EspLinuxMB = 0
     }
     foreach ($key in $More.Keys) { $entry[$key] = $More[$key] }
     [pscustomobject]$entry
@@ -30,11 +30,15 @@ function New-MintEdition([string]$Edition, [string]$Name, [string]$Note) {
 
 # How live systems that don't search every partition, as casper does, find the installer.
 # Dracut needs the name in root=live:. Its GRUB also runs a media check by default, which is for discs.
+# Anaconda protects the whole disk behind /run/initramfs/live, and refuses to install on it. So systemd
+# takes that mount point away as it starts, using only kernel arguments, which Secure Boot doesn't check.
+# systemd.run on its own would replace the desktop and power off, which the other four arguments prevent.
 function Get-DracutBoot([string]$GrubDir) {
+    $release = '"systemd.run=/usr/bin/umount -l /run/initramfs/live" systemd.run_success_action=none systemd.run_failure_action=none systemd.unit=graphical.target systemd.wants=kernel-command-line.service'
     @{
-        Live = 'LiveOS/squashfs.img'; GrubDir = $GrubDir; BootConfigs = @("$GrubDir/grub.cfg")
+        Live = 'LiveOS/squashfs.img'; GrubDir = $GrubDir; BootConfigs = @("$GrubDir/grub.cfg"); EspLinuxMB = 25
         BootEdits = [ordered]@{
-            'root=live:CDLABEL=\S+' = "root=live:LABEL=$InstallerLabel"
+            'root=live:CDLABEL=\S+' = "root=live:LABEL=$InstallerLabel $release"
             '\s+rd\.live\.check' = ''
             '(?m)^[ \t]*search\s.*$' = "search --no-floppy --label --set=root $InstallerLabel"
         }
@@ -57,6 +61,7 @@ function Get-ArchisoBoot([string[]]$Configs) {
 #   edit is the one the system can't start without. See Update-BootConfig.
 # GrubDir: where its menu is, when GRUB should find the installer partition by label and not /.disk/info.
 # EspShell: the ISO's EFI Shell, for a boot loader that can't leave its own partition. See Get-EspShellScript.
+# EspLinuxMB: what its installer adds to the EFI partition, if it doesn't notice running out. Anaconda uses 21 MB.
 # Steps: the words to show when the usual choices don't fit its installer. {GB} is the size hop set aside.
 # Kubuntu and Omarchy are missing on purpose: their ISOs have a file over 4 GB, which FAT32 cannot hold.
 function Get-Catalog {
@@ -66,13 +71,11 @@ function Get-Catalog {
         'Click the {GB} GB of **Free Space**, click **Create** and make an **ext4** partition mounted at **/**.'
         'Click the existing **EFI System Partition**, click **Edit**, set the mount point to **/boot/efi** and keep its contents. If the installer then says this partition is small, click **OK**: there is room.'
         "Don't choose **Erase disk**. The installer is running from this drive.")
-    # Anaconda protects the whole disk behind the mount point the live system starts from, so it
-    # wouldn't install on the drive holding the installer partition until that's unmounted.
     $AnacondaSteps = @(
         'On the welcome screen, choose **Not Now**.'
-        'Open **Terminal**, type **sudo umount -l /run/initramfs/live** and press Enter. Without this, the installer refuses the drive the installer partition is on.'
         'Open the install app from the dock, then pick your language.'
         "Select the drive with the {GB} GB hop set aside and choose **Share disk with other operating systems**."
+        'If it warns that **/boot/efi** is smaller than recommended, carry on: hop has checked there is room.'
         "Don't choose **Use entire disk**. The installer is running from this drive.")
     @(
         New-Entry 'elementary' 'elementary OS' 'Mac-like' 'elementary.io' '#3689E6' 'elementary' @{
