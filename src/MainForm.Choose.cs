@@ -33,7 +33,18 @@ namespace Hop
         {
             var download = DownloadSpotFor(drive);
             bool downloadHere = isoPath == null && (download != null ? download.Letter == drive.Letter : drive.IsWindows);
-            return drive.UsableGB - InstallerGB - (downloadHere ? IsoDownloadGB : 0);
+            return drive.UsableGB - ExpectedInstallerGB - (downloadHere ? IsoDownloadGB : 0);
+        }
+
+        /// <summary>What the engine will make. A download's real size isn't known until it's here.</summary>
+        int ExpectedInstallerGB
+        {
+            get
+            {
+                if (isoPath == null) return InstallerGB;
+                try { return Engine.InstallerGBFor(new FileInfo(isoPath).Length); }
+                catch (Exception) { return InstallerGB; }
+            }
         }
 
         DownloadDrive DownloadSpot => DownloadSpotFor(target);
@@ -410,7 +421,7 @@ namespace Hop
             drive.SystemName = system.Name;
             drive.Brand = system.Color;
             // Replacing Windows only makes the installer. Windows stays until the Linux installer erases it.
-            drive.Legend = fullDisk ? $"Installer · {InstallerGB} GB. Windows stays until the Linux installer erases it" : null;
+            drive.Legend = fullDisk ? $"Installer · about {InstallerGB} GB. Windows stays until the Linux installer erases it" : null;
             drive.MinLinuxGB = fullDisk ? 0 : MinLinuxGB;
             drive.MaxLinuxGB = Math.Max(drive.MinLinuxGB, MaxLinuxGB);
             drive.LinuxGB = fullDisk ? 0 : linuxGB;
@@ -544,14 +555,17 @@ namespace Hop
 
         string ConfirmNote()
         {
-            int shrink = Math.Max(0, linuxGB + InstallerGB - target.TailFreeGB);
+            int installer = ExpectedInstallerGB;
+            int shrink = Math.Max(0, linuxGB + installer - target.TailFreeGB);
             string title = target.Title.ToLowerInvariant();
             string keeps = target.IsFreeSpace ? "nothing on this drive shrinks" : target.IsWindows ? "Windows keeps its size" : $"{title} keeps its size";
+            // Free space can't shrink anything, and the engine stops if it's too small. A download could still need more than this.
+            string unless = isoPath == null && !target.IsFreeSpace ? $", unless the installer turns out bigger than {InstallerGB} GB" : "";
             string room = shrink == 0
-                ? $"hop will use {linuxGB + InstallerGB} GB of free space, so {keeps}. It copies the installer there"
+                ? $"hop will use about {linuxGB + installer} GB of free space, so {keeps}{unless}. It copies the installer there"
                 : target.TailFreeGB > 0
-                    ? $"hop will use {target.TailFreeGB} GB of free space and shrink {title} by {shrink} GB, copy the installer there"
-                    : $"hop will shrink {title} by {shrink} GB, copy the installer there";
+                    ? $"hop will use {target.TailFreeGB} GB of free space and shrink {title} by about {shrink} GB, copy the installer there"
+                    : $"hop will shrink {title} by about {shrink} GB, copy the installer there";
             return room + " and add it to the startup menu. Keep the charger connected until it finishes.";
         }
     }

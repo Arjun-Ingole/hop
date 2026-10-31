@@ -675,6 +675,15 @@ Describe 'Read-Iso' {
     }
 }
 
+Describe 'The window''s figure for the installer' {
+    It 'matches Read-Iso for an ISO of <gb> GB' -ForEach @(
+        @{ gb = 1; expected = 4 }, @{ gb = 3.5; expected = 4 }, @{ gb = 6; expected = 7 }, @{ gb = 6.5; expected = 7 }, @{ gb = 12; expected = 13 }
+    ) {
+        [Hop.Engine]::InstallerGBFor([int64]($gb * 1GB)) | Should -Be $expected
+        [int][math]::Max([double]4, [math]::Ceiling(([int64]($gb * 1GB) + 512MB) / 1GB)) | Should -Be $expected
+    }
+}
+
 Describe 'Get-StateDistro' {
     It 'finds the system an install was for' {
         (Get-StateDistro ([pscustomobject]@{ DistroId = 'fedora'; Distro = 'Fedora Workstation' })).GrubDir | Should -Be 'boot/grub2'

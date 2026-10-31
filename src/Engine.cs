@@ -152,6 +152,10 @@ namespace Hop
         public readonly Hashtable Sync = Hashtable.Synchronized(new Hashtable());
         public readonly ArrayList Log = ArrayList.Synchronized(new ArrayList());
 
+        /// <summary>The installer partition Read-Iso makes for an ISO of this size. Files on an ISO add up to a little less than the ISO.</summary>
+        public static int InstallerGBFor(long isoBytes) =>
+            (int)Math.Max(4, Math.Ceiling((isoBytes + 512.0 * 1024 * 1024) / (1024.0 * 1024 * 1024)));
+
         public Engine()
         {
             Sync["Log"] = Log;
