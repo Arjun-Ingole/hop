@@ -321,6 +321,31 @@ Describe 'Get-HopPartitions on any disk' {
     }
 }
 
+Describe 'Remembering what a drive really has' {
+    BeforeAll {
+        function New-Row([string]$Id, [int]$UsableGB, [bool]$Estimated) {
+            $row = New-Object Hop.DriveChoice
+            $row.Id = $Id; $row.UsableGB = $UsableGB; $row.Estimated = $Estimated
+            $row
+        }
+    }
+    It 'replaces the estimate, so two stuck drives stop suggesting each other' {
+        $drives = New-Object 'Collections.Generic.List[Hop.DriveChoice]'
+        $drives.Add((New-Row 'a' 300 $true))
+        $drives.Add((New-Row 'b' 200 $true))
+        [Hop.DriveChoice]::Remember($drives, (New-Row 'a' 5 $false))
+        $drives[0].UsableGB | Should -Be 5
+        $drives[0].Estimated | Should -BeFalse
+        $drives[1].UsableGB | Should -Be 200
+    }
+    It 'adds nothing for a drive no longer listed' {
+        $drives = New-Object 'Collections.Generic.List[Hop.DriveChoice]'
+        $drives.Add((New-Row 'a' 300 $true))
+        [Hop.DriveChoice]::Remember($drives, (New-Row 'gone' 5 $false))
+        $drives.Count | Should -Be 1
+    }
+}
+
 Describe 'Get-StateDisk' {
     BeforeEach {
         Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } }

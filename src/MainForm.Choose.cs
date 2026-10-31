@@ -84,7 +84,11 @@ namespace Hop
         {
             measureError = null;
             if (!target.Estimated || target.Blocker != null) return;
-            try { target = await engine.GetDriveSpaceAsync(target.Id); }
+            try
+            {
+                target = await engine.GetDriveSpaceAsync(target.Id);
+                DriveChoice.Remember(startup.Drives, target);
+            }
             catch (Exception ex) { measureError = Describe(ex); }
         }
 
@@ -268,6 +272,7 @@ namespace Hop
             try
             {
                 target = await engine.GetDriveSpaceAsync(choice.Id);
+                DriveChoice.Remember(startup.Drives, target);
                 EndWork();
                 ShowChoose();
             }

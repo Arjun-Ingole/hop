@@ -59,6 +59,13 @@ namespace Hop
 
         public bool IsFreeSpace => Kind == "gap";
         public bool IsWindows => Id == "";
+
+        /// <summary>Keeps a drive's real figures, so that it isn't suggested again on its estimate.</summary>
+        public static void Remember(List<DriveChoice> drives, DriveChoice measured)
+        {
+            int at = drives.FindIndex(d => d.Id == measured.Id);
+            if (at >= 0) drives[at] = measured;
+        }
     }
 
     public sealed class DownloadDrive
