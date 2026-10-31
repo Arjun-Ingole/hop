@@ -32,7 +32,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         $plan = Get-Plan $LinuxGB $iso.InstallerGB $Target
         Use-Esp {
             param($root)
-            Assert-EspRoom $root "$($iso.Letter):\EFI\BOOT"
+            Assert-EspRoom $root "$($iso.Letter):\EFI\BOOT" $distro.EspLinuxMB
             Assert-EspWritable $root
         }
 

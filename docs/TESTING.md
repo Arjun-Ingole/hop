@@ -38,6 +38,7 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] Fresh Windows: install a `prepared` system (elementary OS) through to a working Linux
 - [ ] Fresh Windows: install a `freespace` system (Ubuntu) through to a working Linux
 - [ ] Fresh Windows: install a system whose boot menu hop changes (Fedora, CachyOS or Arch) through to a working Linux
+- [ ] Fedora or Ultramarine: click through **Share disk with other operating systems**, which automated tests don't reach
 - [ ] Windows still starts afterwards, from the firmware's boot menu
 
 **When it goes wrong**

@@ -5,8 +5,12 @@
 ### Added
 
 - Zorin OS, Debian, Fedora Workstation, Ultramarine, CachyOS and Arch Linux. CachyOS and Arch need Secure
-  Boot off, as they say when picked, and Arch installs from a text prompt. Fedora and Ultramarine need
-  one command in Terminal before their installer will use the drive.
+  Boot off, as they say when picked, and Arch installs from a text prompt.
+- Fedora and Ultramarine no longer need a command typed in Terminal. Their installer can now use the drive
+  by itself, with Secure Boot on. Automated installs into free space finished and started again in a virtual
+  PC, though the installer's graphical screens haven't been clicked through yet.
+- hop checks the EFI partition has about 25 MB more room for Fedora and Ultramarine before changing the disk.
+  Without it, their installer says it finished but the PC can't start the new system.
 - hop now changes the copy of the boot menu for systems that look for their USB stick by name. It checks
   it can do that before the disk changes.
 - **Choose where Linux goes.** hop can shrink another drive such as D:, use free space on any disk inside

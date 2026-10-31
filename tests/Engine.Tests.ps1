@@ -56,7 +56,7 @@ Describe 'Catalog' {
         foreach ($distro in $catalog | Where-Object BootEdits) {
             $distro.BootConfigs | Should -Not -BeNullOrEmpty
             $distro.Live | Should -Not -BeNullOrEmpty
-            @($distro.BootEdits.Values)[0] | Should -BeLike "*$InstallerLabel"
+            @($distro.BootEdits.Values)[0] | Should -Match "=$InstallerLabel(\s|$)"
         }
     }
     It 'keeps Ubuntu and its flavours exactly as they were' {
@@ -469,16 +469,26 @@ Describe 'Boot config' {
     }
     It 'points Fedora at the installer partition, as in Fedora 44''s menu' {
         $text = Get-Edited 'fedora' "search --file --set=root /boot/0xf20784ad`n`tlinux (`$root)/boot/x86_64/loader/linux quiet rhgb  root=live:CDLABEL=Fedora-WS-Live-44 rd.live.image rd.live.check`n"
-        $text | Should -BeLike "*root=live:LABEL=$InstallerLabel rd.live.image*"
+        $text | Should -BeLike "*root=live:LABEL=$InstallerLabel *rd.live.image*"
         $text | Should -BeLike "search --no-floppy --label --set=root $InstallerLabel*"
         $text | Should -Not -BeLike '*CDLABEL*'
         $text | Should -Not -BeLike '*rd.live.check*'
     }
     It 'points Ultramarine at the installer partition, as in Ultramarine 44''s menu' {
         $text = Get-Edited 'ultramarine' "search --no-floppy --set=root --label 'UM-Gn-Live-Anaconda'`n`tlinux /boot/vmlinuz root=live:CDLABEL=UM-Gn-Live-Anaconda rd.live.image rd.live.check enforcing=0 quiet rhgb`n"
-        $text | Should -BeLike "*root=live:LABEL=$InstallerLabel rd.live.image enforcing=0 quiet rhgb*"
+        $text | Should -BeLike "*root=live:LABEL=$InstallerLabel *rd.live.image enforcing=0 quiet rhgb*"
         $text | Should -BeLike "search --no-floppy --label --set=root $InstallerLabel*"
         $text | Should -Not -BeLike '*UM-Gn*'
+    }
+    It 'frees the installer''s drive for Anaconda without losing the desktop, as tested in Fedora 44' {
+        foreach ($id in 'fedora', 'ultramarine') {
+            $text = Get-Edited $id 'linux /x root=live:CDLABEL=X rd.live.image'
+            # Quoted for GRUB, so that it stays one argument. Each of the others stops systemd.run replacing the normal start.
+            $text | Should -BeLike '*"systemd.run=/usr/bin/umount -l /run/initramfs/live" *'
+            foreach ($needed in 'systemd.run_success_action=none', 'systemd.run_failure_action=none', 'systemd.unit=graphical.target', 'systemd.wants=kernel-command-line.service') {
+                $text | Should -BeLike "* $needed *"
+            }
+        }
     }
     It 'points CachyOS and Arch at the installer partition, and keeps their other settings' {
         Get-Edited 'cachyos' 'linux /arch/boot/x86_64/vmlinuz-linux-cachyos archisobasedir=arch archisosearchuuid=2026-08-09-15-47-03-00 cow_spacesize=10G' |
@@ -502,7 +512,8 @@ Describe 'Boot config' {
         [IO.File]::WriteAllBytes($path, $before)
         Set-ItemProperty -LiteralPath $path -Name IsReadOnly -Value $true
         Update-BootConfig (Get-CatalogEntry 'fedora') $root
-        $expected = [Text.Encoding]::UTF8.GetBytes("menuentry 'Dévelop' {`n`troot=live:LABEL=$InstallerLabel quiet`n}`n")
+        $edited = (Get-CatalogEntry 'fedora').BootEdits['root=live:CDLABEL=\S+']
+        $expected = [Text.Encoding]::UTF8.GetBytes("menuentry 'Dévelop' {`n`t$edited quiet`n}`n")
         ([IO.File]::ReadAllBytes($path) -join ',') | Should -Be ($expected -join ',')
     }
     It 'touches nothing for Ubuntu' {
@@ -942,6 +953,25 @@ Describe 'Get-Blockers' {
     }
 }
 
+Describe 'Assert-EspRoom' {
+    BeforeEach {
+        $source = Join-Path $TestDrive 'source'
+        New-Item -ItemType Directory -Path $source -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $source 'BOOTX64.EFI') -Value 'hop'
+        $root = [IO.Path]::GetPathRoot("$TestDrive")
+    }
+    It 'is happy when the boot loader fits, whatever the system' {
+        { Assert-EspRoom $root $source } | Should -Not -Throw
+    }
+    It 'counts what the Linux installer will add, and says how much is free' {
+        { Assert-EspRoom $root $source 2000000000 } | Should -Throw '*too full*MB is free*'
+    }
+    It 'keeps room for the files Anaconda doesn''t notice failing to copy' {
+        foreach ($id in 'fedora', 'ultramarine') { (Get-Catalog | Where-Object Id -eq $id).EspLinuxMB | Should -BeGreaterOrEqual 21 }
+        (Get-Catalog | Where-Object Id -eq 'ubuntu').EspLinuxMB | Should -Be 0
+    }
+}
+
 Describe 'Assert-EspWritable' {
     BeforeEach {
         $root = Join-Path $TestDrive 'esp'
@@ -1101,9 +1131,12 @@ Describe 'Get-Steps' {
             ((Get-Steps (Get-Catalog | Where-Object Id -eq $id) 60).Steps -join ' ') | Should -BeLike '*Share disk with other operating systems*Use entire disk*'
         }
     }
-    It 'tells Fedora and Ultramarine users to free the drive, which Anaconda otherwise protects' {
+    It 'needs no Terminal for Fedora and Ultramarine, and explains the warning about the EFI partition' {
         foreach ($id in 'fedora', 'ultramarine') {
-            ((Get-Steps (Get-Catalog | Where-Object Id -eq $id) 60).Steps -join ' ') | Should -BeLike '*umount -l /run/initramfs/live*'
+            $steps = (Get-Steps (Get-Catalog | Where-Object Id -eq $id) 60).Steps -join ' '
+            $steps | Should -Not -BeLike '*Terminal*'
+            $steps | Should -Not -BeLike '*umount*'
+            $steps | Should -BeLike '*/boot/efi*carry on*'
         }
     }
     It 'says plainly that Arch installs in a terminal' {
