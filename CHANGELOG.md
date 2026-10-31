@@ -46,6 +46,30 @@
 - The steps for the Linux installer now depend on where Linux is going. They use the manual option if the
   easy one would pick different free space.
 - Undo gives space back to the drive it came from, and clean-up finds hop's partitions on any internal disk.
+- Debian, CachyOS, Arch, Fedora and Ultramarine can't go on a second disk for now. Their steps were written
+  for the disk Windows is on, and none has been tried on another. hop says so before anything changes.
+
+### Fixed
+
+- **Make room's restart could be blocked by hop itself**, because it refused to close while waiting for that
+  restart. Windows could then say hop was preventing it. If something else stops the restart, hop now says so
+  and offers to restart again or put its settings back.
+- **Replace Windows no longer risks the wrong disk.** It refuses when another disk has the same name and size,
+  because the Linux installer's list couldn't tell them apart.
+- **Replace Windows no longer says other disks are safe when they aren't.** A Linux or a second Windows that
+  starts from the EFI partition on that disk is named in the warning as stopping, or hop refuses if it can't look.
+- **Removing one Linux no longer takes another's way of starting.** It only removes startup entries and files it
+  can tie to that system, and says which it left, so the name on the screen is the right one too.
+- Clean up lists what it will delete, with size and drive, and a drive that only shares a name with what hop makes
+  is no longer treated as hop's.
+- Undo can't get stuck: if the drive that gave up the space has gone or won't grow, it finishes everything else and
+  says the space stays free. A problem working out how far a drive shrinks no longer hides Undo either.
+- Make room on a second drive turned C:'s settings off for good, a drive missing after its restart stopped
+  hop opening at all, and closing hop during the download left the settings off. All three now put them back.
+- The startup entry could point at a different EFI partition from its files on a PC with two Windows Boot Manager entries.
+- Undo reported the wrong result straight after an install, and the confirmation could say a drive would keep its
+  size when a bigger ISO would shrink it. Two drives that couldn't release their space kept suggesting each other.
+- Sentences such as "Linux Mint , downloaded from..." no longer have a gap where a value is missing.
 
 ## 0.2.0 - 2026-10-31
 

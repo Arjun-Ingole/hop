@@ -167,6 +167,18 @@ Describe 'Get-FullDiskBlocker' {
         Mock Get-WindowsEsp { throw 'Could not find the EFI system partition.' }
         Get-FullDiskBlocker (New-Offered) | Should -BeLike '*different disk*'
     }
+    It 'refuses when another disk has the same name and size, and says why' {
+        Mock Get-Disk { if ($null -ne $Number) { New-WinDisk } else { (New-WinDisk), (New-WinDisk -Number 1) } }
+        Get-FullDiskBlocker (New-Offered) | Should -BeLike "*more than one disk called WD Blue (500 GB)*wrong one could be erased*next to Windows*"
+    }
+    It 'still treats names as the same when only their spacing differs' {
+        Mock Get-Disk { if ($null -ne $Number) { New-WinDisk } else { (New-WinDisk), (New-WinDisk -Number 1 -Name 'WD Blue') } }
+        Get-FullDiskBlocker (New-Offered) | Should -BeLike '*more than one disk*'
+    }
+    It 'lets through a disk with the same name and another size, or the same size and another name' {
+        Mock Get-Disk { if ($null -ne $Number) { New-WinDisk } else { (New-WinDisk), (New-WinDisk -Number 1 -Size ([int64]1000GB)), (New-WinDisk -Number 2 -Name 'Samsung') } }
+        Get-FullDiskBlocker (New-Offered) | Should -BeNullOrEmpty
+    }
     It 'refuses a disk too small for Linux' {
         Mock Get-Disk { New-WinDisk -Size ([int64]20GB) }
         Get-FullDiskBlocker (New-Offered) | Should -BeLike '*too small*'
@@ -224,6 +236,27 @@ Describe 'Get-FullDiskPlan' {
         }
         Mock Get-VolumesOnDisk { [pscustomobject]@{ What = 'drive C:'; Name = 'Windows'; SizeGB = 400; Encrypted = $false }, [pscustomobject]@{ What = 'drive D:'; Name = ''; SizeGB = 90; Encrypted = $false } }
         Mock Get-DriveSpace { [pscustomobject]@{ Id = $Target; Title = 'Drive C:' } }
+        Mock Get-SystemsOnWindowsEsp { }
+    }
+    It 'says which other systems stop starting, and does not promise other disks are safe' {
+        Mock Get-SystemsOnWindowsEsp { 'Linux Mint', 'Windows on drive D:' }
+        $plan = Get-FullDiskPlan 'ubuntu' ''
+        $plan.StopsStarting | Should -Be @('Linux Mint', 'Windows on drive D:')
+        $text = $plan.Points -join ' '
+        $text | Should -BeLike '*These stop starting:** **Linux Mint**, **Windows on drive D:***EFI partition*'
+        $text | Should -Not -BeLike '*Other disks stay as they are*'
+        $text | Should -BeLike "*What's stored on other disks stays:** **Samsung T7***"
+    }
+    It 'adds no empty line when nothing else starts from there' {
+        $plan = Get-FullDiskPlan 'ubuntu' ''
+        @($plan.StopsStarting).Count | Should -Be 0
+        @($plan.Points).Count | Should -Be 4
+    }
+    It 'refuses when it cannot read what else starts from there' {
+        Mock Get-SystemsOnWindowsEsp { throw 'blocked' }
+        $plan = Get-FullDiskPlan 'ubuntu' ''
+        $plan.Blocker | Should -BeLike "*couldn't read*EFI partition*next to Windows*"
+        @($plan.Points).Count | Should -Be 0
     }
     It 'names the disk, what goes with it, and the disk that stays' {
         $plan = Get-FullDiskPlan 'ubuntu' ''
@@ -254,6 +287,58 @@ Describe 'Get-FullDiskPlan' {
         Mock New-Partition { throw 'no' }; Mock Remove-Partition { throw 'no' }; Mock Resize-Partition { throw 'no' }; Mock Format-Volume { throw 'no' }
         { Get-FullDiskPlan 'ubuntu' '' } | Should -Not -Throw
         Should -Invoke New-Partition -Times 0; Should -Invoke Remove-Partition -Times 0; Should -Invoke Resize-Partition -Times 0; Should -Invoke Format-Volume -Times 0
+    }
+}
+
+Describe 'Get-SystemsOnWindowsEsp' {
+    BeforeEach {
+        $script:esp = Join-Path $TestDrive ([guid]::NewGuid())
+        foreach ($folder in 'Microsoft', 'Boot', 'hop', 'ubuntu', 'Dell', 'refind') { New-Item -ItemType Directory -Path "$esp\EFI\$folder" -Force | Out-Null }
+        New-Item -ItemType File -Path "$esp\EFI\ubuntu\shimx64.efi", "$esp\EFI\hop\grubx64.efi", "$esp\EFI\Dell\update.efi", "$esp\EFI\Boot\grubx64.efi", "$esp\EFI\refind\refind_x64.efi" | Out-Null
+        Mock Get-WindowsEsp { [pscustomobject]@{ Guid = '{esp}' } }
+        Mock Use-Esp { & $Action $script:esp }
+        Mock Invoke-Bcdedit { '' }
+        Mock Get-BootEntries {
+            [pscustomobject]@{ Description = 'Windows Boot Manager'; PartitionGuid = '{esp}'; Path = '\EFI\Microsoft\Boot\bootmgfw.efi' }
+            [pscustomobject]@{ Description = 'Linux Mint'; PartitionGuid = '{esp}'; Path = '\EFI\ubuntu\shimx64.efi' }
+            [pscustomobject]@{ Description = 'Elsewhere'; PartitionGuid = '{other}'; Path = '\EFI\refind\refind_x64.efi' }
+        }
+    }
+    It 'names a Linux by its startup entry, a folder by its name, and leaves out Windows, hop and makers'' tools' {
+        Get-SystemsOnWindowsEsp | Should -Be @('refind', 'Linux Mint')
+    }
+    It 'lets a failure through, so that nobody is told it is safe' {
+        Mock Use-Esp { throw 'blocked' }
+        { Get-SystemsOnWindowsEsp } | Should -Throw 'blocked'
+    }
+    It 'finds another Windows in the startup menu, whichever language it is in' {
+        Mock Invoke-Bcdedit {
+@'
+
+Windows-Startladeprogramm
+-------------------------
+Bezeichner              {current}
+device                  partition=C:
+path                    \Windows\system32\winload.efi
+description             Windows 11
+
+Windows-Startladeprogramm
+-------------------------
+Bezeichner              {11111111-2222-3333-4444-555555555555}
+device                  partition=D:
+path                    \Windows\system32\winload.efi
+description             Windows 10
+
+Windows-Startladeprogramm
+-------------------------
+Bezeichner              {22222222-2222-3333-4444-555555555555}
+device                  ramdisk=[\Device\HarddiskVolume5]\Recovery\WindowsRE\Winre.wim
+path                    \windows\system32\winload.efi
+description             Windows Recovery Environment
+'@
+        }
+        Get-OtherWindowsLoaders | Should -Be 'Windows on drive D:'
+        Get-SystemsOnWindowsEsp | Should -Contain 'Windows on drive D:'
     }
 }
 
@@ -335,6 +420,12 @@ Describe 'Invoke-Install with -FullDisk' {
         Should -Invoke Update-BootConfig -ParameterFilter { -not $FullDisk }
         Should -Invoke Save-State -ParameterFilter { $State.FullDisk -eq $false }
         Should -Invoke Get-FullDiskBlocker -Times 0
+    }
+    It 'refuses a system whose steps do not cover a second disk, before downloading' {
+        Mock Get-Distro { New-Entry 'x' 'Other OS' '' '' '#000000' '' @{ Steps = @('Click.') } }
+        Mock Resolve-Target { [pscustomobject]@{ Partition = New-Part 'E' ([int64]1GB) ([int64]300GB) -Disk 1 } }
+        { Invoke-Install 'x' '' 60 'volume:{disk-1}:1073741824' '' } | Should -Throw "*second disk*"
+        Should -Invoke Save-State -Times 0
     }
     It 'refuses before downloading, and changes nothing' {
         Mock Get-FullDiskBlocker { 'Not enough memory.' }

@@ -16,6 +16,7 @@ namespace Hop
         // --- Choose -----------------------------------------------------------------------
 
         const int StuckWorthExplainingGB = 20;
+        const int RoomRestartWaitSeconds = 60;
 
         const string WindowsLetter = "C";
 
@@ -32,7 +33,18 @@ namespace Hop
         {
             var download = DownloadSpotFor(drive);
             bool downloadHere = isoPath == null && (download != null ? download.Letter == drive.Letter : drive.IsWindows);
-            return drive.UsableGB - InstallerGB - (downloadHere ? IsoDownloadGB : 0);
+            return drive.UsableGB - ExpectedInstallerGB - (downloadHere ? IsoDownloadGB : 0);
+        }
+
+        /// <summary>What the engine will make. A download's real size isn't known until it's here.</summary>
+        int ExpectedInstallerGB
+        {
+            get
+            {
+                if (isoPath == null) return InstallerGB;
+                try { return Engine.InstallerGBFor(new FileInfo(isoPath).Length); }
+                catch (Exception) { return InstallerGB; }
+            }
         }
 
         DownloadDrive DownloadSpot => DownloadSpotFor(target);
@@ -73,11 +85,22 @@ namespace Hop
             await MeasureTargetAsync();
         }
 
-        /// <summary>Windows is only asked how far a drive really shrinks once it has been chosen, because that can take a while.</summary>
+        string measureError;   // why Windows couldn't say how far the chosen drive shrinks
+
+        /// <summary>
+        /// Windows is only asked how far a drive really shrinks once it has been chosen, because that
+        /// can take a while. Not knowing only stops installing there: it must not hide Undo.
+        /// </summary>
         async Task MeasureTargetAsync()
         {
-            if (target.Estimated && target.Blocker == null)
+            measureError = null;
+            if (!target.Estimated || target.Blocker != null) return;
+            try
+            {
                 target = await engine.GetDriveSpaceAsync(target.Id);
+                DriveChoice.Remember(startup.Drives, target);
+            }
+            catch (Exception ex) { measureError = Describe(ex); }
         }
 
         /// <summary>Reads the PC again and keeps the same drive chosen, if it's still there.</summary>
@@ -90,10 +113,12 @@ namespace Hop
 
         /// <summary>Another drive with room for Linux, for when this one hasn't any.</summary>
         DriveChoice BetterDrive => startup.Drives
-            .Where(d => d.Id != target.Id && d.Blocker == null && MaxLinuxGBOn(d) >= MinLinuxGB)
+            .Where(d => d.Id != target.Id && d.Blocker == null && MaxLinuxGBOn(d) >= MinLinuxGB && !SecondDiskStops(d))
             .OrderByDescending(d => d.UsableGB).FirstOrDefault();
 
         bool HasDriveChoice => FullDiskOffered || startup.Drives.Count > 1 || (isoPath == null && startup.DownloadDrives.Count(d => d.FreeGB > IsoDownloadGB) > 1);
+
+        bool SecondDiskStops(DriveChoice drive) => selected != null && selected.WindowsDiskOnly && !drive.OnWindowsDisk;
 
         Run[] WhereLine(bool picker, Color brand)
         {
@@ -115,6 +140,9 @@ namespace Hop
             bool usable = target.Blocker == null;
             bool enoughSpace = usable && MaxLinuxGB >= MinLinuxGB;
             bool secureBootStops = selected != null && selected.SecureBootOff && startup.SecureBoot;
+            bool secondDiskStops = usable && SecondDiskStops(target);
+            bool unmeasured = usable && target.Estimated && measureError != null;
+            bool systemStops = secureBootStops || secondDiskStops || unmeasured;
             linuxGB = enoughSpace ? Math.Max(MinLinuxGB, Math.Min(MaxLinuxGB, linuxGB)) : MinLinuxGB;
 
             // The drive has the room, but Windows can't release it. Deleting files wouldn't help.
@@ -126,6 +154,10 @@ namespace Hop
                 noteText = target.Blocker;
             else if (secureBootStops)
                 noteText = $"{system.Name} doesn't start with Secure Boot on. Pick another system, or turn off Secure Boot in the BIOS and open hop again.";
+            else if (secondDiskStops)
+                noteText = $"hop's steps for {system.Name} are for the disk Windows is on, and it hasn't been tried on a second disk. Choose a drive on that disk, or another system.";
+            else if (unmeasured)
+                noteText = $"hop couldn't work out how much room {target.Title.ToLowerInvariant()} can give up. {measureError} Choose another drive, or open hop again.";
             else if (!enoughSpace && better != null)
                 noteText = $"{target.Title} doesn't have room for Linux. {better.Title} on {better.DiskName} has {(better.Estimated ? "about " : "")}{better.UsableGB} GB to spare.";
             else if (stuck)
@@ -148,14 +180,14 @@ namespace Hop
             {
                 new[] { Run.Gray("Install"), new Run { Text = system.Name, Color = Ink, Logo = LogoFor(selected), Picker = true, Underline = system.Color } },
                 WhereLine(true, Hairline),
-            }, noteText, enoughSpace && !secureBootStops ? Secondary : Danger, usable ? drive : null, 64);
+            }, noteText, enoughSpace && !systemStops ? Secondary : Danger, usable ? drive : null, 64);
 
-            Action install = enoughSpace && !secureBootStops ? () => _ = CheckThenConfirmAsync() : (Action)null;
+            Action install = enoughSpace && !systemStops ? () => _ = CheckThenConfirmAsync() : (Action)null;
             string primaryText = "Install";
             Action primaryAction = install;
             // Nothing else can happen until there's room, so this is what the button does.
-            bool needRoom = stuck && !RoomMadeHere && !secureBootStops;
-            if (better != null && !secureBootStops)
+            bool needRoom = stuck && !RoomMadeHere && !systemStops;
+            if (better != null && !systemStops)
             {
                 primaryText = $"Use {better.Title.ToLowerInvariant()}";
                 primaryAction = () => _ = UseDriveAsync(better);
@@ -168,7 +200,7 @@ namespace Hop
 
             if (startup.OtherGB > 0)
                 Footer($"Remove {startup.OtherName} ({startup.OtherGB} GB)", ShowRemoveOther, primaryText, primaryAction);
-            else if (!usable)
+            else if (!usable || secondDiskStops || unmeasured)
                 Footer("Choose another drive", OpenDrivePicker, primaryText, primaryAction);
             else if (needRoom && better != null)
                 Footer("Make room", () => _ = ShowMakeRoomAsync(), primaryText, primaryAction);
@@ -251,6 +283,7 @@ namespace Hop
             try
             {
                 target = await engine.GetDriveSpaceAsync(choice.Id);
+                DriveChoice.Remember(startup.Drives, target);
                 EndWork();
                 ShowChoose();
             }
@@ -277,10 +310,15 @@ namespace Hop
         async Task MakeRoomAsync()
         {
             BeginWork(new[] { new[] { Run.Gray("Making"), Run.Black("room") } }, "Starting…");
+            roomLetter = null;   // the engine puts back any earlier run before it starts
             try
             {
                 // The restart is on its way, and Windows closes hop. Only another drive gets past this.
-                if (await engine.StartMakeRoomAsync(target.Letter)) return;
+                if (await engine.StartMakeRoomAsync(target.Letter))
+                {
+                    await WaitForRoomRestartAsync();
+                    return;
+                }
                 roomLetter = target.Letter;
                 await ReloadAsync();
                 EndWork();
@@ -291,6 +329,56 @@ namespace Hop
                 EndWork();
                 Arrange(new[] { new[] { Run.Gray("Couldn't"), Run.Black("make room") } }, Describe(ex), Danger, null, 0);
                 Footer("Back", ShowChoose, null, null);
+            }
+        }
+
+        /// <summary>Windows closes hop as it restarts. If that's cancelled, hop mustn't say "Restarting" for good.</summary>
+        async Task WaitForRoomRestartAsync()
+        {
+            await Task.Delay(RoomRestartWaitSeconds * 1000);
+            EndWork();
+            ShowRoomRestartStopped(null);
+        }
+
+        void ShowRoomRestartStopped(string problem)
+        {
+            roomLetter = target.Letter;   // so closing hop now puts its settings back
+            Arrange(new[] { new[] { Run.Gray("This PC"), Run.Black("didn't restart.") } },
+                problem ?? "Something stopped Windows restarting, so hop hasn't finished making room. Save your work and restart, or go back and hop puts its settings back.",
+                problem == null ? Secondary : Danger, null, 0);
+            Footer("Back", () => _ = CancelRoomRestartAsync(), "Restart now", () => _ = RetryRoomRestartAsync());
+        }
+
+        async Task RetryRoomRestartAsync()
+        {
+            BeginWork(new[] { new[] { Run.Gray("Making"), Run.Black("room") } }, "Starting…");
+            try
+            {
+                await engine.RestartForRoomAsync();
+                await WaitForRoomRestartAsync();
+            }
+            catch (Exception ex)
+            {
+                EndWork();
+                ShowRoomRestartStopped(Describe(ex));
+            }
+        }
+
+        async Task CancelRoomRestartAsync()
+        {
+            BeginWork(new[] { new[] { Run.Gray("Putting"), Run.Black("settings back") } }, "Starting…");
+            try
+            {
+                await engine.RestoreRoomSettingsAsync();
+                roomLetter = null;
+                await ReloadAsync();
+                EndWork();
+                ShowChoose();
+            }
+            catch (Exception ex)
+            {
+                EndWork();
+                ShowRoomRestartStopped(Describe(ex));
             }
         }
 
@@ -333,7 +421,7 @@ namespace Hop
             drive.SystemName = system.Name;
             drive.Brand = system.Color;
             // Replacing Windows only makes the installer. Windows stays until the Linux installer erases it.
-            drive.Legend = fullDisk ? $"Installer · {InstallerGB} GB. Windows stays until the Linux installer erases it" : null;
+            drive.Legend = fullDisk ? $"Installer · about {InstallerGB} GB. Windows stays until the Linux installer erases it" : null;
             drive.MinLinuxGB = fullDisk ? 0 : MinLinuxGB;
             drive.MaxLinuxGB = Math.Max(drive.MinLinuxGB, MaxLinuxGB);
             drive.LinuxGB = fullDisk ? 0 : linuxGB;
@@ -416,6 +504,9 @@ namespace Hop
 
         string DiskOf(FullDiskPlan plan) => $"{plan.DiskName} ({plan.DiskGB} GB)";
 
+        string StopsNote(FullDiskPlan plan) => plan.StopsStarting != null && plan.StopsStarting.Length > 0
+            ? $" {string.Join(", ", plan.StopsStarting)} will stop starting too." : "";
+
         void ShowReplaceWarning(FullDiskPlan plan)
         {
             var system = Current;
@@ -423,7 +514,7 @@ namespace Hop
             Arrange(new[]
             {
                 new[] { Run.Gray("Replace"), Run.Black("Windows"), Run.Gray("with"), new Run { Text = system.Name, Color = Ink, Logo = LogoFor(selected) } },
-            }, $"Windows and every file on {DiskOf(plan)} will be erased. They can't be recovered.", Danger, steps, 24);
+            }, $"Windows and every file on {DiskOf(plan)} will be erased. They can't be recovered.{StopsNote(plan)}", Danger, steps, 24);
             Footer("Back", ShowChoose, "Continue", () => ShowReplaceConfirm(plan));
         }
 
@@ -433,7 +524,7 @@ namespace Hop
             const string word = "ERASE";
             var system = Current;
             Arrange(new[] { new[] { Run.Gray("Type"), Run.Black(word), Run.Gray("to confirm") } },
-                $"hop will set up {system.Name} to erase Windows and every file on {DiskOf(plan)}. They can't be recovered.", Danger, eraseWord, 28);
+                $"hop will set up {system.Name} to erase Windows and every file on {DiskOf(plan)}. They can't be recovered.{StopsNote(plan)}", Danger, eraseWord, 28);
             eraseWord.Font = Theme.Font(15);
             eraseWord.Text = "";
             onEraseWord = () => primary.Enabled = eraseWord.Text == word;
@@ -464,14 +555,17 @@ namespace Hop
 
         string ConfirmNote()
         {
-            int shrink = Math.Max(0, linuxGB + InstallerGB - target.TailFreeGB);
+            int installer = ExpectedInstallerGB;
+            int shrink = Math.Max(0, linuxGB + installer - target.TailFreeGB);
             string title = target.Title.ToLowerInvariant();
             string keeps = target.IsFreeSpace ? "nothing on this drive shrinks" : target.IsWindows ? "Windows keeps its size" : $"{title} keeps its size";
+            // Free space can't shrink anything, and the engine stops if it's too small. A download could still need more than this.
+            string unless = isoPath == null && !target.IsFreeSpace ? $", unless the installer turns out bigger than {InstallerGB} GB" : "";
             string room = shrink == 0
-                ? $"hop will use {linuxGB + InstallerGB} GB of free space, so {keeps}. It copies the installer there"
+                ? $"hop will use about {linuxGB + installer} GB of free space, so {keeps}{unless}. It copies the installer there"
                 : target.TailFreeGB > 0
-                    ? $"hop will use {target.TailFreeGB} GB of free space and shrink {title} by {shrink} GB, copy the installer there"
-                    : $"hop will shrink {title} by {shrink} GB, copy the installer there";
+                    ? $"hop will use {target.TailFreeGB} GB of free space and shrink {title} by about {shrink} GB, copy the installer there"
+                    : $"hop will shrink {title} by about {shrink} GB, copy the installer there";
             return room + " and add it to the startup menu. Keep the charger connected until it finishes.";
         }
     }

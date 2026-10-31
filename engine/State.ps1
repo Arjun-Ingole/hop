@@ -2,11 +2,27 @@
 # Everything hop makes is recognisable without the state file: partitions by
 # their labels, startup entries by "(hop)" in their description.
 
+# What's at the top of a volume, whether or not it has a letter.
+function Get-VolumeEntries($Volume) {
+    @([IO.Directory]::GetFileSystemEntries($Volume.Path) | ForEach-Object { [IO.Path]::GetFileName($_) })
+}
+
+# Without a record of making it, a volume with one of hop's names is only hop's if it looks that way:
+# as it was formatted, or for the installer, holding a boot loader. Anyone's own files mean it isn't,
+# and so does not being able to look. Windows puts its own folders on any drive.
+function Test-LooksLikeHops($Volume) {
+    $entries = try { @(Get-VolumeEntries $Volume) } catch { Write-Log "Could not look inside $($Volume.FileSystemLabel): $($_.Exception.Message)"; return $false }
+    $entries = @($entries | Where-Object { $_ -notin @('System Volume Information', '$RECYCLE.BIN') })
+    if (-not $entries.Count) { return $true }
+    $Volume.FileSystemLabel -in $InstallerLabels -and $entries -contains 'EFI'
+}
+
 # Looks on every disk hop could have used, because a crash can leave its state file behind or
 # out of date. Off the Windows disk, a label alone isn't enough: the format has to match too,
 # so someone's own drive named LINUXBOOT isn't mistaken for hop's.
 function Get-HopPartitions {
     $windowsDisk = (Get-WindowsPartition).DiskNumber
+    $recorded = @((Read-State).Partitions | Where-Object { $_ })
     foreach ($disk in @(Get-HopDisks)) {
         foreach ($partition in @(Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue)) {
             $volume = try { $partition | Get-Volume -ErrorAction SilentlyContinue } catch { $null }
@@ -15,9 +31,24 @@ function Get-HopPartitions {
                 $format = if ($volume.FileSystemLabel -eq $RootLabel) { 'exFAT' } else { 'FAT32' }
                 if ($volume.FileSystemType -ne $format) { continue }
             }
+            $isRecorded = @($recorded | Where-Object { [int64]$_.Offset -eq [int64]$partition.Offset -and [int64]$_.Size -eq [int64]$partition.Size }).Count -gt 0
+            if (-not $isRecorded -and -not (Test-LooksLikeHops $volume)) { continue }
             [pscustomobject]@{ Partition = $partition; Label = $volume.FileSystemLabel; Letter = $volume.DriveLetter }
         }
     }
+}
+
+# What Clean up would delete, in words, so that it can be shown first.
+function Get-LeftoverList {
+    $describe = {
+        param($Partition, [string]$Name)
+        $letter = Get-LetterOf $Partition
+        $disk = Get-DiskLabel (Get-Disk -Number $Partition.DiskNumber)
+        "**$Name**, $([int][math]::Round([int64]$Partition.Size / 1GB)) GB$(if ($letter) { ", drive $letter`:" }), on $disk"
+    }
+    foreach ($found in @(Get-HopPartitions)) { & $describe $found.Partition $found.Label }
+    foreach ($partition in @(Get-RecordedPartitions (Read-State) @('installer', 'root', 'boot'))) { & $describe $partition 'An unfinished partition' }
+    foreach ($id in @(Get-FirmwareEntries) + @(Get-BcdEntries)) { if ($null -ne $id) { "hop's entry in the startup menu" } }
 }
 
 function Get-FirmwareEntries {

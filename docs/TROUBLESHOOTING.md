@@ -6,6 +6,12 @@
 erase the disk it started from. hop checks this before anything changes. Install next to Windows instead,
 or add memory.
 
+**"This PC has more than one disk called..."** The Linux installer's list would show those two disks the same, and hop
+can't give you anything else to tell them apart by. Disconnect the other one first, or install next to Windows.
+
+**The warning says something will stop starting.** That system keeps its startup files on the EFI partition of the disk
+being erased. Its files on another disk stay, but it won't start until it's repaired, using that system's own recovery tools.
+
 **The Linux installer says the disk is in use, or doesn't offer to erase it.** Don't force it. Turn the PC off
 and on: Windows is still there, because nothing has been erased, and **Undo changes** in hop still works.
 
@@ -115,6 +121,9 @@ It asks first if restore points are in the way, because deleting those can't be 
 
 If it still can't release enough, hop names the file in the way. Windows can't move some NTFS system files
 while it's running, so try a smaller size.
+
+If Windows doesn't restart, something else stopped it. After a minute hop says so. Click **Restart now**, or **Back**
+to put its settings back. If the drive isn't there after the restart, hop puts them back and opens as usual.
 
 On another drive there's less to do. hop clears the change journal and moves files without restarting, unless
 that drive has its own paging file.

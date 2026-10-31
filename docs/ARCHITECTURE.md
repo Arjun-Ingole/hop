@@ -94,6 +94,10 @@ the Windows disk and every internal disk. USB drives are skipped, because they c
 and off the Windows disk the format has to match as well as the label. Builds named LinuxHop used
 `LINUXHOP`, `\EFI\linuxhop` and `(LinuxHop)`, which are still recognised.
 
+A label isn't enough on its own, because anyone can name a drive. A partition the state file recorded is hop's.
+Otherwise it has to look as hop leaves it: empty apart from what Windows puts on every drive, or for the installer,
+holding `EFI`. Clean up lists what it will delete first, with its size and drive.
+
 `state.json` names the disk by its GUID and the volume by where it starts, because disk and partition
 numbers change, especially with a second disk. A file with neither is from an older build, which only
 ever used C:. Its `WindowsShrunk` and `InstallerNextToWindows` now mean the chosen drive, and keep their
@@ -243,6 +247,11 @@ the change journal and moves files, with the same 15 minute limit, and restarts 
 paging file of its own. A paging file left to "Windows chooses" isn't touched, because hop can't tell where
 it will go next.
 
+All of this is saved in one file, so a second drive puts back what the first run changed before it starts. Closing hop
+during the download stops the install first, because the install holds the engine. Windows asks hop's window before the
+restart: hop lets that through without restoring anything, since Make room carries on afterwards. If nothing has
+happened after a minute, it says so and offers to restart again or put the settings back.
+
 ## A second disk
 
 The installer and Linux go on the target disk, next to each other. A full C: couldn't hold the
@@ -267,6 +276,8 @@ off and on goes back to Windows. hop warns about this, and it's in Troubleshooti
 | Linux Mint ([partman-efi](https://github.com/linuxmint/ubiquity/blob/master/d-i/source/partman-efi/fstab.d/efi), [bug](https://bugs.launchpad.net/bugs/1396379)) | The first one it finds, whatever the list says. Usually Windows' | Leave the list alone |
 | Lubuntu (Calamares) | The existing one it's told to use | Its existing step, which is Windows' |
 | elementary OS, Pop!_OS ([distinst](https://github.com/pop-os/distinst/blob/master/src/installer/steps/bootloader.rs)) | Whichever is mounted at `/boot/efi`, which is hop's `LINUXBOOT` on the target disk. The startup entry points at it | The same steps as ever |
+
+| Debian, CachyOS, Arch, Fedora, Ultramarine | Not known | **Refused** by `Assert-SystemFitsDrive`. Their steps are written for Windows' disk, and name its EFI partition or the drive with the free space. None has been tried on a second disk |
 
 **The easy option isn't used for a second disk.** Ubuntu's [picks the largest free space on any
 disk](https://github.com/canonical/ubuntu-desktop-provision/blob/main/apps/ubuntu_bootstrap/lib/pages/storage/guided_resize/guided_resize_model.dart),
@@ -312,11 +323,24 @@ ISO, before the disk changes.
 
 **The installer partition goes on Windows' disk**, on the chosen drive if it's there and next to C: if not. Other
 reasons for refusing are in `Get-FullDiskBlocker`: a RAID disk, a disk too small for Linux, and Windows starting
-from another disk's EFI partition, which hop hasn't tried and wouldn't be erased.
+from another disk's EFI partition, which hop hasn't tried and wouldn't be erased, and **another disk with the
+same name and size**. hop can only name a disk by those in the steps, and the installer's list would show two the same.
+
+**Other systems can start from this disk's EFI partition.** Linux Mint's installer leaves its loader there even for
+Linux on another disk, and a second Windows can share it. `Get-SystemsOnWindowsEsp` looks at the folders there, the
+startup entries and Windows' own boot menu, and the warning and the ERASE screen name each as stopping. If it can't look,
+hop refuses, because the alternative is promising other disks are safe without knowing.
 
 **Screens, none of which changes anything until the last.** The last row of the drive list, then a check that can
 only read, then the warning with the disk, its size, what's on it and what stays, then typing ERASE. Back and
 Cancel go back to choosing, and only that last screen sets `fullDisk`, which `ShowChoose` clears.
+
+## Removing another Linux
+
+A startup entry only says which partition and file it starts, and Windows' EFI partition can hold loaders for several
+systems. So `Find-OtherSystem` ties an entry there to the Linux being removed only if there's no other Linux it could
+belong to, or if the small `grub.cfg` next to it names the file system of a partition being removed. Anything else
+stays, with its name in `Kept`, and the screen says so. A leftover entry is much easier to fix than another system's.
 
 ## Why the startup entry is written directly
 

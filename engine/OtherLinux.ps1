@@ -11,6 +11,8 @@ $LinuxPartitionTypes = @(
     '{a19d880f-05fc-4d3b-a006-743f0f84911e}'   # Linux RAID
 )
 
+$LinuxLoaderPattern = '(shim|grub|systemd-boot|refind)[^\\]*\.efi$'
+
 # The partitions a Linux on these disks might start from, including an EFI partition on another
 # disk. Whichever else is named, the Windows disk counts, since Linux Mint starts from there.
 function Get-DiskGuids([object[]]$Disks) {
@@ -27,7 +29,7 @@ function Get-LinuxLoaders([object[]]$Disks) {
     @($entries | Where-Object {
             $_.PartitionGuid -and $onDisk -contains $_.PartitionGuid -and $_.Path -and
             $_.Path -notlike '\EFI\Microsoft\*' -and $_.Description -notmatch $EntryPattern -and
-            $_.Path -match '(shim|grub|systemd-boot|refind)[^\\]*\.efi$'
+            $_.Path -match $LinuxLoaderPattern
         })
 }
 
@@ -53,31 +55,73 @@ function Get-OtherSystem {
     }
 }
 
-# Linux partitions on a disk, the startup entries that boot them, and a separate
-# EFI partition if that Linux made its own. Windows' EFI partition is never included.
+# Whether a Linux hop isn't removing could be somewhere else, on another disk or one that's unplugged.
+function Test-LinuxElsewhere([int]$Disk) {
+    $guid = (Get-Disk -Number $Disk).Guid
+    if (@(Get-LinuxDisks | Where-Object { $_ -ne $guid }).Count) { return $true }
+    foreach ($other in @(Get-Disk | Where-Object Number -ne $Disk)) {
+        if (@(Get-LinuxPartitions @(Get-Partition -DiskNumber $other.Number -ErrorAction SilentlyContinue)).Count) { return $true }
+    }
+    $false
+}
+
+function Get-FileSystemUuid($Partition) {
+    try { [Hop.DiskProbe]::ReadUuid($Partition.DiskNumber, [int64]$Partition.Offset) } catch { $null }
+}
+
+# The IDs each loader folder's small grub.cfg names: that's how GRUB finds the Linux it belongs to.
+function Read-EspLoaderIds([string]$Root, [string[]]$Folders) {
+    $ids = @{}
+    foreach ($folder in $Folders) {
+        $config = Join-Path $Root "EFI\$folder\grub.cfg"
+        if (Test-Path -LiteralPath $config) {
+            $ids[$folder] = @([regex]::Matches((Read-BootConfig $config), '[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}') | ForEach-Object { $_.Value })
+        }
+    }
+    $ids
+}
+
+# Which of these folders on Windows' EFI partition belong to the Linux on $Linux. Any of them can, if
+# there's no other Linux for them to belong to. Otherwise only one that names it does. Linux Mint on
+# a second disk keeps its loader there too, so one that can't be tied to this system isn't its to take.
+function Get-OwnedEspFolders([string[]]$Folders, $Linux, [int]$Disk) {
+    if (-not $Folders) { return }
+    if (-not (Test-LinuxElsewhere $Disk)) { return $Folders }
+    $mine = @($Linux | ForEach-Object { Get-FileSystemUuid $_ } | Where-Object { $_ })
+    $ids = try { Use-Esp { param($root) Read-EspLoaderIds $root $Folders } } catch { Write-Log "Could not read the EFI system partition: $($_.Exception.Message)"; @{} }
+    foreach ($folder in $Folders) {
+        if (@($ids[$folder] | Where-Object { $_ -in $mine }).Count) { $folder }
+    }
+}
+
+# Linux partitions on a disk, the startup entries tied to them, and a separate EFI partition if that
+# Linux made its own. Windows' EFI partition is never included. Kept names the startup entries there
+# that can't be tied to this Linux, which stay.
 function Find-OtherSystem([int]$Disk) {
     $partitions = @(Get-Partition -DiskNumber $Disk)
-    $onDisk = @(Get-DiskGuids $Disk)
-    $entries = @(try { [Hop.Firmware]::ListEntries() } catch { Write-Log "Could not read startup entries: $($_.Exception.Message)" })
-    $windowsEsp = ($entries | Where-Object { $_.Path -like '\EFI\Microsoft\*' } | Select-Object -First 1).PartitionGuid
-    $loaders = @(Get-LinuxLoaders $Disk)
-
     $state = Read-State
     $casper = if ($state) { @(Get-CasperPartition $state $partitions | ForEach-Object { $_.Guid }) } else { @() }
     $linux = @(Get-LinuxPartitions $partitions | Where-Object { $_.Guid -notin $casper })
     if (-not $linux.Count) { return $null }
     $removing = @($linux | ForEach-Object { $_.Guid })
 
-    $boot = @($entries | Where-Object {
-            $_.PartitionGuid -and $onDisk -contains $_.PartitionGuid -and $_.Path -and
-            $_.Path -notlike '\EFI\Microsoft\*' -and $_.Description -notmatch $EntryPattern -and
-            ($removing -contains $_.PartitionGuid -or $loaders.Number -contains $_.Number)
+    $entries = @(try { Get-BootEntries } catch { Write-Log "Could not read startup entries: $($_.Exception.Message)" })
+    $microsoft = @($entries | Where-Object { $_.Path -like '\EFI\Microsoft\*' } | ForEach-Object { $_.PartitionGuid })
+    $windowsEsp = try { (Get-WindowsEsp).Guid } catch { $null }
+    $own = @($partitions | Where-Object { $_.GptType -eq $EspType -and $_.Guid -ne $windowsEsp -and $_.Guid -notin $microsoft } | ForEach-Object { $_.Guid })
+    $others = @($entries | Where-Object { $_.PartitionGuid -and $_.Path -and $_.Path -notlike '\EFI\Microsoft\*' -and $_.Description -notmatch $EntryPattern })
+
+    $shared = @($others | Where-Object { $_.PartitionGuid -eq $windowsEsp -and $_.Path -match $LinuxLoaderPattern })
+    $owned = @(Get-OwnedEspFolders @($shared | ForEach-Object { ($_.Path -split '\\')[2] } | Sort-Object -Unique) $linux $Disk)
+    $boot = @($others | Where-Object {
+            $removing -contains $_.PartitionGuid -or ($own -contains $_.PartitionGuid -and $_.Path -match $LinuxLoaderPattern) -or
+            ($_.PartitionGuid -eq $windowsEsp -and $_.Path -match $LinuxLoaderPattern -and $owned -contains ($_.Path -split '\\')[2])
         })
+    $kept = @($shared | Where-Object { $owned -notcontains ($_.Path -split '\\')[2] } | ForEach-Object { $_.Description } | Select-Object -Unique)
+
     # Only when Windows' own EFI partition is known for certain, so it can never be picked.
-    $esps = if (-not $windowsEsp) { @() } else {
-        @($partitions | Where-Object {
-                $_.GptType -eq $EspType -and $_.Guid -ne $windowsEsp -and ($boot | Where-Object PartitionGuid -eq $_.Guid)
-            })
+    $esps = if (-not $microsoft.Count) { @() } else {
+        @($partitions | Where-Object { $own -contains $_.Guid -and ($boot | Where-Object PartitionGuid -eq $_.Guid) })
     }
 
     $name = ($boot | Select-Object -First 1).Description
@@ -88,6 +132,7 @@ function Find-OtherSystem([int]$Disk) {
         SizeGB     = [int][math]::Round((($all | Measure-Object -Property Size -Sum).Sum) / 1GB)
         Partitions = $all
         Entries    = $boot
+        Kept       = $kept
         WindowsEsp = $windowsEsp
         OnWindowsDisk = $Disk -eq (Get-WindowsPartition).DiskNumber
         DiskGuid   = (Get-Disk -Number $Disk).Guid
@@ -105,8 +150,9 @@ function Test-LinuxSignature($Partition) {
     $found -in $LinuxSignatures
 }
 
-function Remove-PartitionByGuid([string]$Guid) {
-    $partition = Get-Partition | Where-Object Guid -eq $Guid | Select-Object -First 1
+# Only on the disk it was found on: a cloned disk can have the same GUIDs.
+function Remove-PartitionByGuid([string]$Guid, [int]$DiskNumber) {
+    $partition = Get-Partition -DiskNumber $DiskNumber | Where-Object Guid -eq $Guid | Select-Object -First 1
     if (-not $partition) { return }
     try {
         Remove-Partition -DiskNumber $partition.DiskNumber -PartitionNumber $partition.PartitionNumber -Confirm:$false
@@ -126,6 +172,7 @@ function Remove-OtherSystem {
     $other = Get-OtherSystem
     if (-not $other) { throw 'There is no other Linux on this drive.' }
     Set-Status "Removing $($other.Name)..."
+    foreach ($name in @($other.Kept)) { if ($name) { Write-Log "Kept the startup entry for $name, which hop can't tie to this Linux." } }
 
     foreach ($entry in $other.Entries) {
         [Hop.Firmware]::DeleteBootEntry($entry.Number)
@@ -147,7 +194,7 @@ function Remove-OtherSystem {
 
     foreach ($partition in $other.Partitions) {
         Set-Status "Removing $($other.Name) ($([math]::Round($partition.Size / 1GB)) GB partition)..."
-        Remove-PartitionByGuid $partition.Guid
+        Remove-PartitionByGuid $partition.Guid $partition.DiskNumber
     }
     if (-not $other.OnWindowsDisk) { Set-LinuxDisks (@(Get-LinuxDisks) | Where-Object { $_ -ne $other.DiskGuid }) }
     Set-Status "$($other.Name) removed." 100

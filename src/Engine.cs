@@ -21,6 +21,7 @@ namespace Hop
         public string Logo;
         public bool SecureBootOff;      // can't start with Secure Boot on
         public bool FullDisk;           // shown to work replacing Windows
+        public bool WindowsDiskOnly;    // its steps are only for the disk Windows is on
         public System.Drawing.Color Color;
     }
 
@@ -32,6 +33,7 @@ namespace Hop
         public string DiskName;
         public int DiskGB;
         public string[] Points;         // what the warning says
+        public string[] StopsStarting;  // other systems that start from the EFI partition on this disk
     }
 
     /// <summary>One place Linux could go, or a drive it can't go on and why.</summary>
@@ -57,6 +59,13 @@ namespace Hop
 
         public bool IsFreeSpace => Kind == "gap";
         public bool IsWindows => Id == "";
+
+        /// <summary>Keeps a drive's real figures, so that it isn't suggested again on its estimate.</summary>
+        public static void Remember(List<DriveChoice> drives, DriveChoice measured)
+        {
+            int at = drives.FindIndex(d => d.Id == measured.Id);
+            if (at >= 0) drives[at] = measured;
+        }
     }
 
     public sealed class DownloadDrive
@@ -80,11 +89,13 @@ namespace Hop
         public string OtherName;        // another Linux on this PC, such as Pond
         public int OtherGB;
         public bool OtherOnWindowsDisk;
+        public string[] OtherKept;      // startup entries hop can't tie to it, which stay
         public List<DriveChoice> Drives;
         public List<DownloadDrive> DownloadDrives;
         public string RoomLetter;       // the drive Make room is working on
         public string StateLetter;      // the drive a setup took its space from, if it took any
         public bool StateDiskMissing;   // that setup's disk isn't connected
+        public string[] Leftovers;      // what Clean up would delete, in words
         public string Status;           // "ready", "leftover" (from an attempt that didn't finish) or "none"
         public string PreparedDistro;   // set when an installer is ready
         public string PreparedId;
@@ -142,6 +153,10 @@ namespace Hop
         public readonly Hashtable Sync = Hashtable.Synchronized(new Hashtable());
         public readonly ArrayList Log = ArrayList.Synchronized(new ArrayList());
 
+        /// <summary>The installer partition Read-Iso makes for an ISO of this size. Files on an ISO add up to a little less than the ISO.</summary>
+        public static int InstallerGBFor(long isoBytes) =>
+            (int)Math.Max(4, Math.Ceiling((isoBytes + 512.0 * 1024 * 1024) / (1024.0 * 1024 * 1024)));
+
         public Engine()
         {
             Sync["Log"] = Log;
@@ -190,6 +205,8 @@ namespace Hop
         public int Stage => Convert.ToInt32(Sync["Stage"]);
         public long Bytes => Convert.ToInt64(Sync["Bytes"] ?? 0L);
         public long TotalBytes => Convert.ToInt64(Sync["TotalBytes"] ?? 0L);
+        public string SpaceNote => Sync["SpaceNote"] as string;   // why Undo left the space free, if it had to
+        public bool RoomRestarting => Sync["RoomRestarting"] is bool restarting && restarting;
 
         Collection Invoke(string command, IDictionary parameters = null)
         {
@@ -237,6 +254,7 @@ namespace Hop
                 Logo = Get<string>(o, "Logo"),
                 SecureBootOff = Get<bool>(o, "SecureBootOff"),
                 FullDisk = o.Properties["FullDisk"]?.Value != null,
+                WindowsDiskOnly = o.Properties["Steps"]?.Value != null,
                 Color =System.Drawing.ColorTranslator.FromHtml(Get<string>(o, "Color")),
             }).ToList();
 
@@ -254,6 +272,7 @@ namespace Hop
                 UsedGB = Get<int>(info, "UsedGB"),
                 DiskName = Get<string>(info, "DiskName"),
                 Status = Get<string>(info, "Status"),
+                Leftovers = Get<string[]>(info, "Leftovers"),
                 TailFreeGB = Get<int>(info, "TailFreeGB"),
                 StuckGB = Get<int>(info, "StuckGB"),
                 Blocker = Get<string>(info, "Blocker"),
@@ -262,6 +281,7 @@ namespace Hop
                 OtherName = other == null ? null : Get<string>(other, "Name"),
                 OtherGB = other == null ? 0 : Get<int>(other, "SizeGB"),
                 OtherOnWindowsDisk = other == null || Get<bool>(other, "OnWindowsDisk"),
+                OtherKept = other == null ? null : Get<string[]>(other, "Kept"),
                 Drives = ItemsOf(info, "Drives").Select(ToDrive).ToList(),
                 DownloadDrives = ItemsOf(info, "DownloadDrives").Select(o => new DownloadDrive
                 {
@@ -333,6 +353,7 @@ namespace Hop
                 DiskName = Get<string>(plan, "DiskName"),
                 DiskGB = Get<int>(plan, "DiskGB"),
                 Points = Get<string[]>(plan, "Points"),
+                StopsStarting = Get<string[]>(plan, "StopsStarting"),
             };
         }
 
@@ -350,7 +371,11 @@ namespace Hop
         public async Task<bool> StartMakeRoomAsync(string letter) =>
             (await InvokeAsync("Start-MakeRoom", new Hashtable { ["Drive"] = letter ?? "" })).Single.ToString() == "restarting";
 
-        public Task CompleteMakeRoomAsync() => InvokeAsync("Complete-MakeRoom");
+        public Task RestartForRoomAsync() => InvokeAsync("Request-RoomRestart");
+
+        /// <summary>False when it couldn't finish, and has put the settings back.</summary>
+        public async Task<bool> CompleteMakeRoomAsync() =>
+            (await InvokeAsync("Complete-MakeRoom")).Single.ToString() == "done";
 
         public Task ClearRestorePointsAsync(string letter) =>
             InvokeAsync("Clear-RestorePoints", new Hashtable { ["Drive"] = letter ?? "" });
@@ -391,8 +416,15 @@ namespace Hop
         /// <summary>Stops the running command; its task then fails with PipelineStoppedException.</summary>
         public void Stop() => running?.BeginStop(null, null);
 
-        static T Get<T>(PSObject o, string name) =>
-            LanguagePrimitives.ConvertTo<T>(o.Properties[name]?.Value);
+        /// <summary>The same, and returns once it has stopped, so that the engine can be used again.</summary>
+        public void StopAndWait() => running?.Stop();
+
+        // PowerShell converts null to "" for a string, which would read as a real value in the sentences.
+        static T Get<T>(PSObject o, string name)
+        {
+            var value = o.Properties[name]?.Value;
+            return value == null ? default(T) : LanguagePrimitives.ConvertTo<T>(value);
+        }
 
         public void Dispose() => runspace.Dispose();
 

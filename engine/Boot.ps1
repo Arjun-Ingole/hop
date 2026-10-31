@@ -19,13 +19,20 @@ function Use-Esp([scriptblock]$Action) {
     try { & $Action "$($letter):\" } finally { & mountvol.exe "$($letter):" /d | Out-Null }
 }
 
+function Get-BootEntries { [Hop.Firmware]::ListEntries() }
+
 # Looks on every disk: Windows on a second drive often starts from the first drive's EFI partition.
+# The one this Windows started from comes first, which is the one Use-Esp opens, so the boot loader
+# and its startup entry can't end up on different partitions. A PC can have two Windows Boot Manager
+# entries, from a second Windows or a cloned disk, and the first of them may not be this Windows'.
 function Get-WindowsEsp {
     $partitions = @(Get-Partition | Where-Object GptType -eq $EspType)
-    $windows = @(try { [Hop.Firmware]::ListEntries() } catch { @() }) |
-        Where-Object { $_.Path -like '\EFI\Microsoft\*' } | Select-Object -First 1
-    $esp = if ($windows) { $partitions | Where-Object Guid -eq $windows.PartitionGuid | Select-Object -First 1 }
-    if (-not $esp) { $esp = $partitions | Where-Object IsSystem | Select-Object -First 1 }
+    $esp = $partitions | Where-Object IsSystem | Select-Object -First 1
+    if (-not $esp) {
+        $windows = @(try { Get-BootEntries } catch { @() }) |
+            Where-Object { $_.Path -like '\EFI\Microsoft\*' } | Select-Object -First 1
+        if ($windows) { $esp = $partitions | Where-Object Guid -eq $windows.PartitionGuid | Select-Object -First 1 }
+    }
     if (-not $esp) {
         $disk = (Get-WindowsPartition).DiskNumber
         $esp = $partitions | Where-Object DiskNumber -eq $disk | Select-Object -First 1
