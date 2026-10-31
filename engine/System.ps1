@@ -1,5 +1,5 @@
-# What makes hop refuse to run on this PC, each with the reason in plain words.
-function Get-Blockers {
+# What stops hop on this PC whichever drive is chosen.
+function Get-PcBlockers {
     if (-not (Test-Uefi)) {
         'This PC starts in the old "Legacy BIOS" mode. hop only works on UEFI PCs.'
         return
@@ -8,24 +8,28 @@ function Get-Blockers {
         'This PC has an ARM processor. The systems hop installs are built for Intel and AMD processors.'
         return
     }
+}
+
+# What makes hop refuse to use C:, or to run at all, with the reason in plain words.
+function Get-Blockers {
+    $pc = @(Get-PcBlockers)
+    if ($pc.Count) { return $pc }
     $c = Get-WindowsPartition
-    $disk = Get-Disk -Number $c.DiskNumber
-    if ($disk.PartitionStyle -ne 'GPT') { 'The Windows disk uses the old MBR layout. hop only works on GPT disks.' }
-    if ($disk.BusType -in @('File Backed Virtual', 'Spaces')) { 'Windows is running from a virtual disk or Storage Spaces, which hop cannot resize.' }
-    $volume = Get-Volume -DriveLetter $env:SystemDrive.TrimEnd(':')
-    if ($volume.FileSystemType -ne 'NTFS') { "Drive C: uses $($volume.FileSystemType). Windows can only shrink NTFS drives." }
-    if ($volume.HealthStatus -in @('Warning', 'Unhealthy')) { 'Windows reports a problem with drive C:. Run chkdsk C: /f in an administrator terminal, restart, and open hop again.' }
+    Get-DriveBlocker (Get-Disk -Number $c.DiskNumber) $c -Windows
 }
 
 function Test-Uefi { [Hop.Firmware]::IsUefi() }
 
+# A problem with C: only stops hop when there's no other drive to use.
 function Test-System {
     $blockers = @(Get-Blockers)
-    if ($blockers.Count) { throw $blockers[0] }
+    if (-not $blockers.Count) { return }
+    if (@(Get-PcBlockers).Count) { throw $blockers[0] }
+    if (-not @(Get-DriveTargets | Where-Object { -not $_.Blocker -and $_.Kind -ne 'disk' }).Count) { throw $blockers[0] }
 }
 
 # Things hop can go ahead with, but that are worth checking first. ** marks emphasis.
-function Get-Warnings {
+function Get-Warnings([string]$Target) {
     $battery = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($battery -and $battery.BatteryStatus -eq 1) {
         "**Plug in the charger.** This PC is on battery ($($battery.EstimatedChargeRemaining)%), and losing power while the disk is changing could stop Windows starting."
@@ -42,6 +46,15 @@ function Get-Warnings {
     }
     if (Test-BitLockerOn) {
         '**Drive C: is encrypted with BitLocker.** hop pauses it for three restarts. Make sure you have the recovery key first, at account.microsoft.com/devices/recoverykey.'
+    }
+    if ($Target) {
+        $place = Resolve-Target $Target
+        if ($place.Disk.Number -ne (Get-WindowsPartition).DiskNumber) {
+            '**Linux goes on a second drive.** If the PC stops at a **grub>** prompt when it restarts, turn off **Fast Boot** in the BIOS, because it can hide a second drive. Hold the power button to get back to Windows.'
+        }
+        if ($place.Kind -eq 'volume' -and (Get-PartitionSignature $place.Partition) -eq 'bitlocker') {
+            "**Drive $(Get-LetterOf $place.Partition): is encrypted with BitLocker.** hop can shrink it while it's unlocked, and Linux won't be able to read it. Make sure you have its recovery key first."
+        }
     }
     $memory = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
     if ($memory -and $memory -lt 4GB) {
