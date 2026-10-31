@@ -68,6 +68,68 @@ function Resolve-Download($Distro) {
             if (-not $m.Success) { throw 'Could not find the download link on elementary.io.' }
             return New-Download $m.Value $null 0
         }
+        'zorin' {
+            $base = 'https://mirrors.edge.kernel.org/zorinos-isos/'
+            $majors = [regex]::Matches((Get-WebText $base), 'href="(\d+)/"') | ForEach-Object { [int]$_.Groups[1].Value } | Sort-Object -Descending
+            foreach ($major in $majors) {
+                try { $sums = Get-WebText "$base$major/SHA256SUMS.txt" } catch { continue }
+                # Rereleases of a version are named -r1, -r2 and so on.
+                $best = $null
+                foreach ($m in [regex]::Matches($sums, '(?m)^([0-9a-f]{64})\s+\*?(Zorin-OS-([\d.]+)-Core-64-bit(?:-r(\d+))?\.iso)\s*$')) {
+                    $v = ConvertTo-Version $m.Groups[3].Value
+                    $r = if ($m.Groups[4].Success) { [int]$m.Groups[4].Value } else { 0 }
+                    if (-not $best -or $v -gt $best.Version -or ($v -eq $best.Version -and $r -gt $best.Revision)) {
+                        $best = @{ Version = $v; Revision = $r; Sha = $m.Groups[1].Value; File = $m.Groups[2].Value }
+                    }
+                }
+                if ($best) { return New-Download "$base$major/$($best.File)" $best.Sha 0 }
+            }
+            throw 'Could not find the Zorin OS ISO on the mirror.'
+        }
+        'debian' {
+            $base = 'https://cdimage.debian.org/debian-cd/current-live/amd64/iso-hybrid/'
+            $m = [regex]::Match((Get-WebText ($base + 'SHA256SUMS')), '(?m)^([0-9a-f]{64}) \*?\s*(debian-live-[\d.]+-amd64-gnome\.iso)\s*$')
+            if (-not $m.Success) { throw 'Could not find the Debian live ISO on cdimage.debian.org.' }
+            return New-Download ($base + $m.Groups[2].Value) $m.Groups[1].Value 0
+        }
+        'fedora' {
+            # Fedora's own list has beta releases too, whose version isn't a plain number.
+            $best = @(Invoke-RestMethod -Uri 'https://fedoraproject.org/releases.json' -UseBasicParsing -TimeoutSec 60) |
+                ForEach-Object { $_ } |
+                Where-Object { $_.variant -eq 'Workstation' -and $_.arch -eq 'x86_64' -and $_.version -match '^\d+$' -and $_.link -like '*.iso' } |
+                Sort-Object { [int]$_.version } -Descending | Select-Object -First 1
+            if (-not $best) { throw 'Could not find Fedora Workstation in the list on fedoraproject.org.' }
+            return New-Download $best.link $best.sha256 ([int64]$best.size)
+        }
+        'ultramarine' {
+            $base = 'https://images.fyralabs.com/isos/ultramarine/'
+            $versions = [regex]::Matches((Get-WebText $base), 'href="(\d+)/"') | ForEach-Object { [int]$_.Groups[1].Value } | Sort-Object -Descending
+            foreach ($v in $versions) {
+                $file = "ultramarine-$($Distro.Edition)-$v-live-anaconda-x86_64.iso"
+                try { $sums = Get-WebText "$base$v/$file.sha256sum" } catch { continue }
+                $m = [regex]::Match($sums, '^[0-9a-f]{64}')
+                if ($m.Success) { return New-Download "$base$v/$file" $m.Value 0 }
+            }
+            throw 'Could not find the Ultramarine ISO on images.fyralabs.com.'
+        }
+        'cachyos' {
+            # cachyos.org and its main mirror only speak TLS 1.3, which Windows 10 can't. Their CDN has
+            # the files and the checksums but no folder list, so the first mirror on their download page says which builds exist.
+            $builds = [regex]::Matches((Get-WebText 'https://mirror.zyner.org/cachyos/ISO/desktop/'), 'href="(\d{6})/"') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Descending
+            foreach ($build in $builds) {
+                $url = "https://cdn77.cachyos.org/ISO/desktop/$build/cachyos-desktop-linux-$build.iso"
+                try { $sums = Get-WebText "$url.sha256" } catch { continue }
+                $m = [regex]::Match($sums, '^[0-9a-f]{64}')
+                if ($m.Success) { return New-Download $url $m.Value 0 }
+            }
+            throw "Could not find the CachyOS ISO on CachyOS's download servers."
+        }
+        'arch' {
+            $base = 'https://geo.mirror.pkgbuild.com/iso/latest/'
+            $m = [regex]::Match((Get-WebText ($base + 'sha256sums.txt')), '(?m)^([0-9a-f]{64}) \*?\s*(archlinux-\d{4}\.\d{2}\.\d{2}-x86_64\.iso)\s*$')
+            if (-not $m.Success) { throw 'Could not find the Arch Linux ISO on the mirror.' }
+            return New-Download ($base + $m.Groups[2].Value) $m.Groups[1].Value 0
+        }
     }
     throw "Unknown system '$($Distro.Id)'."
 }
