@@ -4,48 +4,63 @@ function Get-WindowsPartition {
     Get-Partition -DriveLetter $env:SystemDrive.TrimEnd(':')
 }
 
-# Unallocated space directly after C:, for example where another Linux used to be.
-function Get-TailFree {
-    $c = Get-WindowsPartition
+# Unallocated space directly after a partition, C: unless told otherwise, for example where another Linux used to be.
+function Get-TailFree($Partition) {
+    $c = if ($Partition) { $Partition } else { Get-WindowsPartition }
     $end = $c.Offset + $c.Size
     $next = Get-Partition -DiskNumber $c.DiskNumber | Where-Object Offset -gt $c.Offset | Sort-Object Offset | Select-Object -First 1
     $limit = if ($next) { $next.Offset } else { (Get-Disk -Number $c.DiskNumber).Size - 2MB }   # GPT keeps a backup at the end
     [math]::Max([int64]0, [int64]($limit - $end))
 }
 
-function Get-SpaceInfo {
-    $c = Get-WindowsPartition
-    $supported = Get-PartitionSupportedSize -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber
-    $tail = Get-TailFree
+function Get-SpaceInfo([string]$Target) {
+    $place = Resolve-Target $Target
+    $c = $place.Partition
+    if ($place.Kind -eq 'gap') {
+        return [pscustomobject]@{
+            Partition = $c; MinSize = [int64]0; TailFree = [int64]$place.Gap.Size; Reserve = [int64]0
+            UsableGB = [int][math]::Floor($place.Gap.Size / 1GB); Kind = 'gap'; Name = 'that free space'; Letter = ''
+        }
+    }
+    $supported = Get-SupportedSize $c
+    $tail = Get-TailFree $c
+    $reserve = if ($place.IsWindows) { $WindowsReserve } else { $DataReserve }
+    $letter = Get-LetterOf $c
     [pscustomobject]@{
         Partition = $c
         MinSize   = [int64]$supported.SizeMin
         TailFree  = $tail
-        # GB Linux can get: free space after C:, plus what C: can give up while Windows keeps its reserve.
-        UsableGB  = [int][math]::Floor(($tail + $c.Size - $supported.SizeMin - $WindowsReserve) / 1GB)
+        Reserve   = [int64]$reserve
+        # GB Linux can get: free space after the drive, plus what it can give up while keeping its reserve.
+        UsableGB  = [int][math]::Floor(($tail + $c.Size - $supported.SizeMin - $reserve) / 1GB)
+        Kind      = 'volume'
+        Name      = "$letter`:"
+        Letter    = $letter
     }
 }
 
-# GB that C: could spare but Windows can't release. Files it can't move, such as the paging
+# GB that a drive could spare but Windows can't release. Files it can't move, such as the paging
 # file, stop a shrink wherever they sit, so a drive with plenty free can still give up very little.
-function Get-StuckGB([int64]$FreeBytes, $Space) {
-    $spareGB = [math]::Floor(($FreeBytes - $WindowsReserve) / 1GB)
+function Get-StuckGB([int64]$FreeBytes, $Space, [int64]$Reserve = $WindowsReserve) {
+    $spareGB = [math]::Floor(($FreeBytes - $Reserve) / 1GB)
     $shrinkGB = $Space.UsableGB - [math]::Floor($Space.TailFree / 1GB)
     [int][math]::Max(0, $spareGB - [math]::Max(0, $shrinkGB))
 }
 
 $ShrinkAdvice = "open hop again and click Make room, which clears what's in the way."
 
-function Get-Plan([int]$LinuxGB, [int]$InstallerGB) {
-    $space = Get-SpaceInfo
+function Get-Plan([int]$LinuxGB, [int]$InstallerGB, [string]$Target) {
+    $space = Get-SpaceInfo $Target
+    $drive = if ($space.Name) { $space.Name } else { 'C:' }
     $maxLinux = $space.UsableGB - $InstallerGB
     if ($LinuxGB -gt $maxLinux) {
-        if ($maxLinux -lt $MinLinuxGB) { throw "Windows can't release enough space from C:. It needs $($MinLinuxGB - $maxLinux) GB more. If C: is nearly full, delete some files. If it has plenty free, $ShrinkAdvice" }
-        throw "Windows can't release enough space from C: for $LinuxGB GB. Lower the Linux size to $maxLinux GB or less and click Install again."
+        if ($space.Kind -eq 'gap') { throw "That free space is too small for $LinuxGB GB of Linux and its installer. Lower the Linux size to $maxLinux GB or less, or choose another drive." }
+        if ($maxLinux -lt $MinLinuxGB) { throw "Windows can't release enough space from $drive. It needs $($MinLinuxGB - $maxLinux) GB more. If $drive is nearly full, delete some files. If it has plenty free, $ShrinkAdvice" }
+        throw "Windows can't release enough space from $drive for $LinuxGB GB. Lower the Linux size to $maxLinux GB or less and click Install again."
     }
-    # Linux goes last and the installer straight before it, at the end of C: and the free
-    # space after it. So the installer's space, and anything left over, stays next to C:,
-    # which is the only place Windows can use it once Linux is installed. C: only shrinks
+    # Linux goes last and the installer straight before it, at the end of the drive and the free
+    # space after it. So the installer's space, and anything left over, stays next to the drive,
+    # which is the only place Windows can use it once Linux is installed. The drive only shrinks
     # when the free space isn't enough.
     $c = $space.Partition
     $windowsEnd = [int64]($c.Offset + $c.Size)
@@ -62,6 +77,9 @@ function Get-Plan([int]$LinuxGB, [int]$InstallerGB) {
         LinuxGB         = $LinuxGB
         InstallerOffset = $installerOffset
         InstallerSize   = [int64]$InstallerGB * 1GB
+        TargetOffset    = [int64]$c.Offset
+        Kind            = if ($space.Kind) { $space.Kind } else { 'volume' }
+        Letter          = $space.Letter
     }
 }
 
@@ -78,8 +96,12 @@ function Get-DriveLetter($Partition) {
 
 # Partition numbers can shift once a partition is removed, and acting on a stale one could
 # delete Windows' recovery partition. So each is looked up again by where it starts.
+function Get-PartitionAt([int]$DiskNumber, [int64]$Offset) {
+    Get-Partition -DiskNumber $DiskNumber | Where-Object { [int64]$_.Offset -eq $Offset } | Select-Object -First 1
+}
+
 function Remove-PartitionAt([int]$DiskNumber, [int64]$Offset) {
-    $partition = Get-Partition -DiskNumber $DiskNumber | Where-Object { [int64]$_.Offset -eq $Offset } | Select-Object -First 1
+    $partition = Get-PartitionAt $DiskNumber $Offset
     if (-not $partition) { return }
     if ($partition.IsSystem -or $partition.IsBoot) { throw "Refusing to remove partition $($partition.PartitionNumber): Windows needs it to start." }
     Remove-Partition -DiskNumber $DiskNumber -PartitionNumber $partition.PartitionNumber -Confirm:$false
@@ -94,17 +116,19 @@ function Remove-DriveLetter($Partition) {
 
 function New-LinuxSpace($Plan, [string]$Strategy, $State) {
     if ($Plan.Shrink) {
-        Set-Status ('Shrinking Windows to {0:N0} GB to make room (can take a few minutes)...' -f ($Plan.NewWindowsSize / 1GB))
+        $letter = if ($Plan.Letter) { $Plan.Letter } else { 'C' }
+        $what = if ($letter -eq $env:SystemDrive.TrimEnd(':')) { 'Windows' } else { "drive $letter`:" }
+        Set-Status ('Shrinking {0} to {1:N0} GB to make room (can take a few minutes)...' -f $what, ($Plan.NewWindowsSize / 1GB))
         try {
             Resize-Partition -DiskNumber $Plan.DiskNumber -PartitionNumber $Plan.PartitionNumber -Size $Plan.NewWindowsSize
         } catch {
             # Hibernation, paging and restore point files can't be moved, so they limit the shrink.
-            throw "Windows could not shrink C: that far ($($_.Exception.Message)). Try a smaller Linux size. If that doesn't help, $ShrinkAdvice"
+            throw "Windows could not shrink $letter`: that far ($($_.Exception.Message)). Try a smaller Linux size. If that doesn't help, $ShrinkAdvice"
         }
         $State.WindowsShrunk = $true
         Save-State $State
     } else {
-        Write-Log 'Using free space next to C:; Windows keeps its size.'
+        Write-Log 'Using free space; the drive next to it keeps its size.'
     }
 
     if ($Strategy -eq 'prepared') {
