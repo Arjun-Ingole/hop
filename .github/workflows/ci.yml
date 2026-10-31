@@ -3,20 +3,26 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
   pull_request:
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
+
+# A newer push makes the older run pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Bump these to refresh the cached PowerShell modules.
+env:
+  PESTER_VERSION: 5.7.1
+  ANALYZER_VERSION: 1.24.0
 
 jobs:
-  build-and-test:
+  lint:
     runs-on: windows-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-
-      - name: Build
-        run: dotnet build -c Release
 
       - name: Check the engine scripts parse
         shell: powershell
@@ -29,21 +35,54 @@ jobs:
           }
           if ($failed) { exit 1 }
 
+      - uses: actions/cache@v4
+        with:
+          path: ~\Documents\WindowsPowerShell\Modules\PSScriptAnalyzer
+          key: analyzer-${{ env.ANALYZER_VERSION }}
+
       - name: Lint
         shell: powershell
         run: |
-          Set-PSRepository PSGallery -InstallationPolicy Trusted
-          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          if (-not (Get-Module -ListAvailable PSScriptAnalyzer | Where-Object { $_.Version -eq $env:ANALYZER_VERSION })) {
+            Set-PSRepository PSGallery -InstallationPolicy Trusted
+            Install-Module PSScriptAnalyzer -RequiredVersion $env:ANALYZER_VERSION -Scope CurrentUser -Force
+          }
           $issues = Invoke-ScriptAnalyzer -Path engine -Recurse -Severity Error
           $issues | Format-Table RuleName, ScriptName, Line, Message -AutoSize -Wrap
           if ($issues) { exit 1 }
 
+  build-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/cache@v4
+        with:
+          path: ~\.nuget\packages
+          key: nuget-${{ hashFiles('Hop.csproj') }}
+          restore-keys: nuget-
+
+      - name: Build
+        run: dotnet build -c Release
+
+      - uses: actions/cache@v4
+        with:
+          path: ~\Documents\WindowsPowerShell\Modules\Pester
+          key: pester-${{ env.PESTER_VERSION }}
+
       - name: Unit tests
         shell: powershell
         run: |
-          Set-PSRepository PSGallery -InstallationPolicy Trusted
-          Install-Module Pester -MinimumVersion 5.5 -MaximumVersion 5.99 -Scope CurrentUser -Force -SkipPublisherCheck
-          Import-Module Pester -MinimumVersion 5.5 -MaximumVersion 5.99
+          if (-not (Get-Module -ListAvailable Pester | Where-Object { $_.Version -eq $env:PESTER_VERSION })) {
+            Set-PSRepository PSGallery -InstallationPolicy Trusted
+            Install-Module Pester -RequiredVersion $env:PESTER_VERSION -Scope CurrentUser -Force -SkipPublisherCheck
+          }
+          Import-Module Pester -RequiredVersion $env:PESTER_VERSION
           $config = New-PesterConfiguration
           $config.Run.Path = 'tests'
           $config.Run.Exit = $true
