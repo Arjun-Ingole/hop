@@ -1,6 +1,6 @@
 # --- Main flows ------------------------------------------------------------
 
-function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [string]$Target, [string]$DownloadDrive) {
+function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [string]$Target, [string]$DownloadDrive, [switch]$FullDisk) {
     Set-Stage 0
     Set-Status 'Checking this PC...'
     Test-System
@@ -10,6 +10,13 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
     Assert-FirmwareAccess
     Assert-DriveUsable $Target
     Assert-StateRoom
+    # Replacing Windows only needs the installer, which the Linux installer later erases along with the rest.
+    $strategy = $distro.Strategy
+    if ($FullDisk) {
+        Assert-FullDisk $distro
+        $LinuxGB = 0
+        $strategy = 'freespace'
+    }
     $diskChanged = $false
 
     if (-not $IsoPath) {
@@ -29,6 +36,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         # Nothing on the disk changes until New-LinuxSpace.
         Set-Stage 2
         $iso = Read-Iso $IsoPath $distro
+        if ($FullDisk) { Assert-FullDiskIso $distro $iso }
         $plan = Get-Plan $LinuxGB $iso.InstallerGB $Target
         Use-Esp {
             param($root)
@@ -40,7 +48,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         if (-not $Sync.Gate.EnterDiskStage()) { throw 'Cancelled.' }
         $disk = Get-Disk -Number $plan.DiskNumber
         $state = [pscustomobject]@{
-            Distro = $distro.Name; DistroId = $distro.Id; Strategy = $distro.Strategy; LinuxGB = $LinuxGB
+            Distro = $distro.Name; DistroId = $distro.Id; Strategy = $strategy; LinuxGB = $LinuxGB; FullDisk = [bool]$FullDisk
             DiskNumber = $plan.DiskNumber; WindowsShrunk = $false; Partitions = @(); BootNumber = $null
             IsoPath = $IsoPath; Created = (Get-Date).ToString('s'); Copied = $false; RestartedAt = $null
             LoadersBefore = @(Get-LinuxLoaders $plan.DiskNumber | ForEach-Object { $_.Path })
@@ -56,15 +64,18 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         $state.BitLockerPaused = Suspend-BitLockerForSetup
         Disable-FastStartup
         Save-State $state
-        $installer = New-LinuxSpace $plan $distro.Strategy $state | Select-Object -Last 1
-        $state.AlongsideOk = try { Test-AlongsideFindsLinux $plan } catch { $null }
+        $installer = New-LinuxSpace $plan $strategy $state | Select-Object -Last 1
+        $state.AlongsideOk = if ($FullDisk) { $null } else { try { Test-AlongsideFindsLinux $plan } catch { $null } }
         Save-State $state
         Restore-RoomSettings
         $letter = Get-DriveLetter $installer
 
         Set-Stage 4
         Copy-Installer $iso $letter
-        Update-BootConfig $distro "$letter`:\"
+        Update-BootConfig $distro "$letter`:\" -FullDisk:$FullDisk
+        if ($FullDisk -and -not (Test-FullDiskConfig $distro "$letter`:\")) {
+            throw "hop couldn't change $($distro.Name)'s startup menu to let go of the disk."
+        }
         $state.Copied = $true
         Save-State $state
     } catch {
