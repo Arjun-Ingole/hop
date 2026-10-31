@@ -410,6 +410,9 @@ namespace Hop
         /// <summary>Stops the running command; its task then fails with PipelineStoppedException.</summary>
         public void Stop() => running?.BeginStop(null, null);
 
+        /// <summary>The same, and returns once it has stopped, so that the engine can be used again.</summary>
+        public void StopAndWait() => running?.Stop();
+
         // PowerShell converts null to "" for a string, which would read as a real value in the sentences.
         static T Get<T>(PSObject o, string name)
         {
