@@ -314,6 +314,33 @@ A volume shrink analysis was initiated on volume Windows (C:).
         Restore-RoomSettings
         $Sync.RoomRestarting | Should -BeFalse
     }
+    It 'puts an earlier run on C: back before starting on another drive' {
+        Mock Get-PagingSettings { @('?:\pagefile.sys') }
+        Start-MakeRoom
+        Start-MakeRoom 'Y' | Should -Be 'done'
+        Should -Invoke Set-Hibernation -ParameterFilter { $On } -Times 1
+        Should -Invoke Restore-Paging -ParameterFilter { ($Saved -join '|') -eq '?:\pagefile.sys' } -Times 1
+        $state = Read-RoomState
+        $state.Drive | Should -Be 'Y:'
+        $state.Hibernation | Should -BeFalse
+        $state.PagingOff | Should -BeFalse
+    }
+    It 'only says it turned back on what it did' {
+        $script:logged = @()
+        Mock Write-Log { $script:logged += $Message }
+        Mock Test-HibernationOn { $false }
+        Start-MakeRoom
+        Restore-RoomSettings
+        ($script:logged -join ' ') | Should -BeLike '*Turned the paging file back on.*'
+        ($script:logged -join ' ') | Should -Not -BeLike '*hibernation back on*'
+    }
+    It 'says nothing was turned back on when another drive changed neither' {
+        $script:logged = @()
+        Mock Write-Log { $script:logged += $Message }
+        Start-MakeRoom 'Y'
+        Restore-RoomSettings
+        ($script:logged -join ' ') | Should -Not -BeLike '*back on*'
+    }
     It 'only takes paging off the system drive' {
         $files = Get-PagingWithoutSystemDrive @("$env:SystemDrive\pagefile.sys 0 0", 'Z:\pagefile.sys 0 0', '?:\pagefile.sys')
         $files | Should -Be @('Z:\pagefile.sys 0 0')

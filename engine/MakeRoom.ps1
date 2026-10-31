@@ -147,6 +147,9 @@ function Get-MakeRoomSteps([string]$Drive) {
 
 # Says 'restarting' when the PC is on its way down, or 'done' when another drive didn't need it to be.
 function Start-MakeRoom([string]$Drive) {
+    # An earlier run on another drive saved its settings in the same file. They go back first, so
+    # none are lost and what's saved next is what's really there.
+    if (Read-RoomState) { Restore-RoomSettings }
     $room = Get-RoomDrive $Drive
     $isWindows = $room -eq $env:SystemDrive
     $pagingOff = (Test-EnoughMemoryWithoutPaging) -and ($isWindows -or (Test-PagingFileOn $room))
@@ -250,9 +253,14 @@ function Restore-RoomSettings {
     $state = Read-RoomState
     if (-not $state) { return }
     Unregister-RunAfterRestart
-    if ($state.Hibernation) { try { Set-Hibernation $true } catch { Write-Log "Could not turn hibernation back on: $($_.Exception.Message)" } }
-    if ($state.PagingOff) { try { Restore-Paging $state.Paging } catch { Write-Log "Could not turn the paging file back on: $($_.Exception.Message)" } }
+    $back = @()
+    if ($state.Hibernation) {
+        try { Set-Hibernation $true; if (Test-HibernationOn) { $back += 'hibernation' } } catch { Write-Log "Could not turn hibernation back on: $($_.Exception.Message)" }
+    }
+    if ($state.PagingOff) {
+        try { Restore-Paging $state.Paging; $back += 'the paging file' } catch { Write-Log "Could not turn the paging file back on: $($_.Exception.Message)" }
+    }
     try { New-ChangeJournal $state.Drive } catch { Write-Log "Could not make a new change journal: $($_.Exception.Message)" }
     Remove-Item -LiteralPath $RoomPath -Force -ErrorAction SilentlyContinue
-    Write-Log 'Turned hibernation and the paging file back on.'
+    if ($back.Count) { Write-Log "Turned $($back -join ' and ') back on." }
 }

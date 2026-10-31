@@ -278,6 +278,7 @@ namespace Hop
         async Task MakeRoomAsync()
         {
             BeginWork(new[] { new[] { Run.Gray("Making"), Run.Black("room") } }, "Starting…");
+            roomLetter = null;   // the engine puts back any earlier run before it starts
             try
             {
                 // The restart is on its way, and Windows closes hop. Only another drive gets past this.
