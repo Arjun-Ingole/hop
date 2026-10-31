@@ -758,7 +758,23 @@ Describe 'Get-WindowsEsp' {
     It 'finds the one Windows starts from, even on another disk' {
         (Get-WindowsEsp).Guid | Should -Be '{first}'
     }
+    It 'takes the one Use-Esp opens over the lowest Windows Boot Manager entry, when there are two' {
+        Mock Get-BootEntries {
+            [pscustomobject]@{ Number = 0; Path = '\EFI\Microsoft\Boot\bootmgfw.efi'; PartitionGuid = '{other}' }
+            [pscustomobject]@{ Number = 1; Path = '\EFI\Microsoft\Boot\bootmgfw.efi'; PartitionGuid = '{first}' }
+        }
+        (Get-WindowsEsp).Guid | Should -Be '{first}'
+    }
+    It 'goes by the startup entry when Windows does not say which it started from' {
+        Mock Get-Partition {
+            [pscustomobject]@{ Guid = '{other}'; DiskNumber = 1; GptType = $EspType; IsSystem = $false }
+            [pscustomobject]@{ Guid = '{first}'; DiskNumber = 0; GptType = $EspType; IsSystem = $false }
+        }
+        Mock Get-BootEntries { [pscustomobject]@{ Number = 0; Path = '\EFI\Microsoft\Boot\bootmgfw.efi'; PartitionGuid = '{first}' } }
+        (Get-WindowsEsp).Guid | Should -Be '{first}'
+    }
     It 'falls back to the Windows disk' {
+        Mock Get-BootEntries { }
         Mock Get-Partition { [pscustomobject]@{ Guid = '{other}'; DiskNumber = 1; GptType = $EspType; IsSystem = $false } }
         (Get-WindowsEsp).Guid | Should -Be '{other}'
     }
