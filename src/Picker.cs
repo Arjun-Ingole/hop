@@ -7,19 +7,28 @@ using static Hop.Theme;
 
 namespace Hop
 {
-    /// <summary>The list of systems that drops down from the sentence.</summary>
-    sealed class SystemPicker : ToolStripDropDown
+    /// <summary>A row in a list that drops down from the sentence.</summary>
+    sealed class PickerItem
+    {
+        public string Name;
+        public string Note;
+        public string Logo;     // none for drives
+        public bool Dimmed;     // can't be used; choosing it says why
+    }
+
+    /// <summary>A list that drops down from the sentence: the systems, or the drives.</summary>
+    sealed class ListPicker : ToolStripDropDown
     {
         readonly PickerList list;
 
-        public event Action<Distro> Picked;
-        public event Action IsoRequested;
+        public event Action<int> Picked;
+        public event Action FooterClicked;
 
-        public SystemPicker(IList<Distro> systems, Distro current)
+        public ListPicker(IList<PickerItem> items, int current, string footer, float width = 340)
         {
-            list = new PickerList(systems, current);
-            list.Picked += d => { Close(); Picked?.Invoke(d); };
-            list.IsoRequested += () => { Close(); IsoRequested?.Invoke(); };
+            list = new PickerList(items, current, footer, width);
+            list.Picked += i => { Close(); Picked?.Invoke(i); };
+            list.FooterClicked += () => { Close(); FooterClicked?.Invoke(); };
             var host = new ToolStripControlHost(list) { Margin = Padding.Empty, Padding = Padding.Empty, AutoSize = false, Size = list.Size };
             Padding = Padding.Empty;
             AutoSize = false;
@@ -50,31 +59,33 @@ namespace Hop
 
     sealed class PickerList : DrawnControl
     {
-        const float Pad = 6, ItemHeight = 42, FooterHeight = 38, Width_ = 340;
+        const float Pad = 6, ItemHeight = 42, FooterHeight = 38;
         const int VisibleItems = 8;
 
-        readonly IList<Distro> systems;
-        readonly Distro current;
+        readonly IList<PickerItem> items;
+        readonly int current;
+        readonly string footerText;
         int hot = -1, scroll;
         bool footerHot;
 
-        public event Action<Distro> Picked;
-        public event Action IsoRequested;
+        public event Action<int> Picked;
+        public event Action FooterClicked;
 
-        public PickerList(IList<Distro> systems, Distro current)
+        public PickerList(IList<PickerItem> items, int current, string footerText, float width)
         {
             MakeClickable();
             Cursor = Cursors.Default;
-            this.systems = systems;
+            this.items = items;
             this.current = current;
-            int visible = Math.Min(VisibleItems, systems.Count);
-            Size = new Size(S(Width_), S(Pad * 2 + ItemHeight * visible + 5 + FooterHeight));
-            hot = Math.Max(0, systems.IndexOf(current));
+            this.footerText = footerText;
+            int visible = Math.Min(VisibleItems, items.Count);
+            Size = new Size(S(width), S(Pad * 2 + ItemHeight * visible + (footerText != null ? 5 + FooterHeight : 0)));
+            hot = Math.Max(0, current);
             EnsureVisible(hot);
         }
 
-        int Rows => Math.Min(VisibleItems, systems.Count);
-        int MaxScroll => Math.Max(0, systems.Count - VisibleItems);
+        int Rows => Math.Min(VisibleItems, items.Count);
+        int MaxScroll => Math.Max(0, items.Count - VisibleItems);
         float ListTop => F(Pad);
         float FooterTop => F(Pad + ItemHeight * Rows + 5);
 
@@ -95,7 +106,7 @@ namespace Hop
         {
             base.OnMouseMove(e);
             int index = IndexAt(e.Location);
-            bool footer = e.Y >= FooterTop;
+            bool footer = footerText != null && e.Y >= FooterTop;
             if (index != hot && index >= 0 || footer != footerHot)
             {
                 if (index >= 0) hot = index;
@@ -110,8 +121,8 @@ namespace Hop
             base.OnMouseUp(e);
             if (e.Button != MouseButtons.Left) return;
             int index = IndexAt(e.Location);
-            if (index >= 0 && index < systems.Count) Picked?.Invoke(systems[index]);
-            else if (e.Y >= FooterTop) IsoRequested?.Invoke();
+            if (index >= 0 && index < items.Count) Picked?.Invoke(index);
+            else if (footerText != null && e.Y >= FooterTop) FooterClicked?.Invoke();
         }
 
         protected override void OnMouseWheel(MouseEventArgs e)
@@ -129,13 +140,13 @@ namespace Hop
             {
                 case Keys.Up: hot = Math.Max(0, hot - 1); footerHot = false; break;
                 case Keys.Down:
-                    if (hot >= systems.Count - 1) footerHot = true;
+                    if (hot >= items.Count - 1) footerHot = footerText != null;
                     else hot++;
                     break;
                 case Keys.Enter:
                 case Keys.Space:
-                    if (footerHot) IsoRequested?.Invoke();
-                    else if (hot >= 0) Picked?.Invoke(systems[hot]);
+                    if (footerHot) FooterClicked?.Invoke();
+                    else if (hot >= 0) Picked?.Invoke(hot);
                     return;
                 default: return;
             }
@@ -152,22 +163,26 @@ namespace Hop
 
             var saved = g.Clip;
             g.SetClip(new RectangleF(0, ListTop, Width, itemH * Rows));
-            for (int i = scroll; i < Math.Min(systems.Count, scroll + VisibleItems); i++)
+            for (int i = scroll; i < Math.Min(items.Count, scroll + VisibleItems); i++)
             {
-                var d = systems[i];
+                var d = items[i];
                 var row = new RectangleF(pad, ListTop + (i - scroll) * itemH, Width - 2 * pad, itemH);
-                bool selected = d.Id == current?.Id;
+                bool selected = i == current;
                 if (selected) FillRounded(g, Fill, row, F(8));
                 else if (i == hot && !footerHot) FillRounded(g, FillHover, row, F(8));
 
                 float x = row.X + F(12);
-                DrawImageFit(g, Theme.Logo(d.Logo), new RectangleF(x, row.Y + (itemH - F(22)) / 2, F(22), F(22)));
-                x += F(22 + 12);
+                if (d.Logo != null)
+                {
+                    DrawImageFit(g, Theme.Logo(d.Logo), new RectangleF(x, row.Y + (itemH - F(22)) / 2, F(22), F(22)));
+                    x += F(22 + 12);
+                }
                 float baseline = TextKit.BaselineIn(name, row.Y, itemH);
                 float checkLeft = row.Right - F(12 + 16);
-                float noteWidth = TextKit.Width(d.Note, note);
-                TextKit.Draw(g, TextKit.Ellipsize(d.Name, name, checkLeft - F(12) - noteWidth - F(12) - x), name, Ink, x, baseline);
-                TextKit.Draw(g, d.Note, note, Tertiary, checkLeft - F(12) - noteWidth, TextKit.BaselineIn(note, row.Y, itemH));
+                string noteText = TextKit.Ellipsize(d.Note ?? "", note, (checkLeft - F(12) - x) * 0.7f);
+                float noteWidth = TextKit.Width(noteText, note);
+                TextKit.Draw(g, TextKit.Ellipsize(d.Name, name, checkLeft - F(12) - noteWidth - F(12) - x), name, d.Dimmed ? Tertiary : Ink, x, baseline);
+                TextKit.Draw(g, noteText, note, Tertiary, checkLeft - F(12) - noteWidth, TextKit.BaselineIn(note, row.Y, itemH));
                 if (selected)
                 {
                     float cx = checkLeft + F(9), cy = row.Y + itemH / 2;
@@ -179,15 +194,18 @@ namespace Hop
 
             if (MaxScroll > 0)
             {
-                float trackH = itemH * Rows - F(8), thumbH = trackH * VisibleItems / systems.Count;
+                float trackH = itemH * Rows - F(8), thumbH = trackH * VisibleItems / items.Count;
                 float thumbY = ListTop + F(4) + (trackH - thumbH) * scroll / MaxScroll;
                 FillRounded(g, Hairline, new RectangleF(Width - F(6), thumbY, F(3), thumbH), F(1.5f));
             }
 
-            using (var pen = new Pen(DriveFree)) g.DrawLine(pen, pad, FooterTop - F(1), Width - pad, FooterTop - F(1));
-            var footer = new RectangleF(pad, FooterTop, Width - 2 * pad, F(FooterHeight));
-            if (footerHot) FillRounded(g, FillHover, RectangleF.Inflate(footer, 0, -F(3)), F(8));
-            TextKit.Draw(g, "Use an ISO file…", Font(14, true), Ink, footer.X + F(12), TextKit.BaselineIn(Font(14, true), footer.Y, footer.Height));
+            if (footerText != null)
+            {
+                using (var pen = new Pen(DriveFree)) g.DrawLine(pen, pad, FooterTop - F(1), Width - pad, FooterTop - F(1));
+                var footer = new RectangleF(pad, FooterTop, Width - 2 * pad, F(FooterHeight));
+                if (footerHot) FillRounded(g, FillHover, RectangleF.Inflate(footer, 0, -F(3)), F(8));
+                TextKit.Draw(g, footerText, Font(14, true), Ink, footer.X + F(12), TextKit.BaselineIn(Font(14, true), footer.Y, footer.Height));
+            }
 
             using (var border = new Pen(Color.FromArgb(28, 0, 0, 0))) g.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
         }

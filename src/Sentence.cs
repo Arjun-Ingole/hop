@@ -28,9 +28,11 @@ namespace Hop
         static float Tracking => F(-0.025f * Px);
 
         readonly List<Run[]> lines = new List<Run[]>();
-        RectangleF pickerRect = RectangleF.Empty;
+        readonly List<RectangleF> pickerRects = new List<RectangleF>();
+        int focusedPicker;
 
-        public event EventHandler PickerClicked;
+        /// <summary>Which picker in the sentence was clicked, counting from the start.</summary>
+        public event Action<int> PickerClicked;
 
         public void Set(params Run[][] newLines)
         {
@@ -41,37 +43,53 @@ namespace Hop
             foreach (var line in lines) foreach (var run in line) hasPicker |= run.Picker;
             SetStyle(ControlStyles.Selectable, hasPicker);
             TabStop = hasPicker;
-            if (!hasPicker) pickerRect = RectangleF.Empty;
+            if (!hasPicker) { pickerRects.Clear(); focusedPicker = 0; }
             Invalidate();
         }
 
-        /// <summary>Where the system name sits, in screen coordinates, for placing the picker.</summary>
-        public Rectangle PickerScreenBounds => RectangleToScreen(Rectangle.Round(pickerRect));
+        /// <summary>Where a picker sits, in screen coordinates, for placing what it opens.</summary>
+        public Rectangle PickerScreenBounds(int picker) => RectangleToScreen(Rectangle.Round(pickerRects[picker]));
 
-        bool OverPicker(Point p) => !pickerRect.IsEmpty && RectangleF.Inflate(pickerRect, F(6), F(2)).Contains(p);
+        int PickerAt(Point p) => pickerRects.FindIndex(r => RectangleF.Inflate(r, F(6), F(2)).Contains(p));
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
-            bool over = OverPicker(e.Location);
-            Cursor = over ? Cursors.Hand : Cursors.Default;
+            int over = PickerAt(e.Location);
+            Cursor = over >= 0 ? Cursors.Hand : Cursors.Default;
             if (over != pickerHot) { pickerHot = over; Invalidate(); }
         }
 
-        bool pickerHot;
+        int pickerHot = -1;
 
-        protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); pickerHot = false; }
+        protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); pickerHot = -1; }
 
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
-            if (e.Button == MouseButtons.Left && OverPicker(e.Location)) PickerClicked?.Invoke(this, EventArgs.Empty);
+            int over = PickerAt(e.Location);
+            if (e.Button == MouseButtons.Left && over >= 0) PickerClicked?.Invoke(over);
         }
 
         protected override void OnClick(EventArgs e)
         {
             // Mouse clicks are handled in OnMouseUp; this is the keyboard path from DrawnControl.
-            if (!pickerRect.IsEmpty && !(e is MouseEventArgs)) PickerClicked?.Invoke(this, EventArgs.Empty);
+            if (pickerRects.Count > 0 && !(e is MouseEventArgs)) PickerClicked?.Invoke(Math.Min(focusedPicker, pickerRects.Count - 1));
+        }
+
+        protected override bool IsInputKey(Keys keyData) =>
+            (pickerRects.Count > 1 && (keyData == Keys.Left || keyData == Keys.Right)) || base.IsInputKey(keyData);
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            if (pickerRects.Count > 1 && (e.KeyCode == Keys.Left || e.KeyCode == Keys.Right))
+            {
+                focusedPicker = e.KeyCode == Keys.Right ? Math.Min(pickerRects.Count - 1, focusedPicker + 1) : Math.Max(0, focusedPicker - 1);
+                e.Handled = true;
+                Invalidate();
+                return;
+            }
+            base.OnKeyDown(e);
         }
 
         protected override void Draw(Graphics g)
@@ -81,7 +99,7 @@ namespace Hop
 
             // Lay out first so the hover background can go behind the picker.
             var placed = new List<(Run run, float x, float top, float width)>();
-            pickerRect = RectangleF.Empty;
+            pickerRects.Clear();
             for (int i = 0; i < lines.Count; i++)
             {
                 float x = 0, top = i * lineHeight;
@@ -92,15 +110,15 @@ namespace Hop
                     x += TextKit.Width(run.Text, font, Tracking);
                     if (run.Picker) x += F(6 + ChevronSize);
                     placed.Add((run, start, top, x - start));
-                    if (run.Picker) pickerRect = new RectangleF(start, top, x - start, lineHeight + F(3));
+                    if (run.Picker) pickerRects.Add(new RectangleF(start, top, x - start, lineHeight + F(3)));
                     x += F(WordGap);
                 }
             }
 
-            if (pickerHot && !pickerRect.IsEmpty)
-                FillRounded(g, FillHover, RectangleF.Inflate(pickerRect, F(8), F(2)), F(10));
-            if (Focused && ShowFocusCues && !pickerRect.IsEmpty)
-                StrokeRounded(g, Color.FromArgb(120, Ink), RectangleF.Inflate(pickerRect, F(8), F(2)), F(10), F(2));
+            if (pickerHot >= 0 && pickerHot < pickerRects.Count)
+                FillRounded(g, FillHover, RectangleF.Inflate(pickerRects[pickerHot], F(8), F(2)), F(10));
+            if (Focused && ShowFocusCues && focusedPicker < pickerRects.Count)
+                StrokeRounded(g, Color.FromArgb(120, Ink), RectangleF.Inflate(pickerRects[focusedPicker], F(8), F(2)), F(10), F(2));
 
             foreach (var (run, x, top, width) in placed)
             {

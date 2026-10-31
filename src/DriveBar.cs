@@ -8,9 +8,10 @@ namespace Hop
     enum DriveMode { Edit, Progress, Static }
 
     /// <summary>
-    /// Drive C: drawn to scale: Windows (used and free), the installer, and the Linux
-    /// part in the system's brand color. In Edit mode the boundary between
-    /// Windows and Linux is dragged to choose the size.
+    /// The chosen drive drawn to scale: what's on it now (used and free), the installer, and
+    /// the Linux part in the system's brand color. In Edit mode the boundary between the
+    /// drive and Linux is dragged to choose the size. Free space has no drive to shrink, so
+    /// its left part is simply what stays free.
     /// </summary>
     sealed class DriveBar : DrawnControl
     {
@@ -21,8 +22,11 @@ namespace Hop
         bool dragging, handleHot;
 
         public string DiskName = "";
+        public string DriveTitle = "Drive C:";
+        public string DriveLabel = "Windows";   // inside the bar: Windows on C:, or the drive's name
+        public bool IsFreeSpace;
         public int WindowsGB = 1, UsedGB, InstallerGB = 8;
-        public int TailFreeGB;      // free space after C:, used before C: shrinks
+        public int TailFreeGB;      // free space after the drive, used before it shrinks
         public int MinLinuxGB = 25, MaxLinuxGB = 25;
         public string SystemName = "";
         public Color Brand = Ink;
@@ -79,7 +83,7 @@ namespace Hop
         float WindowsRight => InstallerLeft - F(Gap);
         float HandleX => InstallerLeft - F(Gap) / 2;
 
-        /// <summary>Size of C: once Linux has its space: it only shrinks by what the free space can't cover.</summary>
+        /// <summary>Size of the drive once Linux has its space: it only shrinks by what the free space can't cover.</summary>
         int WindowsAfterGB => WindowsGB - Math.Max(0, linuxGB + InstallerGB - TailFreeGB);
 
         int ValueAt(float x) => (int)Math.Round((Bar.Right - x) / PxPerGB) - InstallerGB;
@@ -147,7 +151,8 @@ namespace Hop
             var small = Font(13);
             var smallStrong = Font(13, true);
             float headerBaseline = TextKit.BaselineIn(small, 0, F(HeaderHeight));
-            string size = TailFreeGB > 0 ? $"Drive C: {WindowsGB} GB + {TailFreeGB} GB free" : $"Drive C: {WindowsGB} GB";
+            string size = IsFreeSpace ? $"Free space {TailFreeGB} GB"
+                : TailFreeGB > 0 ? $"{DriveTitle} {WindowsGB} GB + {TailFreeGB} GB free" : $"{DriveTitle} {WindowsGB} GB";
             string header = DiskName.Length > 0 ? $"{DiskName} · {size}" : size;
             TextKit.Draw(g, header, smallStrong, Ink, 0, headerBaseline);
             string right = Mode == DriveMode.Edit ? "Drag to resize" : Status;
@@ -173,7 +178,9 @@ namespace Hop
             // Labels sit on the bottom edge; in progress mode they make room for the progress line.
             float labelBottom = bar.Bottom - F(preparing ? 26 : 14);
             DrawLabels(g, new RectangleF(bar.X + F(16), bar.Y, WindowsRight - bar.X - F(32), bar.Height), labelBottom,
-                "Windows", $"{UsedGB} GB used · {Math.Max(0, WindowsAfterGB - UsedGB)} GB free", Ink, DriveUsedText);
+                IsFreeSpace ? "Free space" : DriveLabel,
+                IsFreeSpace ? $"{Math.Max(0, TailFreeGB - linuxGB - InstallerGB)} GB stays free" : $"{UsedGB} GB used · {Math.Max(0, WindowsAfterGB - UsedGB)} GB free",
+                Ink, DriveUsedText);
 
             var onLinux = preparing ? Mix(Brand, Color.Black, 0.45f) : TextOn(Brand);
             var onLinuxSoft = preparing ? Mix(Brand, Color.Black, 0.2f) : Color.FromArgb(210, onLinux);
