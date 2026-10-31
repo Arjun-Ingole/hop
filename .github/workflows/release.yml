@@ -26,7 +26,7 @@ jobs:
         shell: powershell
         run: |
           $hash = (Get-FileHash bin/Release/hop.exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          Set-Content -Path bin/Release/hop.exe.sha256 -Value "$hash  hop.exe" -Encoding ASCII
+          Set-Content -Path bin/Release/hop.exe.sha256 -Value "$hash  hop.exe`n" -Encoding ASCII -NoNewline
 
       - name: Publish
         env:
