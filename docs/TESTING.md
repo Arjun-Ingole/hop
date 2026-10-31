@@ -26,12 +26,13 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 
 - [ ] Fresh Windows: install a `prepared` system (elementary OS) through to a working Linux
 - [ ] Fresh Windows: install a `freespace` system (Ubuntu) through to a working Linux
+- [ ] Fresh Windows: install a system whose boot menu hop changes (Fedora, CachyOS or Arch) through to a working Linux
 - [ ] Windows still starts afterwards, from the firmware's boot menu
 
 **When it goes wrong**
 
 - [ ] Secure Boot on: the installer starts, or the "didn't start" screen appears on reopening
-- [ ] Secure Boot on, Pop!_OS: refused before the download, with what to do
+- [ ] Secure Boot on, Pop!_OS, CachyOS or Arch: refused before the download, with what to do
 - [ ] Secure Boot on, third-party certificate off: refused before the disk changes
 - [ ] Windows on a second drive, EFI partition on the first: the startup entry is added to the first
 - [ ] Cancel during the download, then install again: it resumes

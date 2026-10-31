@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Zorin OS, Debian, Fedora Workstation, Ultramarine, CachyOS and Arch Linux. CachyOS and Arch need Secure
+  Boot off, as they say when picked, and Arch installs from a text prompt. Fedora and Ultramarine need
+  one command in Terminal before their installer will use the drive.
+- hop now changes the copy of the boot menu for systems that look for their USB stick by name. It checks
+  it can do that before the disk changes.
+
 ## 0.2.0 - 2026-10-31
 
 ### Fixed

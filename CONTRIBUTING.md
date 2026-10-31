@@ -28,8 +28,10 @@ own PC. **Running hop itself is not**: try changes in a virtual machine first, s
 
 Most additions are one line in `Get-Catalog` in `engine/Catalog.ps1`, plus a logo:
 
-1. Check the ISO qualifies: Ubuntu-based, with a `casper` folder and `.disk/info`, and no file of
-   4 GB or more. hop checks this at runtime too.
+1. Check the ISO qualifies: no file of 4 GB or more, and either Ubuntu-based, with a `casper` folder
+   and `.disk/info`, or a live system whose boot menu can name the installer partition. hop checks this
+   at runtime too. Fedora-style and Arch-style systems can start from `Get-DracutBoot` and
+   `Get-ArchisoBoot`.
 2. Add the entry. An official Ubuntu flavour needs only `New-UbuntuFlavor`. Anything else needs a
    `Kind` and a matching branch in `Resolve-Download` in `engine/Download.ps1`, which finds the newest
    ISO and its checksum on the project's own server.

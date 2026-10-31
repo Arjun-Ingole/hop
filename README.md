@@ -27,8 +27,9 @@ much space it gets, and click Install. There's no USB stick to find and nothing 
   already on the drive.
 
 **Systems:** elementary OS, Ubuntu and its flavours (Budgie, Xubuntu, Lubuntu, Cinnamon, Unity, Edubuntu,
-Studio), Linux Mint and Pop!_OS. Other Ubuntu-based ISOs should work too. Kubuntu, Fedora and Arch aren't
-supported.
+Studio), Linux Mint, Pop!_OS, Zorin OS, Debian, Fedora Workstation, Ultramarine, CachyOS and Arch Linux.
+Other Ubuntu-based ISOs should work too, if you choose the file yourself. Kubuntu and Omarchy aren't
+supported, because their ISOs have a file too big for FAT32. CachyOS, Arch and Pop!_OS need Secure Boot off.
 
 **Needs:** Windows 10 (1803 or newer) or 11, on a UEFI PC with a GPT disk, which is nearly every PC sold with them.
 
