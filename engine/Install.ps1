@@ -144,6 +144,7 @@ function Get-StartupInfo {
         RoomPhase = Get-RoomPhase
         Other     = Get-OtherSystem | Select-Object Name, SizeGB, OnWindowsDisk, Kept
         Status    = $status
+        Leftovers = @(if ($status -ne 'none') { try { Get-LeftoverList | Select-Object -Unique } catch { Write-Log "Could not list what hop left: $($_.Exception.Message)" } })
         State     = $state
         CameBack  = $status -eq 'ready' -and (Test-CameBack $state)
         SecureBoot = Test-SecureBoot

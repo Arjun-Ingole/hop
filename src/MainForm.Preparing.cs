@@ -163,7 +163,7 @@ namespace Hop
                 new[] { Run.Red("Something went wrong.") },
             }, message, Secondary, log, 40);
             // The engine undoes its own changes after a failure; if something is still left, offer to clean up.
-            if (changed) Footer("Copy a bug report", () => _ = CopyReportAsync(), "Clean up", () => _ = CleanupAsync(false, afterwards: null));
+            if (changed) Footer("Copy a bug report", () => _ = CopyReportAsync(), "Clean up", ShowLeftover);
             else Footer("Copy a bug report", () => _ = CopyReportAsync(), "Try again", ShowChoose);
         }
     }

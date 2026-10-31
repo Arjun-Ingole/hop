@@ -95,6 +95,7 @@ namespace Hop
         public string RoomLetter;       // the drive Make room is working on
         public string StateLetter;      // the drive a setup took its space from, if it took any
         public bool StateDiskMissing;   // that setup's disk isn't connected
+        public string[] Leftovers;      // what Clean up would delete, in words
         public string Status;           // "ready", "leftover" (from an attempt that didn't finish) or "none"
         public string PreparedDistro;   // set when an installer is ready
         public string PreparedId;
@@ -271,6 +272,7 @@ namespace Hop
                 UsedGB = Get<int>(info, "UsedGB"),
                 DiskName = Get<string>(info, "DiskName"),
                 Status = Get<string>(info, "Status"),
+                Leftovers = Get<string[]>(info, "Leftovers"),
                 TailFreeGB = Get<int>(info, "TailFreeGB"),
                 StuckGB = Get<int>(info, "StuckGB"),
                 Blocker = Get<string>(info, "Blocker"),
