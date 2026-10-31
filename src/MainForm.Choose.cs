@@ -51,16 +51,20 @@ namespace Hop
             }, noteText, enoughSpace && !secureBootStops ? Secondary : Danger, drive, 64);
 
             Action install = enoughSpace && !secureBootStops ? () => _ = CheckThenConfirmAsync() : (Action)null;
+            // Nothing else can happen until there's room, so this is what the button does.
+            bool needRoom = stuck && !roomMade && !secureBootStops;
+            string primaryText = needRoom ? "Make room" : "Install";
+            Action primaryAction = needRoom ? () => _ = ShowMakeRoomAsync() : install;
             if (startup.OtherGB > 0)
-                Footer($"Remove {startup.OtherName} ({startup.OtherGB} GB)", ShowRemoveOther, "Install", install);
+                Footer($"Remove {startup.OtherName} ({startup.OtherGB} GB)", ShowRemoveOther, primaryText, primaryAction);
             else if (startup.TailFreeGB > 0)
-                Footer($"Give the free {startup.TailFreeGB} GB to Windows", () => _ = ExpandWindowsAsync(), "Install", install);
-            else if ((stuck || startup.StuckGB >= StuckWorthExplainingGB) && !roomMade)
-                Footer("Make room", () => _ = ShowMakeRoomAsync(), "Install", install);
+                Footer($"Give the free {startup.TailFreeGB} GB to Windows", () => _ = ExpandWindowsAsync(), primaryText, primaryAction);
+            else if (!stuck && startup.StuckGB >= StuckWorthExplainingGB && !roomMade)
+                Footer("Make room", () => _ = ShowMakeRoomAsync(), primaryText, primaryAction);
             else if ((stuck || startup.StuckGB >= StuckWorthExplainingGB) && startup.BlockerKind == "restore")
-                Footer("Delete restore points", ShowDeleteRestorePoints, "Install", install);
+                Footer("Delete restore points", ShowDeleteRestorePoints, primaryText, primaryAction);
             else
-                Footer("Windows and your files stay.", null, "Install", install);
+                Footer("Windows and your files stay.", null, primaryText, primaryAction);
         }
 
         string StuckNote()

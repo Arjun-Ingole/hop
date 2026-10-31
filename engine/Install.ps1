@@ -95,7 +95,8 @@ function Get-StartupInfo {
     $volume = Get-Volume -DriveLetter $env:SystemDrive.TrimEnd(':')
     $disk = Get-Disk -Number $space.Partition.DiskNumber
     $stuck = Get-StuckGB $volume.SizeRemaining $space
-    $blocker = if ($stuck -gt 0) { Get-ShrinkBlocker }
+    # Working this out takes a moment, and only matters when a lot is stuck.
+    $blocker = if ($stuck -ge 20) { Get-ShrinkBlocker }
     [pscustomobject]@{
         UsableGB  = $space.UsableGB
         WindowsGB = [int][math]::Floor($space.Partition.Size / 1GB)
