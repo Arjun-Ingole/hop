@@ -55,26 +55,50 @@ function Assert-EspWritable([string]$Root) {
 }
 
 # The boot config files a system's boot loader reads, on the ISO or the installer partition.
-function Get-BootConfigFiles($Distro, [string]$Root) {
-    foreach ($pattern in $Distro.BootConfigs) { Get-Item -Path (Join-Path $Root $pattern) -Force -ErrorAction SilentlyContinue }
+function Get-BootConfigFiles($Distro, [string]$Root, [switch]$FullDisk) {
+    $patterns = @($Distro.BootConfigs)
+    if ($FullDisk) { $patterns = @($patterns + @($Distro.FullDisk.Configs) | Where-Object { $_ } | Select-Object -Unique) }
+    foreach ($pattern in $patterns) { if ($pattern) { Get-Item -Path (Join-Path $Root $pattern) -Force -ErrorAction SilentlyContinue } }
 }
 
 # Latin-1 keeps every byte as it was. GRUB chokes on a byte order mark, and menu titles aren't always ASCII.
 function Read-BootConfig([string]$Path) { [Text.Encoding]::GetEncoding(28591).GetString([IO.File]::ReadAllBytes($Path)) }
 
-function Get-EditedBootConfig($Distro, [string]$Text) {
-    foreach ($edit in $Distro.BootEdits.GetEnumerator()) { $Text = $Text -replace $edit.Key, $edit.Value }
+function Get-EditedBootConfig($Distro, [string]$Text, [switch]$FullDisk) {
+    if ($Distro.BootEdits) {
+        foreach ($edit in $Distro.BootEdits.GetEnumerator()) { $Text = $Text -replace $edit.Key, $edit.Value }
+    }
+    if ($FullDisk) {
+        foreach ($edit in $Distro.FullDisk.Edits.GetEnumerator()) { $Text = $Text -replace $edit.Key, $edit.Value }
+    }
     $Text
 }
 
 # Whether this ISO's boot files are the ones hop knows how to edit. The first edit is what
 # points the live system at the installer partition, so without it the system wouldn't start.
 # A new release could change this, and it's better found before the disk changes.
-function Test-BootConfigKnown($Distro, [string]$Root) {
-    if (-not $Distro.BootEdits) { return $true }
-    $first = @($Distro.BootEdits.Keys)[0]
-    foreach ($file in @(Get-BootConfigFiles $Distro $Root)) {
-        if ((Read-BootConfig $file.FullName) -match $first) { return $true }
+function Test-BootConfigKnown($Distro, [string]$Root, [switch]$FullDisk) {
+    $known = -not $Distro.BootEdits
+    if ($Distro.BootEdits) {
+        $first = @($Distro.BootEdits.Keys)[0]
+        foreach ($file in @(Get-BootConfigFiles $Distro $Root)) {
+            if ((Read-BootConfig $file.FullName) -match $first) { $known = $true; break }
+        }
+    }
+    if (-not $known -or -not $FullDisk) { return $known }
+    # On the ISO, whose config has none of hop's changes yet, so the result is what really counts.
+    foreach ($file in @(Get-BootConfigFiles $Distro $Root -FullDisk)) {
+        $edited = Get-EditedBootConfig $Distro (Read-BootConfig $file.FullName) -FullDisk
+        if ($edited -match "(^|\s)$([regex]::Escape($Distro.FullDisk.Word))(\s|$)") { return $true }
+    }
+    $false
+}
+
+# Whether the installer partition's menu really does ask for the copy to memory. Without it, the
+# steps would send someone to an installer that can't do what they've been told it will.
+function Test-FullDiskConfig($Distro, [string]$Root) {
+    foreach ($file in @(Get-BootConfigFiles $Distro $Root -FullDisk)) {
+        if ((Read-BootConfig $file.FullName) -match "(^|\s)$([regex]::Escape($Distro.FullDisk.Word))(\s|$)") { return $true }
     }
     $false
 }
@@ -82,11 +106,12 @@ function Test-BootConfigKnown($Distro, [string]$Root) {
 # Live systems that look for their USB stick by name wouldn't find the installer partition,
 # whose FAT32 label is short and fixed. So the copied config, per the catalog, names that
 # label instead. Shim only checks the signatures of programs, so this is safe with Secure Boot.
-function Update-BootConfig($Distro, [string]$Root) {
-    if (-not $Distro.BootEdits) { return }
-    foreach ($file in @(Get-BootConfigFiles $Distro $Root)) {
+# With -FullDisk it also asks the live system to copy itself to memory, per the catalog.
+function Update-BootConfig($Distro, [string]$Root, [switch]$FullDisk) {
+    if (-not $Distro.BootEdits -and -not $FullDisk) { return }
+    foreach ($file in @(Get-BootConfigFiles $Distro $Root -FullDisk:$FullDisk)) {
         $text = Read-BootConfig $file.FullName
-        $edited = Get-EditedBootConfig $Distro $text
+        $edited = Get-EditedBootConfig $Distro $text -FullDisk:$FullDisk
         if ($edited -ceq $text) { continue }
         # Copied from a read-only ISO, so it may have come out read-only.
         $file.IsReadOnly = $false

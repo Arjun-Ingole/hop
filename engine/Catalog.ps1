@@ -9,7 +9,7 @@ function New-Entry([string]$Id, [string]$Name, [string]$Note, [string]$Source, [
         Id = $Id; Name = $Name; Version = $null; Note = $Note; Source = $Source; Color = $Color; Logo = $Logo
         Strategy = 'freespace'; SecureBootOff = $false; Kind = $null; Base = $null; Prefix = $null; Edition = $null
         Mode = $null; Alongside = $null; Manual = $null; ManualExtra = $null; Steps = $null
-        Live = $null; BootConfigs = $null; BootEdits = $null; GrubDir = $null; EspShell = $null
+        Live = $null; BootConfigs = $null; BootEdits = $null; GrubDir = $null; EspShell = $null; FullDisk = $null
     }
     foreach ($key in $More.Keys) { $entry[$key] = $More[$key] }
     [pscustomobject]$entry
@@ -49,6 +49,20 @@ function Get-ArchisoBoot([string[]]$Configs) {
     }
 }
 
+# What makes a live system copy itself to memory and let go of the disk it started from, so that
+# its installer can erase that disk. Each goes before anything like casper's --- in the kernel's
+# line, because what's after that ends up in the installed system too. Word is what must be there
+# afterwards. Whether a system gets this at all is up to its catalog entry: see FullDisk below.
+# IsoGB and Steps come from the entry.
+function Get-FullDiskBoot([string]$Family) {
+    switch ($Family) {
+        'casper' { @{ Word = 'toram'; Configs = @('boot/grub/grub.cfg'); Edits = [ordered]@{ '(?m)^(\s*linux\s+/casper/\S+)' = '$1 toram' } } }
+        'liveboot' { @{ Word = 'toram'; Configs = @('boot/grub/grub.cfg'); Edits = [ordered]@{ '(?m)^(\s*linux\s+/live/\S+)' = '$1 toram' } } }
+        'dracut' { @{ Word = 'rd.live.ram=1'; Configs = @(); Edits = [ordered]@{ 'root=live:LABEL=(\S+)' = 'root=live:LABEL=$1 rd.live.ram=1' } } }
+        'archiso' { @{ Word = 'copytoram'; Configs = @(); Edits = [ordered]@{ '(archisobasedir=\S+)' = '$1 copytoram' } } }
+    }
+}
+
 # Color is the project's brand color, used for its part of the drive in the app.
 # Logo names an embedded image (assets/logos/<Logo>.png).
 # SecureBootOff: its boot loader or kernel isn't signed, as in Pop!_OS 24.04's ISO, so it can't start with Secure Boot on.
@@ -58,6 +72,9 @@ function Get-ArchisoBoot([string[]]$Configs) {
 # GrubDir: where its menu is, when GRUB should find the installer partition by label and not /.disk/info.
 # EspShell: the ISO's EFI Shell, for a boot loader that can't leave its own partition. See Get-EspShellScript.
 # Steps: the words to show when the usual choices don't fit its installer. {GB} is the size hop set aside.
+# FullDisk: offers replacing Windows. Only for a system really seen erasing the disk it started from and then
+#   starting from that disk: see docs/TESTING.md. IsoGB is its ISO's size, for refusing before the download
+#   when memory's short. Steps is what to click, and {DISK} names the disk.
 # Kubuntu and Omarchy are missing on purpose: their ISOs have a file over 4 GB, which FAT32 cannot hold.
 function Get-Catalog {
     $EspExtra = 'Also click the existing **EFI System Partition**, choose Edit, set the mount point to **/boot/efi** and keep it unformatted.'
@@ -77,7 +94,11 @@ function Get-Catalog {
     @(
         New-Entry 'elementary' 'elementary OS' 'Mac-like' 'elementary.io' '#3689E6' 'elementary' @{
             Kind = 'elementary'; Strategy = 'prepared'; Mode = 'Custom Install (Advanced)' }
-        New-UbuntuFlavor 'ubuntu' 'Ubuntu' 'Most popular' '#E95420'
+        New-UbuntuFlavor 'ubuntu' 'Ubuntu' 'Most popular' '#E95420' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 6; Steps = @(
+                'Pick your language and keyboard, then start the installer.'
+                'When asked how to install, choose **Erase disk and install Ubuntu**.'
+                'Under **Select drive**, choose **{DISK}**. Leave any other drive alone.'
+                'On **Ready to install**, check that only **{DISK}** is listed under **Erased**, then click **Install**.') } }
         New-MintEdition 'cinnamon' 'Linux Mint' 'Windows-like'
         New-Entry 'pop' 'Pop!_OS' 'Gaming' 'pop-os.org' '#48B9C7' 'pop' @{
             Kind = 'pop'; Version = '24.04'; Strategy = 'prepared'; Mode = 'Custom (Advanced)'; SecureBootOff = $true }
