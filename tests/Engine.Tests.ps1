@@ -19,7 +19,7 @@ Describe 'Catalog' {
     BeforeAll { $catalog = @(Get-Catalog) }
 
     It 'marks the systems that need Secure Boot off' {
-        @($catalog | Where-Object SecureBootOff).Id | Should -Be @('pop')
+        @($catalog | Where-Object SecureBootOff).Id | Should -Be @('pop', 'cachyos', 'arch')
     }
     It 'has unique ids' {
         ($catalog.Id | Sort-Object -Unique).Count | Should -Be $catalog.Count
@@ -31,7 +31,7 @@ Describe 'Catalog' {
             $distro.Note | Should -Not -BeNullOrEmpty
             $distro.Color | Should -Match '^#[0-9A-Fa-f]{6}$'
             $distro.Strategy | Should -BeIn @('freespace', 'prepared')
-            $distro.Kind | Should -BeIn @('ubuntu', 'mint', 'pop', 'elementary')
+            $distro.Kind | Should -BeIn @('ubuntu', 'mint', 'pop', 'elementary', 'zorin', 'debian', 'fedora', 'ultramarine', 'cachyos', 'arch')
         }
     }
     It 'has a logo file for every system' {
@@ -47,6 +47,25 @@ Describe 'Catalog' {
     }
     It 'makes an entry for a custom ISO from its file name' {
         (Get-Distro 'custom' 'C:\isos\zorin-17.iso').Name | Should -Be 'zorin-17'
+    }
+    It 'leaves out the systems whose ISO has a file FAT32 cannot hold' {
+        $catalog.Id | Should -Not -Contain 'kubuntu'
+        $catalog.Id | Should -Not -Contain 'omarchy'
+    }
+    It 'edits the boot files of the systems that need it, with the edit they cannot start without first' {
+        foreach ($distro in $catalog | Where-Object BootEdits) {
+            $distro.BootConfigs | Should -Not -BeNullOrEmpty
+            $distro.Live | Should -Not -BeNullOrEmpty
+            @($distro.BootEdits.Values)[0] | Should -BeLike "*$InstallerLabel"
+        }
+    }
+    It 'keeps Ubuntu and its flavours exactly as they were' {
+        foreach ($distro in $catalog | Where-Object Kind -in @('ubuntu', 'mint', 'pop', 'elementary', 'zorin')) {
+            $distro.Live | Should -BeNullOrEmpty
+            $distro.BootEdits | Should -BeNullOrEmpty
+            $distro.GrubDir | Should -BeNullOrEmpty
+            $distro.EspShell | Should -BeNullOrEmpty
+        }
     }
 }
 
@@ -75,6 +94,58 @@ Describe 'Resolve-Download' {
         $download = Resolve-Download (Get-Catalog | Where-Object Id -eq 'elementary')
         $download.Url | Should -BeLike 'https://dl.elementaryos.org/*'
         $download.Sha256 | Should -BeNullOrEmpty
+    }
+    It 'picks the newest Zorin OS, counting rereleases, and skips other editions' {
+        Mock Get-WebText { 'href="17/" href="18/" href="public/"' } -ParameterFilter { $Url -like '*/zorinos-isos/' }
+        Mock Get-WebText {
+            "$('1' * 64)  Zorin-OS-18-Core-64-bit-r3.iso`n$('2' * 64)  Zorin-OS-18.1-Core-64-bit.iso`n$('3' * 64)  Zorin-OS-18.1-Core-64-bit-r1.iso`n$('4' * 64)  Zorin-OS-18.1-Education-64-bit-r9.iso`n"
+        } -ParameterFilter { $Url -like '*/18/SHA256SUMS.txt' }
+        $download = Resolve-Download (Get-Catalog | Where-Object Id -eq 'zorin')
+        $download.Url | Should -Be 'https://mirrors.edge.kernel.org/zorinos-isos/18/Zorin-OS-18.1-Core-64-bit-r1.iso'
+        $download.Sha256 | Should -Be ('3' * 64)
+    }
+    It 'takes the GNOME ISO from Debian''s live checksums, not the files beside it' {
+        Mock Get-WebText { "$('1' * 64)  debian-live-13.7.0-amd64-cinnamon.iso`n$('2' * 64)  debian-live-13.7.0-amd64-gnome.iso.contents`n$('3' * 64)  debian-live-13.7.0-amd64-gnome.iso`n" }
+        $download = Resolve-Download (Get-Catalog | Where-Object Id -eq 'debian')
+        $download.FileName | Should -Be 'debian-live-13.7.0-amd64-gnome.iso'
+        $download.Sha256 | Should -Be ('3' * 64)
+    }
+    It 'picks the newest final Fedora Workstation for this kind of PC, not a beta' {
+        Mock Invoke-RestMethod {
+            , @(
+                [pscustomobject]@{ version = '45 Beta'; arch = 'x86_64'; variant = 'Workstation'; link = 'https://x/beta.iso'; sha256 = 'b'; size = '1' }
+                [pscustomobject]@{ version = '44'; arch = 'aarch64'; variant = 'Workstation'; link = 'https://x/arm.iso'; sha256 = 'c'; size = '1' }
+                [pscustomobject]@{ version = '44'; arch = 'x86_64'; variant = 'KDE'; link = 'https://x/kde.iso'; sha256 = 'd'; size = '1' }
+                [pscustomobject]@{ version = '9'; arch = 'x86_64'; variant = 'Workstation'; link = 'https://x/old.iso'; sha256 = 'e'; size = '1' }
+                [pscustomobject]@{ version = '44'; arch = 'x86_64'; variant = 'Workstation'; link = 'https://x/44.iso'; sha256 = 'f'; size = '2851612672' }
+            )
+        }
+        $download = Resolve-Download (Get-Catalog | Where-Object Id -eq 'fedora')
+        $download.Url | Should -Be 'https://x/44.iso'
+        $download.Sha256 | Should -Be 'f'
+        $download.Size | Should -Be 2851612672
+    }
+    It 'skips an Ultramarine version with no ISO yet, and reads its checksum file''s odd path' {
+        Mock Get-WebText { 'href="../" href="44/" href="45/"' } -ParameterFilter { $Url -like '*/isos/ultramarine/' }
+        Mock Get-WebText { throw 'not there' } -ParameterFilter { $Url -like '*/45/*' }
+        Mock Get-WebText { "$hash  artifacts/gnome-gnome-live-anaconda-x86_64-iso/ultramarine-gnome-44-live-anaconda-x86_64.iso`n" } -ParameterFilter { $Url -like '*/44/*' }
+        $download = Resolve-Download (Get-Catalog | Where-Object Id -eq 'ultramarine')
+        $download.FileName | Should -Be 'ultramarine-gnome-44-live-anaconda-x86_64.iso'
+        $download.Sha256 | Should -Be $hash
+    }
+    It 'picks the newest CachyOS build with a checksum, from the host that works on Windows 10' {
+        Mock Get-WebText { '<a href="../">x</a><a href="260628/">a</a> <a href="260809/">b</a> <a href="261001/">c</a>' } -ParameterFilter { $Url -like '*/ISO/desktop/' }
+        Mock Get-WebText { throw 'not yet' } -ParameterFilter { $Url -like '*/261001/*' }
+        Mock Get-WebText { "$hash  cachyos-desktop-linux-260809.iso`n" } -ParameterFilter { $Url -like '*/260809/*.sha256' }
+        $download = Resolve-Download (Get-Catalog | Where-Object Id -eq 'cachyos')
+        $download.Url | Should -Be 'https://cdn77.cachyos.org/ISO/desktop/260809/cachyos-desktop-linux-260809.iso'
+        $download.Sha256 | Should -Be $hash
+    }
+    It 'takes the dated Arch ISO, whose name is the same on every mirror' {
+        Mock Get-WebText { "$hash  archlinux-2026.10.01-x86_64.iso`n$hash  archlinux-x86_64.iso`n$('1' * 64)  archlinux-bootstrap-2026.10.01-x86_64.tar.zst`n" }
+        $download = Resolve-Download (Get-Catalog | Where-Object Id -eq 'arch')
+        $download.Url | Should -Be 'https://geo.mirror.pkgbuild.com/iso/latest/archlinux-2026.10.01-x86_64.iso'
+        $download.Sha256 | Should -Be $hash
     }
 }
 
@@ -378,6 +449,166 @@ Describe 'Get-IsoKernelPath' {
     It 'says nothing without a menu' {
         Get-IsoKernelPath (Join-Path $TestDrive 'none') | Should -BeNullOrEmpty
     }
+    It 'reads Fedora''s menu, which is elsewhere and writes ($root) before its paths' {
+        New-Item -ItemType Directory -Path "$iso\boot\grub2" -Force | Out-Null
+        Remove-Item "$iso\boot\grub" -Recurse
+        Set-Content "$iso\boot\grub2\grub.cfg" "menuentry 'a' {`n`tlinux (`$root)/boot/x86_64/loader/linux quiet`n}"
+        Get-IsoKernelPath $iso | Should -Be "$iso\boot\x86_64\loader\linux"
+    }
+}
+
+Describe 'Boot config' {
+    BeforeAll {
+        function Get-CatalogEntry([string]$Id) { Get-Catalog | Where-Object Id -eq $Id }
+        function Get-Edited([string]$Id, [string]$Text) { Get-EditedBootConfig (Get-CatalogEntry $Id) $Text }
+    }
+    BeforeEach {
+        $root = Join-Path $TestDrive ([guid]::NewGuid())
+        New-Item -ItemType Directory -Path "$root\boot\grub2", "$root\boot\grub", "$root\loader\entries" -Force | Out-Null
+    }
+    It 'points Fedora at the installer partition, as in Fedora 44''s menu' {
+        $text = Get-Edited 'fedora' "search --file --set=root /boot/0xf20784ad`n`tlinux (`$root)/boot/x86_64/loader/linux quiet rhgb  root=live:CDLABEL=Fedora-WS-Live-44 rd.live.image rd.live.check`n"
+        $text | Should -BeLike "*root=live:LABEL=$InstallerLabel rd.live.image*"
+        $text | Should -BeLike "search --no-floppy --label --set=root $InstallerLabel*"
+        $text | Should -Not -BeLike '*CDLABEL*'
+        $text | Should -Not -BeLike '*rd.live.check*'
+    }
+    It 'points Ultramarine at the installer partition, as in Ultramarine 44''s menu' {
+        $text = Get-Edited 'ultramarine' "search --no-floppy --set=root --label 'UM-Gn-Live-Anaconda'`n`tlinux /boot/vmlinuz root=live:CDLABEL=UM-Gn-Live-Anaconda rd.live.image rd.live.check enforcing=0 quiet rhgb`n"
+        $text | Should -BeLike "*root=live:LABEL=$InstallerLabel rd.live.image enforcing=0 quiet rhgb*"
+        $text | Should -BeLike "search --no-floppy --label --set=root $InstallerLabel*"
+        $text | Should -Not -BeLike '*UM-Gn*'
+    }
+    It 'points CachyOS and Arch at the installer partition, and keeps their other settings' {
+        Get-Edited 'cachyos' 'linux /arch/boot/x86_64/vmlinuz-linux-cachyos archisobasedir=arch archisosearchuuid=2026-08-09-15-47-03-00 cow_spacesize=10G' |
+            Should -Be "linux /arch/boot/x86_64/vmlinuz-linux-cachyos archisobasedir=arch archisolabel=$InstallerLabel cow_spacesize=10G"
+        Get-Edited 'arch' 'options  archisobasedir=arch archisosearchuuid=2026-10-01-14-49-03-00 ' |
+            Should -Be "options  archisobasedir=arch archisolabel=$InstallerLabel "
+    }
+    It 'changes every Arch boot entry, and leaves the memory tester alone' {
+        Set-Content "$root\loader\entries\01-archiso-linux.conf" 'options  archisobasedir=arch archisosearchuuid=2026 '
+        Set-Content "$root\loader\entries\02-archiso-speech-linux.conf" 'options  archisobasedir=arch archisosearchuuid=2026 accessibility=on'
+        Set-Content "$root\loader\entries\03-archiso-memtest86+x64.conf" 'efi /boot/memtest86+/memtest.efi'
+        Update-BootConfig (Get-CatalogEntry 'arch') $root
+        Get-Content "$root\loader\entries\01-archiso-linux.conf" | Should -BeLike "*archisolabel=$InstallerLabel*"
+        Get-Content "$root\loader\entries\02-archiso-speech-linux.conf" | Should -BeLike "*archisolabel=$InstallerLabel accessibility=on"
+        Get-Content "$root\loader\entries\03-archiso-memtest86+x64.conf" | Should -Be 'efi /boot/memtest86+/memtest.efi'
+    }
+    It 'keeps every other byte, adds no byte order mark and copes with a read-only copy' {
+        $path = "$root\boot\grub2\grub.cfg"
+        # A menu title in UTF-8, and Unix line endings GRUB relies on.
+        $before = [Text.Encoding]::UTF8.GetBytes("menuentry 'Dévelop' {`n`troot=live:CDLABEL=X quiet`n}`n")
+        [IO.File]::WriteAllBytes($path, $before)
+        Set-ItemProperty -LiteralPath $path -Name IsReadOnly -Value $true
+        Update-BootConfig (Get-CatalogEntry 'fedora') $root
+        $expected = [Text.Encoding]::UTF8.GetBytes("menuentry 'Dévelop' {`n`troot=live:LABEL=$InstallerLabel quiet`n}`n")
+        ([IO.File]::ReadAllBytes($path) -join ',') | Should -Be ($expected -join ',')
+    }
+    It 'touches nothing for Ubuntu' {
+        $path = "$root\boot\grub\grub.cfg"
+        $before = [Text.Encoding]::ASCII.GetBytes("linux /casper/vmlinuz root=live:CDLABEL=x archisosearchuuid=y --- quiet`n")
+        [IO.File]::WriteAllBytes($path, $before)
+        Update-BootConfig (Get-CatalogEntry 'ubuntu') $root
+        ([IO.File]::ReadAllBytes($path) -join ',') | Should -Be ($before -join ',')
+    }
+    It 'knows a menu it can edit, and says so when a new release changes it' {
+        $fedora = Get-CatalogEntry 'fedora'
+        Test-BootConfigKnown $fedora $root | Should -BeFalse
+        Set-Content "$root\boot\grub2\grub.cfg" 'linux /x root=UUID=abc'
+        Test-BootConfigKnown $fedora $root | Should -BeFalse
+        Set-Content "$root\boot\grub2\grub.cfg" 'linux /x root=live:CDLABEL=abc'
+        Test-BootConfigKnown $fedora $root | Should -BeTrue
+    }
+    It 'has nothing to check for Ubuntu' {
+        Test-BootConfigKnown (Get-CatalogEntry 'ubuntu') $root | Should -BeTrue
+    }
+}
+
+Describe 'Copy-EspLoader' {
+    BeforeEach {
+        $root = Join-Path $TestDrive ([guid]::NewGuid())
+        $source = "$root\EFI\BOOT"
+        $folder = "$root\esp\EFI\hop"
+        New-Item -ItemType Directory -Path $source | Out-Null
+        Set-Content "$source\BOOTx64.EFI" 'shim'
+        Set-Content "$source\grubx64.efi" 'grub'
+        Set-Content "$source\grub.cfg" 'from the iso'
+    }
+    It 'writes Ubuntu''s files exactly as builds before this one did' {
+        Copy-EspLoader (Get-Catalog | Where-Object Id -eq 'ubuntu') $source $folder
+        @(Get-ChildItem $folder | ForEach-Object { $_.Name } | Sort-Object) | Should -Be @('BOOTx64.EFI', 'grub.cfg', 'grubx64.efi')
+        [IO.File]::ReadAllText("$folder\grub.cfg") | Should -BeExactly "search --no-floppy --file --set=root /.disk/info`r`nset prefix=(`$root)/boot/grub`r`nconfigfile `$prefix/grub.cfg`r`n"
+    }
+    It 'writes the same for a chosen ISO, Zorin OS and Debian, which have /.disk/info' {
+        foreach ($distro in (Get-Distro 'custom' 'a.iso'), (Get-Catalog | Where-Object Id -eq 'zorin'), (Get-Catalog | Where-Object Id -eq 'debian')) {
+            (Get-EspGrubConfig $distro) -join '|' | Should -BeExactly 'search --no-floppy --file --set=root /.disk/info|set prefix=($root)/boot/grub|configfile $prefix/grub.cfg'
+        }
+    }
+    It 'finds the installer by label for systems without /.disk/info' {
+        foreach ($case in @(@('fedora', 'boot/grub2'), @('ultramarine', 'boot/grub'), @('cachyos', 'boot/grub'))) {
+            (Get-EspGrubConfig (Get-Catalog | Where-Object Id -eq $case[0])) -join '|' |
+                Should -BeExactly "search --no-floppy --label --set=root $InstallerLabel|set prefix=(`$root)/$($case[1])|configfile `$prefix/grub.cfg"
+        }
+    }
+    It 'starts Arch through the ISO''s EFI Shell, because systemd-boot cannot leave its partition' {
+        $arch = Get-Catalog | Where-Object Id -eq 'arch'
+        Set-Content "$root\shellx64.efi" 'shell'
+        Copy-EspLoader $arch $source $folder
+        (Get-Content "$folder\BOOTX64.EFI") | Should -Be 'shell'
+        "$folder\grub.cfg" | Should -Not -Exist
+        "$folder\grubx64.efi" | Should -Not -Exist
+        $script = (Get-Content "$folder\startup.nsh") -join "`n"
+        $script | Should -BeLike '*if exist fs%a:\arch\x86_64\airootfs.sfs then*'
+        $script | Should -BeLike '*\EFI\BOOT\BOOTx64.EFI*'
+    }
+}
+
+Describe 'Read-Iso' {
+    BeforeAll {
+        function New-IsoFiles([hashtable]$Files) {
+            foreach ($name in $Files.Keys) {
+                $path = Join-Path $isoRoot $name
+                New-Item -ItemType Directory -Path (Split-Path $path -Parent) -Force | Out-Null
+                Set-Content -LiteralPath $path -Value $Files[$name]
+            }
+        }
+    }
+    BeforeEach {
+        $isoRoot = Join-Path $TestDrive ([guid]::NewGuid())
+        New-Item -ItemType Directory -Path $isoRoot | Out-Null
+        New-PSDrive -Name HOPISO -PSProvider FileSystem -Root $isoRoot -Scope Global | Out-Null
+        Mock Mount-Iso { 'HOPISO' }
+        Mock Get-SecureBootProblem { }
+        Mock Set-Status { }
+    }
+    AfterEach { Remove-PSDrive -Name HOPISO -Scope Global }
+    It 'still wants casper and /.disk/info for a chosen ISO' {
+        New-IsoFiles @{ 'EFI\BOOT\BOOTX64.EFI' = 'x'; 'LiveOS\squashfs.img' = 'x' }
+        { Read-Iso 'a.iso' (Get-Distro 'custom' 'a.iso') } | Should -Throw '*Ubuntu-style*'
+    }
+    It 'accepts Fedora, whose ISO has neither' {
+        New-IsoFiles @{ 'EFI\BOOT\BOOTX64.EFI' = 'x'; 'LiveOS\squashfs.img' = 'x'; 'boot\grub2\grub.cfg' = 'linux ($root)/boot/x root=live:CDLABEL=a'; 'boot\x' = 'x' }
+        (Read-Iso 'a.iso' (Get-Catalog | Where-Object Id -eq 'fedora')).Letter | Should -Be 'HOPISO'
+    }
+    It 'refuses the wrong file for the system picked' {
+        New-IsoFiles @{ 'EFI\BOOT\BOOTX64.EFI' = 'x'; 'boot\grub2\grub.cfg' = 'root=live:CDLABEL=a' }
+        { Read-Iso 'a.iso' (Get-Catalog | Where-Object Id -eq 'fedora') } | Should -Throw "*doesn't look like Fedora*"
+    }
+    It 'refuses a release that starts in a way hop cannot edit, before the disk changes' {
+        New-IsoFiles @{ 'EFI\BOOT\BOOTX64.EFI' = 'x'; 'arch\x86_64\airootfs.sfs' = 'x'; 'boot\grub\grub.cfg' = 'linux /k archisodevice=/dev/x' }
+        { Read-Iso 'a.iso' (Get-Catalog | Where-Object Id -eq 'cachyos') } | Should -Throw "*doesn't know yet*Nothing has been changed*"
+    }
+}
+
+Describe 'Get-StateDistro' {
+    It 'finds the system an install was for' {
+        (Get-StateDistro ([pscustomobject]@{ DistroId = 'fedora'; Distro = 'Fedora Workstation' })).GrubDir | Should -Be 'boot/grub2'
+    }
+    It 'treats one no longer in the catalog as a chosen ISO, which starts as Ubuntu does' {
+        $distro = Get-StateDistro ([pscustomobject]@{ DistroId = 'gone'; Distro = 'Gone' })
+        $distro.Name | Should -Be 'Gone'
+        $distro.GrubDir | Should -BeNullOrEmpty
+    }
 }
 
 Describe 'Repair-ShortenedNames' {
@@ -660,6 +891,23 @@ Describe 'Secure Boot' {
     It 'lets other systems through to the ISO check' {
         { Assert-SecureBootAllows (Get-Catalog | Where-Object Id -eq 'ubuntu') } | Should -Not -Throw
     }
+    It 'stops CachyOS and Arch before the download, whose loaders have no signature' {
+        { Assert-SecureBootAllows (Get-Catalog | Where-Object Id -eq 'cachyos') } | Should -Throw '*Secure Boot*'
+        { Assert-SecureBootAllows (Get-Catalog | Where-Object Id -eq 'arch') } | Should -Throw '*Secure Boot*'
+    }
+    It 'lets the signed systems through to the ISO check' {
+        foreach ($id in 'zorin', 'debian', 'fedora', 'ultramarine') {
+            { Assert-SecureBootAllows (Get-Catalog | Where-Object Id -eq $id) } | Should -Not -Throw
+        }
+    }
+    It 'spots an unsigned kernel in a Fedora-style menu' {
+        $root = (New-Iso $ca2011 'Canonical')
+        Remove-Item (Join-Path $root 'boot\grub\grub.cfg')
+        New-Item -ItemType Directory -Path (Join-Path $root 'boot\grub2'), (Join-Path $root 'boot\x86_64\loader') -Force | Out-Null
+        Set-Content (Join-Path $root 'boot\grub2\grub.cfg') "menuentry 'a' {`n`tlinux (`$root)/boot/x86_64/loader/linux quiet`n}"
+        New-Efi (Join-Path $root 'boot\x86_64\loader\linux') ''
+        Get-SecureBootProblem $root | Should -BeLike "*kernel isn't signed*"
+    }
 }
 
 Describe 'Get-Blockers' {
@@ -836,6 +1084,34 @@ Describe 'Get-Steps' {
     }
     It 'warns against Erase disk for a free space system' {
         ((Get-Steps (Get-Catalog | Where-Object Id -eq 'ubuntu') 60).Steps -join ' ') | Should -BeLike '*Erase disk*'
+    }
+    It 'warns against wiping the drive, and gives the size, on every system with its own steps' {
+        foreach ($distro in Get-Catalog | Where-Object Steps) {
+            $steps = (Get-Steps $distro 60).Steps -join ' '
+            $steps | Should -BeLike '*60 GB*'
+            $steps | Should -Not -BeLike '*{GB}*'
+            $steps | Should -Match "Don't (choose|change)"
+        }
+    }
+    It 'uses the words on Fedora''s and Ultramarine''s installer screens' {
+        foreach ($id in 'fedora', 'ultramarine') {
+            ((Get-Steps (Get-Catalog | Where-Object Id -eq $id) 60).Steps -join ' ') | Should -BeLike '*Share disk with other operating systems*Use entire disk*'
+        }
+    }
+    It 'tells Fedora and Ultramarine users to free the drive, which Anaconda otherwise protects' {
+        foreach ($id in 'fedora', 'ultramarine') {
+            ((Get-Steps (Get-Catalog | Where-Object Id -eq $id) 60).Steps -join ' ') | Should -BeLike '*umount -l /run/initramfs/live*'
+        }
+    }
+    It 'says plainly that Arch installs in a terminal' {
+        $steps = (Get-Steps (Get-Catalog | Where-Object Id -eq 'arch') 60).Steps -join ' '
+        $steps | Should -BeLike '*no graphical installer*archinstall*Manual Partitioning*'
+    }
+    It 'tells people to press Enter at Debian''s menu, which has no timeout' {
+        ((Get-Steps (Get-Catalog | Where-Object Id -eq 'debian') 60).Steps -join ' ') | Should -BeLike '*press Enter on **Live system***'
+    }
+    It 'tells CachyOS to use GRUB, whose files fit on the EFI partition' {
+        ((Get-Steps (Get-Catalog | Where-Object Id -eq 'cachyos') 60).Steps -join ' ') | Should -BeLike '*Bootloader*GRUB*'
     }
 }
 
