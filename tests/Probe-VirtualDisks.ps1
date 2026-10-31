@@ -170,6 +170,9 @@ function Reset-Run {
     $Sync.Gate = New-Object Hop.CancelGate
 }
 
+# Something the probe makes itself look like Linux hop put there, which it isn't.
+function Remove-LinuxDiskIfAny([string]$Guid) { Set-LinuxDisks (@(Get-LinuxDisks) | Where-Object { $_ -ne $Guid }) }
+
 function Find-Row([string]$Letter) { @(Get-DriveTargets) | Where-Object Letter -eq $Letter | Select-Object -First 1 }
 
 New-Item -ItemType Directory -Path $Folder -Force | Out-Null
@@ -497,6 +500,74 @@ try {
     Check 'removing it gives the disk back as it was' ((Get-Layout $b) -eq $beforeLinux) "$(Get-Layout $b) vs $beforeLinux"
     Check 'and forgets the disk' (@(Get-LinuxDisks).Count -eq 0) ''
     Check 'data survived' ((Get-TestHash $xLetter) -eq $xHash) ''
+
+    Step 'B10: the partition casper makes when an older build started the installer'
+    Reset-Run
+    $beforeCasper = Get-Layout $b
+    Invoke-Install 'ubuntu' $iso 6 $target ''
+    $state = Read-State
+    $inst = @(Get-HopPartitions) | Where-Object Label -eq $InstallerLabel
+    $menu = Get-Content "$($inst.Letter):\boot\grub\grub.cfg" -Raw
+    Check 'the copied menu tells casper not to' ($menu -match '/casper/vmlinuz nopersistent\s+---') $menu
+    $state.RestartedAt = (Get-Date).ToString('s')
+    Save-State $state
+    # Where casper-helpers puts it: the first multiple of 4096 sectors after the last partition, to the end of the disk.
+    $unit = [int64]4096 * (Storage\Get-Disk -Number $b).LogicalSectorSize
+    $last = @(Storage\Get-Partition -DiskNumber $b | Sort-Object { [int64]$_.Offset + [int64]$_.Size })[-1]
+    $start = [int64]([math]::Ceiling(([int64]$last.Offset + [int64]$last.Size) / $unit)) * $unit
+    $casper = New-Partition -DiskNumber $b -Offset $start -UseMaximumSize -GptType $LinuxPartitionTypes[0]
+    Write-Output "  layout: $(Get-Layout $b)"
+    Check 'hop ties an empty one to this setup, as casper leaves when its mkfs fails' ((Get-CasperPartition (Read-State) @(Storage\Get-Partition -DiskNumber $b)).Guid -eq $casper.Guid) ''
+    Add-Type -TypeDefinition @'
+using System; using System.IO; using System.Runtime.InteropServices; using Microsoft.Win32.SafeHandles;
+public static class HopProbeRaw {
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+    public static void Write(int disk, long offset, byte[] data) {
+        var handle = CreateFileW(@"\\.\PhysicalDrive" + disk, 0xC0000000, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
+        if (handle.IsInvalid) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        using (var stream = new FileStream(handle, FileAccess.ReadWrite, 1, false)) { stream.Position = offset; stream.Write(data, 0, data.Length); stream.Flush(); }
+    }
+}
+'@
+    # The superblock fields hop reads, at the offsets ext4 has them. QEMU's run showed "writable" at 1144.
+    function New-ExtBytes([string]$Label) {
+        $bytes = New-Object byte[] 4096
+        [BitConverter]::GetBytes([uint32]1000).CopyTo($bytes, 1024)
+        $bytes[1080] = 0x53; $bytes[1081] = 0xEF
+        [Text.Encoding]::ASCII.GetBytes($Label).CopyTo($bytes, 1144)
+        , $bytes
+    }
+    [HopProbeRaw]::Write($b, $start, (New-ExtBytes 'mydata'))
+    Check 'one holding another name is not' ($null -eq (Get-CasperPartition (Read-State) @(Storage\Get-Partition -DiskNumber $b))) ''
+    Check 'and counts as Linux, as it always has' (Test-LinuxInstalled (Read-State)) ''
+    [HopProbeRaw]::Write($b, $start, (New-ExtBytes 'writable'))
+    Check 'the signature is read from the disk' ((Get-PartitionSignature $casper) -eq 'ext') (Get-PartitionSignature $casper)
+    Check 'hop ties a writable one to this setup' ((Get-CasperPartition (Read-State) @(Storage\Get-Partition -DiskNumber $b)).Guid -eq $casper.Guid) ''
+    Check 'and does not say Linux is installed' (-not (Test-LinuxInstalled (Read-State))) ''
+    Check 'status is still ready' ((Get-InstallStatus) -eq 'ready') (Get-InstallStatus)
+    Check 'and it is not offered as another Linux' ($null -eq (Get-OtherSystem)) ''
+    $notOurs = Read-State
+    $notOurs.LinuxBefore = @($casper.Guid)
+    Check 'one from before this setup is left alone' ($null -eq (Get-CasperPartition $notOurs @(Storage\Get-Partition -DiskNumber $b))) ''
+    Invoke-Cleanup
+    Check 'undo removes it, and the disk is as it was' ((Get-Layout $b) -eq $beforeCasper) "$(Get-Layout $b) vs $beforeCasper"
+    Check 'data survived' ((Get-TestHash $xLetter) -eq $xHash) ''
+
+    Step 'B11: a partition called writable that hop did not cause'
+    Reset-Run
+    Invoke-Install 'ubuntu' $iso 6 $target ''
+    $state = Read-State
+    $last = @(Storage\Get-Partition -DiskNumber $b | Sort-Object { [int64]$_.Offset + [int64]$_.Size })[-1]
+    $start = [int64]([math]::Ceiling(([int64]$last.Offset + [int64]$last.Size) / $unit)) * $unit
+    $theirs = New-Partition -DiskNumber $b -Offset $start -UseMaximumSize -GptType $LinuxPartitionTypes[0]
+    [HopProbeRaw]::Write($b, $start, (New-ExtBytes 'writable'))
+    # hop never started the installer, so nothing of hop's can have made it.
+    Check 'not tied before a restart' ($null -eq (Get-CasperPartition $state @(Storage\Get-Partition -DiskNumber $b))) ''
+    Invoke-Cleanup
+    Check 'undo leaves it' ($null -ne (Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq $start })) ''
+    Remove-PartitionAt $b $start
+    Remove-LinuxDiskIfAny $vdiskB.Guid
 
     Step 'C: Make room on a data drive, for real and with a limit'
     Reset-Run

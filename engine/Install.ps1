@@ -190,6 +190,8 @@ function Set-InstallerForNextStart {
     # Can't be unplugged, and may well be fine, so it's in the warnings and doesn't block.
     foreach ($other in $others) { Write-Log "Another installer is on $($other.Name); the PC could start that one instead." }
     $state = Read-State
+    # It holds the space the installer is about to look for.
+    if (-not (Test-LinuxInstalled $state)) { Remove-CasperPartition $state }
     Suspend-BitLockerForRestart $state
     $state.BootNumber = Register-Installer $state.Distro (Get-StateDistro $state)
     Set-BootOnce ([int]$state.BootNumber)
@@ -259,6 +261,9 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
     $hopPartitions = @(Get-HopPartitions | Where-Object { $_.Label -in $labels })
     # Before anything goes: with no state file, the neighbours say whose space it was.
     $owner = Get-SpaceOwner $state $hopPartitions
+    # Also before anything goes: it's known by where it starts, next to the installer. With Linux
+    # staying, it stays too, because Windows can't see whether that Linux is using it.
+    if ($state -and -not $InstallerOnly) { Remove-CasperPartition $state }
     foreach ($found in $hopPartitions) {
         Set-Status "Removing the $($found.Label) partition..."
         Remove-PartitionAt $found.Partition.DiskNumber $found.Partition.Offset

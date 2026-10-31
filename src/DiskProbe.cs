@@ -18,7 +18,9 @@ namespace Hop
         const uint GenericRead = 0x80000000, ShareRead = 1, ShareWrite = 2, OpenExisting = 3;
 
         /// <summary>"ext", "btrfs", "xfs", "luks", "lvm", "swap", "bitlocker" or null.</summary>
-        public static string ReadSignature(int diskNumber, long offset)
+        public static string ReadSignature(int diskNumber, long offset) => Identify(ReadHead(diskNumber, offset));
+
+        public static byte[] ReadHead(int diskNumber, long offset)
         {
             var handle = CreateFile($@"\\.\PhysicalDrive{diskNumber}", GenericRead, ShareRead | ShareWrite, IntPtr.Zero, OpenExisting, 0, IntPtr.Zero);
             if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not read the disk.");
@@ -28,8 +30,21 @@ namespace Hop
                 var head = new byte[HeadSize];
                 int read = 0, count;
                 while (read < head.Length && (count = disk.Read(head, read, head.Length - read)) > 0) read += count;
-                return Identify(head);
+                return head;
             }
+        }
+
+        /// <summary>True when the bytes are all zero, as on a partition nothing has been written to.</summary>
+        public static bool IsBlank(byte[] head) => Array.TrueForAll(head, b => b == 0);
+
+        /// <summary>The name of the ext2/3/4 file system these bytes start, or null if they start something else.</summary>
+        public static string ExtLabel(byte[] head)
+        {
+            if (Identify(head) != "ext") return null;
+            const int start = 1024 + 120, size = 16;
+            int length = 0;
+            while (length < size && head[start + length] != 0) length++;
+            return Encoding.ASCII.GetString(head, start, length);
         }
 
         public static string Identify(byte[] head)

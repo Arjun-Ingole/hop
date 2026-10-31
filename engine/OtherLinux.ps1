@@ -62,7 +62,9 @@ function Find-OtherSystem([int]$Disk) {
     $windowsEsp = ($entries | Where-Object { $_.Path -like '\EFI\Microsoft\*' } | Select-Object -First 1).PartitionGuid
     $loaders = @(Get-LinuxLoaders $Disk)
 
-    $linux = @(Get-LinuxPartitions $partitions)
+    $state = Read-State
+    $casper = if ($state) { @(Get-CasperPartition $state $partitions | ForEach-Object { $_.Guid }) } else { @() }
+    $linux = @(Get-LinuxPartitions $partitions | Where-Object { $_.Guid -notin $casper })
     if (-not $linux.Count) { return $null }
     $removing = @($linux | ForEach-Object { $_.Guid })
 
