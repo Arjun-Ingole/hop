@@ -208,7 +208,7 @@ refuse or hide it. So the live system has to copy itself to memory first, and ea
 
 | Family | Word | Seen after booting with it |
 | --- | --- | --- |
-| casper (Ubuntu, Zorin OS) | `toram` | `/cdrom` is a tmpfs, nothing on the disk is open, and it can be repartitioned |
+| casper (Ubuntu, Zorin OS, Lubuntu) | `toram` | `/cdrom` is a tmpfs, nothing on the disk is open, and it can be repartitioned |
 | live-boot (Debian) | `toram` | Same, at `/run/live/medium` |
 | archiso (Arch) | `copytoram` | Same, with the image in `/run/archiso/copytoram` |
 | dracut (Fedora) | `rd.live.ram=1` | The image is copied, **but the partition stays mounted at `/run/initramfs/live`, and the disk stays busy until that's unmounted** |

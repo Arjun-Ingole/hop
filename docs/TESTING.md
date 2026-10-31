@@ -37,9 +37,12 @@ Each check is from the serial log or the disk image, not the job's result:
 | System | Offered | Disk free | Repartitioned | Erased and started again |
 | --- | --- | --- | --- | --- |
 | Ubuntu 26.04.1 | Yes | Yes | Yes | Yes, with its autoinstall, at 12 GB of memory and at 10 GB, which is its ISO plus hop's 4 GB. The second starts to a login, without the probe's message |
+| Zorin OS 18.1 | Yes | Yes | By its installer | Yes, with Ubiquity's `noninteractive` mode and a preseed that erases the disk, so its screens weren't seen |
 | Debian 13.7 | Yes | Yes | Yes | Yes, in its real installer's screens under a small X server, with keys pressed, its **Erase disk** preset and its users screen left out |
 | Arch 2026.10.01 | Yes | Yes | Yes | Yes, with `archinstall --silent`, a config file that wipes the disk and the internet |
 | Lubuntu 26.04.1 | No | Yes | No | Its installer offered **Erase disk**, but the test stopped there, because it has one more screen than Debian's |
+| Ubuntu Unity 26.04 | No | Yes | No | The test had nothing to drive: it doesn't run the installer service Ubuntu's does |
+| Linux Mint 22.3, other flavours, CachyOS, Ultramarine, Pop!_OS, elementary OS | No | Not shown | No | Not finished, or not run, in the time allowed |
 | Fedora 44 | No | Only after `umount /run/initramfs/live`: `rd.live.ram=1` copies but stays mounted | No | Anaconda stopped at "Installation Destination" with a kickstart that clears the disk |
 
 Ubuntu's ISO in a virtual PC with 7 GB of memory copied itself to memory and then hadn't reached a login after seven
