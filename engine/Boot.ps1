@@ -76,8 +76,8 @@ function Get-EditedBootConfig($Distro, [string]$Text, [switch]$FullDisk) {
     $Text
 }
 
-# Whether this ISO's boot files are the ones hop knows how to edit. The first edit is what
-# points the live system at the installer partition, so without it the system wouldn't start.
+# Whether this ISO's boot files are the ones hop knows how to edit. The first edit is what points the
+# live system at the installer partition, or stops casper taking Linux's space, so hop can't do without it.
 # A new release could change this, and it's better found before the disk changes.
 function Test-BootConfigKnown($Distro, [string]$Root, [switch]$FullDisk) {
     $known = -not $Distro.BootEdits
@@ -107,7 +107,8 @@ function Test-FullDiskConfig($Distro, [string]$Root) {
 
 # Live systems that look for their USB stick by name wouldn't find the installer partition,
 # whose FAT32 label is short and fixed. So the copied config, per the catalog, names that
-# label instead. Shim only checks the signatures of programs, so this is safe with Secure Boot.
+# label instead. Casper's gets the word that stops it making a partition. Shim only checks the
+# signatures of programs, so this is safe with Secure Boot.
 # With -FullDisk it also asks the live system to copy itself to memory, per the catalog.
 function Update-BootConfig($Distro, [string]$Root, [switch]$FullDisk) {
     if (-not $Distro.BootEdits -and -not $FullDisk) { return }
@@ -118,7 +119,7 @@ function Update-BootConfig($Distro, [string]$Root, [switch]$FullDisk) {
         # Copied from a read-only ISO, so it may have come out read-only.
         $file.IsReadOnly = $false
         [IO.File]::WriteAllBytes($file.FullName, [Text.Encoding]::GetEncoding(28591).GetBytes($edited))
-        Write-Log "Pointed $($file.Name) at the installer partition."
+        Write-Log "Changed $($file.Name) for starting from the installer partition."
     }
 }
 
@@ -192,6 +193,8 @@ function Register-Installer([string]$Name, $Distro) {
     if (-not $letter -or -not (Test-Path -LiteralPath "$($letter):\EFI\BOOT\BOOTX64.EFI")) {
         throw 'The installer partition is missing or incomplete. Undo the changes and install again.'
     }
+    # An installer copied by an older build gets what's changed since.
+    Update-BootConfig $Distro "$($letter):\"
     $source = "$($letter):\EFI\BOOT"
     Use-Esp {
         param($root)
