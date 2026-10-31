@@ -86,6 +86,7 @@ Set-Alias -Name Get-Disk -Value Get-ProbeDisk -Scope Global
 
 # Firmware, restarting and the EFI partition, none of which can be touched here.
 function Test-Uefi { $true }
+function Get-DiskAttachment($Disk) { 'internal' }
 function Get-FirmwareEntries { @() }
 function Get-BcdEntries { @() }
 function Assert-FirmwareAccess { }

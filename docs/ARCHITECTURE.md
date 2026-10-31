@@ -170,9 +170,21 @@ coming back means it never tried, which is what `Test-BootNextIgnored` looks for
 
 | | Viable |
 | --- | --- |
-| A disk | NVMe, SATA, SAS, ATA or SCSI. GPT and basic, online, writable and healthy. Not RAID, and with no other Windows or Linux on it |
+| A disk | NVMe, SATA, SAS, ATA or SCSI, and not one Windows expects to be unplugged. GPT and basic, online, writable and healthy. Not RAID, and with no other Windows or Linux on it |
 | A volume to shrink | All of that, plus: an ordinary data partition with a letter, NTFS, healthy, unlocked, not part way through encrypting, and not holding Windows' recovery files |
 | Free space | Any free space on such a disk, unless it's right after a volume that can use it |
+
+**A Thunderbolt or USB4 NVMe enclosure reports the bus type NVMe**, so the bus can't tell it from a drive inside
+the PC. `Get-DiskAttachment` asks Windows instead, through [the device's removal
+policy](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/devpkey-device-removalpolicy), found from
+`Win32_DiskDrive.PNPDeviceID`. 1 means Windows expects no removal, and that has to hold for the disk and for each
+parent up the device tree, since it's the slot the drive is tunnelled through that's hot-pluggable. Any other value,
+or `MediaType` saying external or removable, refuses the disk. So does not getting an answer about the disk itself.
+Internal disks on a port with hot-plug turned on are refused as well, which is the safe mistake to make.
+**This hasn't been tried on real Thunderbolt hardware.**
+
+Clean-up still looks at these disks, because `Get-HopDisks` only goes by the bus. A setup made on one by an earlier
+build can still be undone.
 
 The Windows disk keeps the checks it has always had, so C: is still judged by them and nothing else.
 RST mode there only gets a warning. A volume on that disk gets the volume checks too.

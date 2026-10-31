@@ -26,6 +26,12 @@
   refused with the reason. A problem with C: only stops hop if no other drive will do.
 - **The download goes where there's room.** A full C: no longer blocks it, and you can choose the drive.
 
+### Fixed
+
+- A Thunderbolt or USB4 NVMe enclosure counted as a drive inside the PC, because it reports the same bus. hop now asks
+  Windows whether it expects a drive to be unplugged, and refuses it if so, or if Windows won't say. Windows' own disk
+  isn't affected. This hasn't been tried on real Thunderbolt hardware.
+
 ### Changed
 
 - Make room works on the chosen drive. Other drives usually need no restart.

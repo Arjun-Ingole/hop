@@ -13,6 +13,7 @@ BeforeAll {
     # Add-Type refuses .exe files.
     [void][Reflection.Assembly]::LoadFrom((Join-Path $root 'bin\Release\hop.exe'))
     Mock Write-Log { }
+    Mock Get-DiskAttachment { 'internal' }
 }
 
 Describe 'Catalog' {

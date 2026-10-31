@@ -68,6 +68,9 @@ it:** Windows may stop starting until it's prepared. Search for the steps for yo
 Choose the drive and hop says why. The usual reasons:
 
 - **USB, removable or network drive.** Linux has to go on a disk inside the PC. The download can still go there.
+- **Can be unplugged, or hop can't tell.** A Thunderbolt or USB4 drive looks like an internal NVMe drive, so hop
+  asks Windows whether it expects the drive to be unplugged. A disk inside the PC is refused too if its port has
+  hot-plug turned on in the BIOS settings. Turning that off, then restarting, lets hop use it.
 - **Not set up, or MBR.** A new disk needs setting up as GPT in Disk Management. Converting an MBR disk
   that holds files means erasing it first, so copy them off.
 - **RAID or dynamic.** Linux installers can't use these. Leave them to their own tools.

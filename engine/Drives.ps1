@@ -33,11 +33,46 @@ function Test-BitLockerChanging([string]$Letter) {
     } catch { $false }
 }
 
+# What Plug and Play says about a device. Empty when Windows doesn't say.
+function Get-DeviceProperty([string]$InstanceId, [string]$Key) {
+    (Get-PnpDeviceProperty -InstanceId $InstanceId -KeyName $Key -ErrorAction Stop).Data
+}
+
+# Whether a disk is 'internal', 'external' or 'unclear'. A Thunderbolt or USB4 NVMe enclosure reports
+# the bus type NVMe, so that can't tell. What can is Windows' removal policy, which it keeps for each
+# device, based on whether the bus says the device can be removed: 1 is "expect no removal", and 2 and
+# 3 are the two ways of expecting it. It's the slot a drive is tunnelled through that's hot-pluggable,
+# so every parent gets asked too. An internal disk on a port with hot-plug turned on comes out as
+# external, which is the safe mistake.
+function Get-DiskAttachment($Disk) {
+    try {
+        $drive = Get-CimInstance Win32_DiskDrive -Filter "Index=$($Disk.Number)" -ErrorAction Stop | Select-Object -First 1
+        if (-not $drive.PNPDeviceID) { return 'unclear' }
+        if ($drive.MediaType -in @('External hard disk media', 'Removable media')) { return 'external' }
+        $policy = Get-DeviceProperty $drive.PNPDeviceID 'DEVPKEY_Device_RemovalPolicy'
+        if ($null -eq $policy) { return 'unclear' }
+        if ([int]$policy -ne 1) { return 'external' }
+        $device = $drive.PNPDeviceID
+        # The limit is only there so that bad data can't keep this going.
+        for ($depth = 0; $depth -lt 32; $depth++) {
+            $device = Get-DeviceProperty $device 'DEVPKEY_Device_Parent'
+            if (-not $device) { break }
+            # Not every parent has a policy, and only a disk's own is needed to go on.
+            $policy = try { Get-DeviceProperty $device 'DEVPKEY_Device_RemovalPolicy' } catch { $null }
+            if ($null -ne $policy -and [int]$policy -ne 1) { return 'external' }
+        }
+        'internal'
+    } catch {
+        Write-Log "Could not tell how disk $($Disk.Number) is attached: $($_.Exception.Message)"
+        'unclear'
+    }
+}
+
 # The one place that says whether Linux can go somewhere. $Partition is the volume to shrink,
 # or nothing for free space on the disk. Returns the reason in plain words, or nothing if it can.
 #
-# Viable means: an internal fixed disk (NVMe, SATA, SAS, ATA or SCSI) that's GPT, basic, online,
-# writable and healthy, not RAID, and with no other system on it. To shrink a volume it must also
+# Viable means: an internal fixed disk (NVMe, SATA, SAS, ATA or SCSI, and not one Windows expects
+# to be unplugged) that's GPT, basic, online, writable and healthy, not RAID, and with no other system on it. To shrink a volume it must also
 # be an ordinary data partition with a letter, NTFS, healthy, unlocked, not changing encryption,
 # and hold neither another Windows nor Windows' recovery files. Paging files and restore points
 # don't refuse a drive: they limit how far it shrinks, which Make room deals with.
@@ -60,6 +95,9 @@ function Get-DriveBlocker($Disk, $Partition, [switch]$Windows) {
     if (-not $windowsDisk) {
         if ($Disk.BusType -eq 'RAID') { return "$name is in RAID mode, which most Linux installers can't see." }
         if ($Disk.BusType -notin $InternalBusTypes) { return "$name is a USB, removable or network drive. Linux has to go on a drive inside this PC." }
+        $attachment = Get-DiskAttachment $Disk
+        if ($attachment -eq 'external') { return "$name can be unplugged while the PC is running, as a Thunderbolt or USB4 drive can. Linux has to go on a drive inside this PC." }
+        if ($attachment -ne 'internal') { return "hop can't tell whether $name is inside this PC or plugged in, as a Thunderbolt or USB4 drive is. Linux has to go on a drive inside this PC." }
     }
     if (-not $Windows) {
         if ($Disk.IsOffline -eq $true) { return "$name is offline. Bring it online in Disk Management, then open hop again." }

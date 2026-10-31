@@ -10,6 +10,7 @@ BeforeAll {
     # Add-Type refuses .exe files.
     [void][Reflection.Assembly]::LoadFrom((Join-Path $root 'bin\Release\hop.exe'))
     Mock Write-Log { }
+    Mock Get-DiskAttachment { 'internal' }
 
     function New-Offered {
         New-Entry 'test' 'Test OS' '' '' '#000000' '' @{ Kind = 'ubuntu'; Manual = 'Manual'; FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 6; Steps = @('Erase **{DISK}**.') } }

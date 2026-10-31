@@ -9,6 +9,7 @@ BeforeAll {
     # Add-Type refuses .exe files.
     [void][Reflection.Assembly]::LoadFrom((Join-Path $root 'bin\Release\hop.exe'))
     Mock Write-Log { }
+    Mock Get-DiskAttachment { 'internal' }
 
     function New-TestDisk([int]$Number = 1, [string]$Bus = 'SATA', [string]$Style = 'GPT') {
         [pscustomobject]@{
@@ -49,6 +50,21 @@ Describe 'Get-DriveBlocker' {
         @{ bus = 'File Backed Virtual'; says = '*virtual*' }, @{ bus = 'Spaces'; says = '*Storage Spaces*' }, @{ bus = 'RAID'; says = '*RAID*' }
     ) {
         Get-DriveBlocker (New-TestDisk -Bus $bus) $null | Should -BeLike $says
+    }
+    It 'refuses an NVMe disk Windows expects to be unplugged, as a Thunderbolt enclosure is' {
+        Mock Get-DiskAttachment { 'external' }
+        Get-DriveBlocker (New-TestDisk -Bus 'NVMe') $null | Should -BeLike '*Thunderbolt or USB4*inside this PC*'
+    }
+    It 'refuses a disk when it cannot tell where it is' {
+        Mock Get-DiskAttachment { 'unclear' }
+        Get-DriveBlocker (New-TestDisk -Bus 'NVMe') $null | Should -BeLike "*can't tell*inside this PC*"
+    }
+    It 'keeps Windows'' own disk, however it is attached' {
+        Mock Get-DiskAttachment { 'external' }
+        Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 1 } }
+        Get-DriveBlocker (New-TestDisk -Number 1 -Bus 'NVMe') $null | Should -BeNullOrEmpty
+        Get-DriveBlocker (New-TestDisk -Number 0 -Bus 'NVMe') $null -Windows | Should -BeNullOrEmpty
+        Should -Invoke Get-DiskAttachment -Times 0 -Exactly
     }
     It 'refuses an MBR disk' {
         Get-DriveBlocker (New-TestDisk -Style 'MBR') $null | Should -BeLike '*MBR*'

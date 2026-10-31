@@ -103,6 +103,8 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] Second disk with the Ubuntu boot loader on it: does the firmware start it? Mint's goes on Windows' EFI partition: does that start?
 - [ ] Swap the disks' SATA ports after preparing: the setup is still recognised
 - [ ] A locked BitLocker data drive: refused, with how to unlock it
+- [ ] A Thunderbolt or USB4 NVMe enclosure: refused as something that can be unplugged. Nothing has checked this on real hardware
+- [ ] A second NVMe drive inside the PC: still offered
 - [ ] Undo with each: the space goes back to the right drive
 
 **Replacing Windows** (a VM you can lose, with a snapshot)
