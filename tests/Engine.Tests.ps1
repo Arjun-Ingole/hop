@@ -1319,6 +1319,35 @@ Describe 'Get-Steps' {
     }
 }
 
+Describe 'Assert-SystemFitsDrive' {
+    BeforeEach {
+        Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } }
+        Mock Resolve-Target { [pscustomobject]@{ Partition = [pscustomobject]@{ DiskNumber = 1 } } }
+    }
+    It 'refuses <id> on a second disk, with the reason, and claims nothing it has not seen' -ForEach @(
+        @{ id = 'debian' }, @{ id = 'cachyos' }, @{ id = 'arch' }, @{ id = 'fedora' }, @{ id = 'ultramarine' }
+    ) {
+        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Throw "*for the disk Windows is on*hasn't been tried on a second disk*"
+    }
+    It 'lets them on another drive on the disk Windows is on' {
+        Mock Resolve-Target { [pscustomobject]@{ Partition = [pscustomobject]@{ DiskNumber = 0 } } }
+        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq 'arch') 'volume:{disk-0}:1048576' } | Should -Not -Throw
+    }
+    It 'lets them on C: without looking anything up' {
+        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq 'arch') '' } | Should -Not -Throw
+        Should -Invoke Resolve-Target -Times 0
+    }
+    It 'leaves systems with steps for a second disk alone' {
+        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq 'ubuntu') 'gap:{disk-1}:1048576' } | Should -Not -Throw
+    }
+    It 'tells the window which systems this is' {
+        $engine = New-Object Hop.Engine
+        try {
+            @($engine.GetCatalog() | Where-Object WindowsDiskOnly | ForEach-Object { $_.Id } | Sort-Object) | Should -Be @('arch', 'cachyos', 'debian', 'fedora', 'ultramarine')
+        } finally { $engine.Dispose() }
+    }
+}
+
 Describe 'Remove-PersonalNames' {
     It 'takes out the user and computer names' {
         $text = "C:\Users\$env:USERNAME\Downloads on $env:COMPUTERNAME"

@@ -91,10 +91,12 @@ namespace Hop
 
         /// <summary>Another drive with room for Linux, for when this one hasn't any.</summary>
         DriveChoice BetterDrive => startup.Drives
-            .Where(d => d.Id != target.Id && d.Blocker == null && MaxLinuxGBOn(d) >= MinLinuxGB)
+            .Where(d => d.Id != target.Id && d.Blocker == null && MaxLinuxGBOn(d) >= MinLinuxGB && !SecondDiskStops(d))
             .OrderByDescending(d => d.UsableGB).FirstOrDefault();
 
         bool HasDriveChoice => FullDiskOffered || startup.Drives.Count > 1 || (isoPath == null && startup.DownloadDrives.Count(d => d.FreeGB > IsoDownloadGB) > 1);
+
+        bool SecondDiskStops(DriveChoice drive) => selected != null && selected.WindowsDiskOnly && !drive.OnWindowsDisk;
 
         Run[] WhereLine(bool picker, Color brand)
         {
@@ -116,6 +118,8 @@ namespace Hop
             bool usable = target.Blocker == null;
             bool enoughSpace = usable && MaxLinuxGB >= MinLinuxGB;
             bool secureBootStops = selected != null && selected.SecureBootOff && startup.SecureBoot;
+            bool secondDiskStops = usable && SecondDiskStops(target);
+            bool systemStops = secureBootStops || secondDiskStops;
             linuxGB = enoughSpace ? Math.Max(MinLinuxGB, Math.Min(MaxLinuxGB, linuxGB)) : MinLinuxGB;
 
             // The drive has the room, but Windows can't release it. Deleting files wouldn't help.
@@ -127,6 +131,8 @@ namespace Hop
                 noteText = target.Blocker;
             else if (secureBootStops)
                 noteText = $"{system.Name} doesn't start with Secure Boot on. Pick another system, or turn off Secure Boot in the BIOS and open hop again.";
+            else if (secondDiskStops)
+                noteText = $"hop's steps for {system.Name} are for the disk Windows is on, and it hasn't been tried on a second disk. Choose a drive on that disk, or another system.";
             else if (!enoughSpace && better != null)
                 noteText = $"{target.Title} doesn't have room for Linux. {better.Title} on {better.DiskName} has {(better.Estimated ? "about " : "")}{better.UsableGB} GB to spare.";
             else if (stuck)
@@ -149,14 +155,14 @@ namespace Hop
             {
                 new[] { Run.Gray("Install"), new Run { Text = system.Name, Color = Ink, Logo = LogoFor(selected), Picker = true, Underline = system.Color } },
                 WhereLine(true, Hairline),
-            }, noteText, enoughSpace && !secureBootStops ? Secondary : Danger, usable ? drive : null, 64);
+            }, noteText, enoughSpace && !systemStops ? Secondary : Danger, usable ? drive : null, 64);
 
-            Action install = enoughSpace && !secureBootStops ? () => _ = CheckThenConfirmAsync() : (Action)null;
+            Action install = enoughSpace && !systemStops ? () => _ = CheckThenConfirmAsync() : (Action)null;
             string primaryText = "Install";
             Action primaryAction = install;
             // Nothing else can happen until there's room, so this is what the button does.
-            bool needRoom = stuck && !RoomMadeHere && !secureBootStops;
-            if (better != null && !secureBootStops)
+            bool needRoom = stuck && !RoomMadeHere && !systemStops;
+            if (better != null && !systemStops)
             {
                 primaryText = $"Use {better.Title.ToLowerInvariant()}";
                 primaryAction = () => _ = UseDriveAsync(better);
@@ -169,7 +175,7 @@ namespace Hop
 
             if (startup.OtherGB > 0)
                 Footer($"Remove {startup.OtherName} ({startup.OtherGB} GB)", ShowRemoveOther, primaryText, primaryAction);
-            else if (!usable)
+            else if (!usable || secondDiskStops)
                 Footer("Choose another drive", OpenDrivePicker, primaryText, primaryAction);
             else if (needRoom && better != null)
                 Footer("Make room", () => _ = ShowMakeRoomAsync(), primaryText, primaryAction);

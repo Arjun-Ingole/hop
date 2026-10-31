@@ -16,6 +16,8 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         Assert-FullDisk $distro
         $LinuxGB = 0
         $strategy = 'freespace'
+    } else {
+        Assert-SystemFitsDrive $distro $Target
     }
     $diskChanged = $false
 

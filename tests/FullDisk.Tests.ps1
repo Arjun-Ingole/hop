@@ -420,6 +420,12 @@ Describe 'Invoke-Install with -FullDisk' {
         Should -Invoke Save-State -ParameterFilter { $State.FullDisk -eq $false }
         Should -Invoke Get-FullDiskBlocker -Times 0
     }
+    It 'refuses a system whose steps do not cover a second disk, before downloading' {
+        Mock Get-Distro { New-Entry 'x' 'Other OS' '' '' '#000000' '' @{ Steps = @('Click.') } }
+        Mock Resolve-Target { [pscustomobject]@{ Partition = New-Part 'E' ([int64]1GB) ([int64]300GB) -Disk 1 } }
+        { Invoke-Install 'x' '' 60 'volume:{disk-1}:1073741824' '' } | Should -Throw "*second disk*"
+        Should -Invoke Save-State -Times 0
+    }
     It 'refuses before downloading, and changes nothing' {
         Mock Get-FullDiskBlocker { 'Not enough memory.' }
         { Invoke-Install 'ubuntu' '' 60 '' '' -FullDisk } | Should -Throw 'Not enough memory.'
