@@ -49,6 +49,7 @@ in a runspace and calls their functions one at a time. Progress comes back throu
 | `Iso.ps1` | Mounts an ISO and checks hop can use it |
 | `SecureBoot.ps1` | Works out whether Secure Boot will let the ISO start |
 | `Drives.ps1` | Which drives Linux can go on, and why not, and where the ISO can go |
+| `FullDisk.ps1` | Replacing Windows: whether it can be done, the warning's facts, the steps |
 | `Disk.ps1` | Plans the space, makes partitions, copies files |
 | `Boot.ps1` | The copied boot menu, the EFI partition and the startup entry |
 | `State.ps1` | What hop left on this PC, and `state.json` |
@@ -193,6 +194,46 @@ checks once the partitions exist.
 
 None of this has been started on real hardware. It comes from reading those installers' source. See
 [Testing](TESTING.md).
+
+## Replacing Windows
+
+**hop never erases anything here.** It makes the same installer partition as ever, plus the same startup
+entry. The Linux installer erases the disk, if someone chooses that in it, and until then Windows is untouched.
+Undo, coming back and clean-up all work as they do for any other install, because to them it is one. The
+state file just says `FullDisk`, which changes the steps and nothing else.
+
+**The problem is that the installer starts from the disk it would erase.** Live systems keep their
+medium mounted, which holds the disk open: the kernel refuses to reread its partition table, and installers
+refuse or hide it. So the live system has to copy itself to memory first, and each family has its own word:
+
+| Family | Word | Seen after booting with it |
+| --- | --- | --- |
+| casper (Ubuntu, Zorin OS) | `toram` | `/cdrom` is a tmpfs, nothing on the disk is open, and it can be repartitioned |
+| live-boot (Debian) | `toram` | Same, at `/run/live/medium` |
+| archiso (Arch) | `copytoram` | Same, with the image in `/run/archiso/copytoram` |
+| dracut (Fedora) | `rd.live.ram=1` | The image is copied, **but the partition stays mounted at `/run/initramfs/live`, and the disk stays busy until that's unmounted** |
+
+The word goes in through the mechanism every other boot change uses: `Update-BootConfig -FullDisk` adds the
+entry's `FullDisk.Edits` to the copy on the installer partition. It goes straight after the kernel's path, so
+before casper's `---`, and what's after that isn't copied into the installed system. `Test-BootConfigKnown` checks
+the ISO's menu can take it before the disk changes, and `Test-FullDiskConfig` checks it's really there afterwards.
+
+**A catalog setting decides who's offered this.** `FullDisk` is only set for a system that was really seen
+erasing the disk it started from and then starting from that disk. See [Testing](TESTING.md). A
+chosen ISO is never offered it.
+
+**Memory is checked twice**, because too little only shows after the restart. Ubuntu's 6 GB ISO, in a virtual PC
+with 7 GB, copied itself and then didn't reach a login in seven minutes. It needs the ISO's size plus
+`$FullDiskMemoryRoom`, 4 GB. First against the catalog's `IsoGB`, before the download, then against the real
+ISO, before the disk changes.
+
+**The installer partition goes on Windows' disk**, on the chosen drive if it's there and next to C: if not. Other
+reasons for refusing are in `Get-FullDiskBlocker`: a RAID disk, a disk too small for Linux, and Windows starting
+from another disk's EFI partition, which hop hasn't tried and wouldn't be erased.
+
+**Screens, none of which changes anything until the last.** The last row of the drive list, then a check that can
+only read, then the warning with the disk, its size, what's on it and what stays, then typing ERASE. Back and
+Cancel go back to choosing, and only that last screen sets `fullDisk`, which `ShowChoose` clears.
 
 ## Why the startup entry is written directly
 

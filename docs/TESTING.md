@@ -18,6 +18,38 @@ can't tell you anything about booting either.**
 hop refuses virtual disks. The script checks that it does, then defines its own `Get-Disk` that reports its
 disks as NVMe. The app has no way to do this.
 
+## Replacing Windows, in a virtual PC
+
+What's offered depends on what really ran, so this is the record. On a GitHub Actions runner, in QEMU with OVMF,
+on an 80 GB NVMe disk laid out as hop leaves one: EFI partition, an NTFS "C:", and FAT32 `HOPINSTALL` holding the
+ISO's files, adapted by the engine's real `Update-BootConfig` and started through `Boot0042` and `BootNext` as hop
+writes them. A second disk with random data was attached, and its checksum compared afterwards. The ISOs are the
+October 2026 ones.
+
+Each check is from the serial log or the disk image, not the job's result:
+
+- **The disk is free:** nothing from the disk in `/proc/mounts` or `losetup`, and `blockdev --rereadpt` succeeds.
+  Without the word, on Ubuntu, it fails with "Device or resource busy" and `/cdrom` is the installer partition.
+- **It can be repartitioned:** a new table, `mkfs.ext4` on it, a 100 MB file read back, and the old table restored.
+- **Erased and started again:** the installer run with its own unattended settings, a disk with only its new
+  partitions afterwards, and the firmware then starting it with a line from inside the installed system.
+
+| System | Offered | Disk free | Repartitioned | Erased and started again |
+| --- | --- | --- | --- | --- |
+| Ubuntu 26.04.1 | Yes | Yes | Yes | Yes, with its autoinstall, at 12 GB of memory and at 10 GB, which is its ISO plus hop's 4 GB. The second starts to a login, without the probe's message |
+| Debian 13.7 | Yes | Yes | Yes | Yes, in its real installer's screens under a small X server, with keys pressed, its **Erase disk** preset and its users screen left out |
+| Arch 2026.10.01 | Yes | Yes | Yes | Yes, with `archinstall --silent`, a config file that wipes the disk and the internet |
+| Lubuntu 26.04.1 | No | Yes | No | Its installer offered **Erase disk**, but the test stopped there, because it has one more screen than Debian's |
+| Fedora 44 | No | Only after `umount /run/initramfs/live`: `rd.live.ram=1` copies but stays mounted | No | Anaconda stopped at "Installation Destination" with a kickstart that clears the disk |
+
+Ubuntu's ISO in a virtual PC with 7 GB of memory copied itself to memory and then hadn't reached a login after seven
+minutes, which is why hop refuses it.
+
+The installer's choices weren't clicked by a person. Unattended settings stand in for them, except on Debian, and
+the words in the steps come from the installer's own strings. The installers were also shown fewer disks or
+choices than a PC would give them. **No real PC has done this,** the screens in hop have never been opened, and
+neither Secure Boot nor BitLocker was part of these runs.
+
 ## Testing for real
 
 Use a virtual machine, not a PC you care about. It has to use UEFI:
@@ -68,6 +100,16 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] Swap the disks' SATA ports after preparing: the setup is still recognised
 - [ ] A locked BitLocker data drive: refused, with how to unlock it
 - [ ] Undo with each: the space goes back to the right drive
+
+**Replacing Windows** (a VM you can lose, with a snapshot)
+
+- [ ] Ubuntu with Secure Boot on, 16 GB of memory: the erase option is there, the disk erases, and it starts afterwards
+- [ ] With too little memory for the ISO: refused with the reason, before the download
+- [ ] The warning names the disk, its size and every drive on it, and Back and Cancel leave nothing changed
+- [ ] The button stays off until ERASE is typed exactly, and Enter doesn't start it
+- [ ] Click **Undo changes** on the ready screen: everything is back
+- [ ] Restart, then turn the VM off in the installer without erasing: Windows starts, hop says it didn't start, and Undo works
+- [ ] A locked BitLocker data drive on the same disk is listed as going too
 
 **Undo**
 

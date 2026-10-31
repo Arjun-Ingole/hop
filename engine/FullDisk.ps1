@@ -13,8 +13,8 @@ function Get-MemoryBytes { [int64](Get-CimInstance Win32_ComputerSystem).TotalPh
 # Windows reports slightly less than what's fitted, so 16 GB shows as 15.8. Rounded up, it reads as people know it.
 function Get-MemoryGB { [int][math]::Ceiling((Get-MemoryBytes) / 1GB) }
 
-# The copy has to fit in memory with room left. If it doesn't, the live system says nothing, carries
-# on from the disk, and its installer then can't erase it. So it's refused here, while that's cheap.
+# The copy has to fit in memory with room left. Ubuntu's ISO, 6 GB, in a virtual PC with 7 GB of memory
+# copied itself and then didn't get to a login in seven minutes. So it's refused here, while that's cheap.
 function Get-FullDiskMemoryBlocker($Distro, [int64]$IsoBytes) {
     $needed = $IsoBytes + $FullDiskMemoryRoom
     $memory = Get-MemoryBytes
@@ -121,7 +121,7 @@ function Get-FullDiskSteps($Distro, $Place) {
     [pscustomobject]@{
         Steps = @($steps | ForEach-Object { $_ -replace '\{DISK\}', $disk })
         Notes = @(
-            "If **$disk** isn't offered or the installer says it's in use, don't force it: the copy to memory didn't happen. Turn the PC off and on to get back to Windows, which is still there."
+            "If **$disk** isn't offered or the installer says it's in use, don't force it. Turn the PC off and on to get back to Windows, which is still there."
             'If the PC starts Windows again or shows a security error, turn off Secure Boot in the BIOS, then open hop and restart again.')
         FullDisk = $true
     }

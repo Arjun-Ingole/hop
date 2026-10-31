@@ -4,6 +4,11 @@
 
 ### Added
 
+- **Replace Windows, where hop has seen it work.** For Ubuntu, Debian and Arch, hop can set up an installer
+  that erases the whole disk Windows is on. It's the last row of the drive list, is never chosen for you, and shows the disk,
+  its size and every drive on it that would go, then asks you to type ERASE. hop itself still only makes the
+  installer: the Linux installer does the erasing, when you tell it to. Undo works until then.
+  It needs enough memory to hold the ISO with 4 GB left over, and says so if there isn't.
 - Zorin OS, Debian, Fedora Workstation, Ultramarine, CachyOS and Arch Linux. CachyOS and Arch need Secure
   Boot off, as they say when picked, and Arch installs from a text prompt. Fedora and Ultramarine need
   one command in Terminal before their installer will use the drive.
