@@ -1,0 +1,477 @@
+<#
+    Runs hop's real disk code against real partitions on throwaway virtual disks. It is not a
+    Pester test because it changes disks, so it's named to stay out of Invoke-Pester's way.
+    Only run it on a disposable Windows machine, as administrator, after a build:
+
+        powershell -File tests\Probe-VirtualDisks.ps1
+
+    hop refuses virtual disks by design, and this doesn't change that. The refusal is checked
+    first, then this script hides the real disks and reports its own as NVMe by defining a
+    function called Get-Disk, which wins over the cmdlet in this script alone. It also stands in
+    for what can't run here: the firmware, the EFI partition and restarting. Nothing in the
+    app can reach any of this. What's left is the real engine: every Storage cmdlet, robocopy,
+    format, shrink, undo and defrag.
+#>
+param(
+    [string]$Folder = (Join-Path $env:TEMP 'hop-probe'),
+    [int]$CommandLimitSeconds = 180
+)
+
+$root = Split-Path $PSScriptRoot -Parent
+$Sync = [hashtable]::Synchronized(@{ Log = [Collections.ArrayList]::Synchronized((New-Object Collections.ArrayList)); Version = 'probe' })
+. (Join-Path $root 'engine\Common.ps1')
+foreach ($module in Get-ChildItem (Join-Path $root 'engine\*.ps1') | Where-Object Name -ne 'Common.ps1') { . $module.FullName }
+[void][Reflection.Assembly]::LoadFrom((Join-Path $root 'bin\Release\hop.exe'))
+$ErrorActionPreference = 'Stop'
+$DefragLimitSeconds = 90
+$Sync.Gate = New-Object Hop.CancelGate
+
+$script:Failures = New-Object Collections.ArrayList
+$script:Passes = 0
+$script:VDisks = @{}          # file name -> VHD path
+$script:Pretend = $true       # virtual disks say they're NVMe, and the real disks are hidden
+
+function Check([string]$What, [bool]$Ok, $Detail) {
+    if ($Ok) { $script:Passes++; Write-Output "  pass  $What" }
+    else { [void]$script:Failures.Add($What); Write-Output "  FAIL  $What  ($Detail)" }
+}
+function Step([string]$Text) { Write-Output ''; Write-Output "=== $Text  [$((Get-Date).ToString('HH:mm:ss'))]" }
+
+# Every external program here gets a limit, so nothing can sit waiting for ever.
+function Invoke-Limited([string]$File, [string[]]$Arguments, [int]$Seconds = $CommandLimitSeconds) {
+    $process = Start-Process -FilePath $File -ArgumentList $Arguments -PassThru -WindowStyle Hidden
+    $null = $process.Handle
+    if (-not $process.WaitForExit($Seconds * 1000)) {
+        try { $process.Kill() } catch { }
+        throw "$File $Arguments was still running after $Seconds seconds."
+    }
+    $process.ExitCode
+}
+
+function Invoke-Diskpart([string[]]$Lines) {
+    $script = Join-Path $Folder "diskpart-$([guid]::NewGuid()).txt"
+    Set-Content -LiteralPath $script -Encoding ASCII -Value $Lines
+    $code = Invoke-Limited 'diskpart.exe' @('/s', "`"$script`"")
+    Remove-Item -LiteralPath $script -Force
+    if ($code -ne 0) { throw "diskpart failed ($code): $($Lines -join ' / ')" }
+}
+
+function Get-RealVDisk([string]$Path) { Get-DiskImage -ImagePath $Path | Storage\Get-Disk }
+
+function New-VDisk([string]$Name, [int]$SizeGB, [string]$Style = 'GPT') {
+    $path = Join-Path $Folder "$Name.vhdx"
+    Invoke-Diskpart @("create vdisk file=`"$path`" maximum=$($SizeGB * 1024) type=expandable", "select vdisk file=`"$path`"", 'attach vdisk')
+    $script:VDisks[$Name] = $path
+    $disk = Get-RealVDisk $path
+    if ($Style -ne 'RAW') { Initialize-Disk -Number $disk.Number -PartitionStyle $Style }
+    Get-RealVDisk $path
+}
+
+function Dismount-VDisk([string]$Name) { Invoke-Diskpart @("select vdisk file=`"$($script:VDisks[$Name])`"", 'detach vdisk') }
+function Mount-VDisk([string]$Name) { Invoke-Diskpart @("select vdisk file=`"$($script:VDisks[$Name])`"", 'attach vdisk') }
+
+# The one change to what the engine sees of the PC.
+function Get-Disk {
+    param($Number)
+    $numbers = @($script:VDisks.Values | ForEach-Object { try { (Get-RealVDisk $_).Number } catch { } })
+    $all = if ($null -ne $Number) { Storage\Get-Disk -Number $Number } else { Storage\Get-Disk }
+    foreach ($disk in $all) {
+        if (-not $script:Pretend) { $disk; continue }
+        if ($numbers -notcontains $disk.Number) { continue }
+        Add-Member -InputObject $disk -NotePropertyName BusType -NotePropertyValue 'NVMe' -Force
+        $disk
+    }
+}
+
+# Firmware, restarting and the EFI partition, none of which can be touched here.
+function Test-Uefi { $true }
+function Get-FirmwareEntries { @() }
+function Get-BcdEntries { @() }
+function Assert-FirmwareAccess { }
+function Assert-SecureBootAllows($Distro) { }
+function Get-SecureBootProblem([string]$Root) { }
+function Test-SecureBoot { $false }
+function Use-Esp([scriptblock]$Action) { }
+function Register-Installer([string]$Name) { 7 }
+function Test-BitLockerOn { $false }
+function Get-FastStartup { 0 }
+function Disable-FastStartup { }
+function Restore-FastStartup { }
+function Invoke-Shutdown([string[]]$Arguments) { throw 'The probe does not restart.' }
+function Get-WindowsEsp { throw 'No EFI partition in the probe.' }
+
+function Add-TestFiles([string]$Letter, [int]$Count = 8, [int]$SizeMB = 64) {
+    $random = New-Object Random 42
+    $buffer = New-Object byte[] (1MB)
+    $folder = "$Letter`:\hop-probe-data"
+    New-Item -ItemType Directory -Path $folder -Force | Out-Null
+    for ($i = 0; $i -lt $Count; $i++) {
+        $stream = [IO.File]::Create("$folder\file$i.bin")
+        for ($mb = 0; $mb -lt $SizeMB; $mb++) { $random.NextBytes($buffer); $stream.Write($buffer, 0, $buffer.Length) }
+        $stream.Dispose()
+    }
+}
+function Get-TestHash([string]$Letter) {
+    (Get-ChildItem "$Letter`:\hop-probe-data" -File | Sort-Object Name | ForEach-Object { (Get-FileHash $_.FullName -Algorithm SHA256).Hash }) -join ','
+}
+function Get-Layout($DiskNumber) {
+    (Storage\Get-Partition -DiskNumber $DiskNumber | Sort-Object Offset | ForEach-Object { '{0}+{1}' -f $_.Offset, $_.Size }) -join ' '
+}
+
+function New-Volume([int]$Disk, [int64]$Size, [string]$Label, [string]$Format = 'NTFS', [string]$Type) {
+    $settings = @{ DiskNumber = $Disk; Size = $Size; AssignDriveLetter = $true }
+    if ($Type) { $settings.GptType = $Type; $settings.Remove('AssignDriveLetter') }
+    $partition = New-Partition @settings
+    if ($Format) { Format-Volume -Partition $partition -FileSystem $Format -NewFileSystemLabel $Label -Confirm:$false -Force | Out-Null }
+    Storage\Get-Partition -DiskNumber $Disk -PartitionNumber $partition.PartitionNumber
+}
+
+# A small ISO with what Read-Iso checks for. It's real, and really mounted and copied from.
+function New-FakeIso([string]$Path) {
+    $tree = Join-Path $Folder 'iso-tree'
+    New-Item -ItemType Directory -Path "$tree\EFI\BOOT", "$tree\.disk", "$tree\casper", "$tree\boot\grub" -Force | Out-Null
+    [IO.File]::WriteAllBytes("$tree\EFI\BOOT\BOOTX64.EFI", (New-Object byte[] 4096))
+    Set-Content "$tree\.disk\info" 'Fake Ubuntu'
+    $bytes = New-Object byte[] (20MB)
+    (New-Object Random 7).NextBytes($bytes)
+    [IO.File]::WriteAllBytes("$tree\casper\filesystem.squashfs", $bytes)
+    [IO.File]::WriteAllBytes("$tree\casper\vmlinuz", (New-Object byte[] 4096))
+    Set-Content "$tree\boot\grub\grub.cfg" @('menuentry "Try" {', '    linux  /casper/vmlinuz  --- quiet', '}')
+    Add-Type -TypeDefinition @'
+using System.IO;
+using System.Runtime.InteropServices.ComTypes;
+public static class HopProbeIso {
+    public static void Save(object image, string path) {
+        var stream = (IStream)image;
+        var buffer = new byte[1048576];
+        var read = System.Runtime.InteropServices.Marshal.AllocHGlobal(4);
+        using (var file = File.Create(path)) {
+            while (true) {
+                stream.Read(buffer, buffer.Length, read);
+                int count = System.Runtime.InteropServices.Marshal.ReadInt32(read);
+                if (count == 0) break;
+                file.Write(buffer, 0, count);
+            }
+        }
+    }
+}
+'@
+    $image = New-Object -ComObject IMAPI2FS.MsftFileSystemImage
+    $image.FileSystemsToCreate = 3   # ISO 9660 and Joliet, as a real one has
+    $image.VolumeName = 'FAKE'
+    $image.Root.AddTree($tree, $false)
+    [HopProbeIso]::Save($image.CreateResultImage().ImageStream, $Path)
+}
+
+function Reset-Run {
+    foreach ($path in @($StatePath, $LinuxDisksPath, $RoomPath)) { if (Test-Path $path) { Remove-Item -LiteralPath $path -Force } }
+    $Sync.Gate = New-Object Hop.CancelGate
+}
+
+function Find-Row([string]$Letter) { @(Get-DriveTargets) | Where-Object Letter -eq $Letter | Select-Object -First 1 }
+
+New-Item -ItemType Directory -Path $Folder -Force | Out-Null
+Start-Transcript -Path (Join-Path $Folder 'probe.log') -Force | Out-Null
+$started = Get-Date
+
+try {
+    Step 'Create the disks'
+    $iso = Join-Path $Folder 'fake.iso'
+    New-FakeIso $iso
+    Check 'made a real ISO' (Test-Path $iso) ''
+
+    # The "Windows disk": [ESP][W: pretends to be C:][D: data][recovery][E: data]
+    $vdiskA = New-VDisk 'windows' 40
+    $a = $vdiskA.Number
+    New-Volume $a 100MB '' '' $EspType | Out-Null
+    $w = New-Volume $a 10GB 'PRETENDC'
+    $d = New-Volume $a 14GB 'DATA'
+    $recovery = New-Volume $a 1GB '' '' $RecoveryType
+    $e = New-Volume $a 5GB 'AFTER'
+    $wLetter = [string]$w.DriveLetter; $dLetter = [string]$d.DriveLetter; $eLetter = [string]$e.DriveLetter
+    Add-TestFiles $dLetter
+    Add-TestFiles $eLetter 2 32
+    $dHash = Get-TestHash $dLetter
+    $eHash = Get-TestHash $eLetter
+
+    # The second disk: [X: data][free space][Y: exFAT, which hop can't shrink][free space]
+    $vdiskB = New-VDisk 'second' 80
+    $b = $vdiskB.Number
+    $x = New-Volume $b 20GB 'SECOND'
+    $xLetter = [string]$x.DriveLetter
+    Add-TestFiles $xLetter
+    $xHash = Get-TestHash $xLetter
+
+    function Get-WindowsPartition { Storage\Get-Partition -DiskNumber (Get-RealVDisk $script:VDisks['windows']).Number | Where-Object { [int64]$_.Offset -eq [int64]$w.Offset } }
+    $env:SystemDrive = "$wLetter`:"
+
+    Step 'hop refuses these disks when nothing pretends'
+    $script:Pretend = $false
+    $real = Storage\Get-Disk -Number $b
+    Write-Output "  bus type of the virtual disk: $($real.BusType), number $($real.Number), GUID $($real.Guid)"
+    Check 'a real VHD is refused as virtual' ((Get-DriveBlocker $real $null) -like '*virtual*') (Get-DriveBlocker $real $null)
+    $vdiskRaw = New-VDisk 'raw' 20 'RAW'
+    Check 'a real uninitialised VHD is called not set up' ((Get-DriveBlocker (Get-RealVDisk $script:VDisks['raw']) $null) -like "*isn't set up*") ''
+    $vdiskMbr = New-VDisk 'mbr' 20 'MBR'
+    Check 'a real MBR VHD is refused' ((Get-DriveBlocker (Get-RealVDisk $script:VDisks['mbr']) $null) -like '*MBR*') ''
+    $script:Pretend = $true
+
+    Step 'Viability on real partitions'
+    $rows = @(Get-DriveTargets)
+    foreach ($row in $rows) { Write-Output ('  {0,-14} {1,-7} usable {2,4} GB tail {3,4} GB  {4}' -f $row.Title, $row.Kind, $row.UsableGB, $row.TailFreeGB, $row.Blocker) }
+    Check 'the RAW and MBR disks get a row with a reason' (@($rows | Where-Object { $_.Kind -eq 'disk' -and $_.Blocker }).Count -eq 2) ''
+    Check 'pretend C: is listed as C:' (($rows | Where-Object Id -eq '').Letter -eq $wLetter) ''
+    Check 'the recovery partition is not offered' (-not ($rows | Where-Object { $_.Id -match [int64]$recovery.Offset })) ''
+    Check 'real recovery partition is refused by name' ((Get-DriveBlocker (Get-Disk -Number $a) $recovery) -like '*recovery partition*') ''
+    Check 'D: is offered' (-not (Find-Row $dLetter).Blocker) ''
+    Check 'second disk volume is offered' (-not (Find-Row $xLetter).Blocker) ''
+    Check 'second disk free space is folded into its volume' ((Find-Row $xLetter).TailFreeGB -ge 50) ''
+
+    $y = New-Volume $b 6GB 'NOTNTFS' 'exFAT'
+    Check 'a real exFAT volume is refused and named' ((Find-Row ([string]$y.DriveLetter)).Blocker -like '*uses exFAT*') ((Find-Row ([string]$y.DriveLetter)).Blocker)
+    $gapRow = @(Get-DriveTargets) | Where-Object { $_.Kind -eq 'gap' -and $_.DiskName } | Select-Object -First 1
+    Check 'free space after a refused volume is offered on its own' ($null -ne $gapRow) ''
+    Write-Output "  free space row: $($gapRow.Id) $($gapRow.UsableGB) GB"
+
+    Step 'Real shrink limit, from the bounded query'
+    $space = Get-SpaceInfo "volume:$($vdiskA.Guid):$([int64]$d.Offset)"
+    Write-Output "  D: min $([int64]$space.MinSize) usable $($space.UsableGB) GB"
+    Check 'the query returned a real limit' ($space.MinSize -gt 0 -and $space.MinSize -lt $d.Size) $space.MinSize
+    $measured = Get-DriveSpace "volume:$($vdiskA.Guid):$([int64]$d.Offset)"
+    Check 'the row is measured once chosen' (-not $measured.Estimated -and $measured.UsableGB -eq $space.UsableGB) ''
+
+    Step 'Download lands on the chosen drive'
+    $source = Join-Path $Folder 'source.iso'
+    [IO.File]::WriteAllBytes($source, (New-Object byte[] (2MB)))
+    $folderOnD = Get-DownloadFolder $dLetter
+    Check 'the folder is on that drive' ($folderOnD -eq "$dLetter`:\hop") $folderOnD
+    $hash = (Get-FileHash $source -Algorithm SHA256).Hash
+    $download = New-Download ('file:///' + ($source -replace '\\', '/')) $hash 0
+    Get-Iso $download (Join-Path $folderOnD $download.FileName)
+    Check 'curl really saved it there and the checksum matched' (Test-Path (Join-Path $folderOnD $download.FileName)) ''
+    Check 'nothing partial is left' (-not (Test-Path (Join-Path $folderOnD "$($download.FileName).part"))) ''
+    Remove-Item $folderOnD -Recurse -Force
+    Check 'lists real drives for the download' (@(Get-DownloadDrives | Where-Object Letter -eq $dLetter).Count -eq 1) ''
+    try { Assert-DownloadRoom "$eLetter`:\huge.iso" ([int64]500GB) 0; Check 'refuses a download that does not fit' $false '' }
+    catch { Check 'refuses a download that does not fit and offers another drive' ($_.Exception.Message -like '*another drive*') $_.Exception.Message }
+
+    Step 'A: same disk, second volume, shrink, freespace install, undo'
+    Reset-Run
+    $beforeA = Get-Layout $a
+    $target = "volume:$($vdiskA.Guid):$([int64]$d.Offset)"
+    Invoke-Install 'ubuntu' $iso 6 $target ''
+    $state = Read-State
+    $afterD = Storage\Get-Partition -DiskNumber $a | Where-Object { [int64]$_.Offset -eq [int64]$d.Offset }
+    $installer = @(Get-HopPartitions) | Where-Object { $_.Label -eq $InstallerLabel }
+    Write-Output "  layout now: $(Get-Layout $a)"
+    Check 'D: keeps its offset and has shrunk' ($afterD -and $afterD.Size -lt $d.Size) $afterD.Size
+    Check 'D: shrank by what Linux and the installer need' ([int64]$d.Size - [int64]$afterD.Size -eq ([int64]6GB + [int64]4GB)) ([int64]$d.Size - [int64]$afterD.Size)
+    Check 'the installer sits straight after D:' ([int64]$installer.Partition.Offset -eq [int64]$afterD.Offset + [int64]$afterD.Size) ''
+    Check 'space for Linux is left after the installer' ((Get-DiskGaps (Get-Disk -Number $a) @(Storage\Get-Partition -DiskNumber $a) | Where-Object { [int64]$_.Offset -eq [int64]$installer.Partition.Offset + [int64]$installer.Partition.Size }).Size -ge 6GB) ''
+    Check 'data on D: survived the shrink' ((Get-TestHash $dLetter) -eq $dHash) ''
+    Check 'the partition after it did not move' ((Storage\Get-Partition -DiskNumber $a | Where-Object { [int64]$_.Offset -eq [int64]$e.Offset }).Size -eq $e.Size) ''
+    Check 'the installer holds the real files' (Test-Path "$($installer.Letter):\casper\filesystem.squashfs") ''
+    Check 'and the hidden folder a live system needs' (Test-Path "$($installer.Letter):\.disk\info") ''
+    Check 'state says where it went' ($state.TargetLetter -eq $dLetter -and $state.DiskGuid -eq $vdiskA.Guid -and [int64]$state.TargetOffset -eq [int64]$d.Offset -and $state.OnWindowsDisk -eq $true -and $state.WindowsShrunk -eq $true) ($state | ConvertTo-Json -Compress)
+    Check 'status is ready' ((Get-InstallStatus) -eq 'ready') (Get-InstallStatus)
+    Check 'Linux not thought installed' (-not (Test-LinuxInstalled $state)) ''
+    Write-Output "  alongside finds it: $($state.AlongsideOk)"
+    $steps = Get-Steps (Get-Distro 'ubuntu' '') 6 $state
+    Write-Output ($steps.Steps -join "`n  ")
+    Invoke-Cleanup
+    Check 'undo: the layout is back exactly' ((Get-Layout $a) -eq $beforeA) "$(Get-Layout $a) vs $beforeA"
+    Check 'undo: data on D: survived' ((Get-TestHash $dLetter) -eq $dHash) ''
+    Check 'undo: data on the drive after it survived' ((Get-TestHash $eLetter) -eq $eHash) ''
+    Check 'undo: status is none' ((Get-InstallStatus) -eq 'none') (Get-InstallStatus)
+
+    Step 'A2: same disk, second volume, prepared system, undo'
+    Reset-Run
+    Invoke-Install 'elementary' $iso 6 $target ''
+    $labels = (@(Get-HopPartitions).Label | Sort-Object) -join ','
+    Check 'all three partitions are found by label' ($labels -eq "$InstallerLabel,$BootLabel,$RootLabel") $labels
+    Check 'the Linux partitions have no letter' (@(Get-HopPartitions | Where-Object { $_.Label -ne $InstallerLabel -and $_.Letter }).Count -eq 0) ''
+    Invoke-Cleanup
+    Check 'undo: layout is back' ((Get-Layout $a) -eq $beforeA) (Get-Layout $a)
+    Check 'undo: data survived' ((Get-TestHash $dLetter) -eq $dHash) ''
+
+    Step 'A3: Linux installed: installer goes, its space goes to D:, Linux stays'
+    Reset-Run
+    Invoke-Install 'elementary' $iso 6 $target ''
+    $shrunk = Storage\Get-Partition -DiskNumber $a | Where-Object { [int64]$_.Offset -eq [int64]$d.Offset }
+    $root_ = @(Get-HopPartitions) | Where-Object Label -eq $RootLabel
+    Invoke-Cleanup -InstallerOnly
+    $after = Storage\Get-Partition -DiskNumber $a | Where-Object { [int64]$_.Offset -eq [int64]$d.Offset }
+    Check 'D: gets the installer''s space' ([int64]$after.Size -eq [int64]$shrunk.Size + 4GB) "$($after.Size) vs $($shrunk.Size)"
+    Check 'the Linux partition is still there' ($null -ne (Storage\Get-Partition -DiskNumber $a | Where-Object { [int64]$_.Offset -eq [int64]$root_.Partition.Offset })) ''
+    foreach ($left in @(Get-HopPartitions)) { Remove-PartitionAt $left.Partition.DiskNumber $left.Partition.Offset }
+    Resize-Partition -DiskNumber $a -PartitionNumber $after.PartitionNumber -Size ([int64]$d.Size)
+    Check 'put back for the next run' ((Get-Layout $a) -eq $beforeA) (Get-Layout $a)
+
+    Step 'A4: pretend C:, old state file with none of the new fields, undo finds C:'
+    Reset-Run
+    $beforeOld = Get-Layout $a
+    $free = Get-DiskGaps (Get-Disk -Number $a) @(Storage\Get-Partition -DiskNumber $a)
+    Write-Output "  free on the Windows disk: $(@($free).Count) gaps"
+    Invoke-Install 'ubuntu' $iso 1 '' ''
+    $state = Read-State
+    $old = [pscustomobject]@{}
+    foreach ($name in 'Distro', 'DistroId', 'Strategy', 'LinuxGB', 'DiskNumber', 'WindowsShrunk', 'Partitions', 'BootNumber', 'IsoPath', 'Created', 'Copied', 'RestartedAt', 'LoadersBefore', 'LinuxBefore', 'FastStartupWasOn', 'BitLockerPaused', 'InstallerNextToWindows') {
+        $old | Add-Member -NotePropertyName $name -NotePropertyValue $state.$name
+    }
+    Save-State $old
+    Check 'the old file reads as ready' ((Get-InstallStatus) -eq 'ready') (Get-InstallStatus)
+    Check 'steps read as they did' (((Get-Steps (Get-Distro 'ubuntu' '') 1 (Read-State)).Steps -join ' ') -like '*alongside*') ''
+    Invoke-Cleanup
+    Check 'undo gives C: its space back' ((Get-Layout $a) -eq $beforeOld) "$(Get-Layout $a) vs $beforeOld"
+
+    Step 'B: second disk, free space after a volume, nothing shrinks'
+    Reset-Run
+    $beforeB = Get-Layout $b
+    $target = "volume:$($vdiskB.Guid):$([int64]$x.Offset)"
+    $vhdWindowsLayout = Get-Layout $a
+    Invoke-Install 'ubuntu' $iso 6 $target ''
+    $state = Read-State
+    $afterX = Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$x.Offset }
+    Check 'X: did not shrink' ([int64]$afterX.Size -eq [int64]$x.Size) $afterX.Size
+    Check 'the Windows disk was not touched' ((Get-Layout $a) -eq $vhdWindowsLayout) ''
+    Check 'state says second disk' ($state.OnWindowsDisk -eq $false -and $state.DiskGuid -eq $vdiskB.Guid -and $state.WindowsShrunk -eq $false) ($state | ConvertTo-Json -Compress)
+    Check 'the installer is on the second disk' ((@(Get-HopPartitions) | Where-Object Label -eq $InstallerLabel).Partition.DiskNumber -eq $b) ''
+    Check 'status is ready' ((Get-InstallStatus) -eq 'ready') (Get-InstallStatus)
+    $text = (Get-StateSteps | ForEach-Object { $_.Steps + $_.Notes }) -join "`n  "
+    Write-Output "  steps:`n  $text"
+    Check 'steps go to manual and name the disk' ($text -like '*Manual installation*Msft Virtual Disk*' -and $text -notlike '*Choose **Install*') ''
+
+    Step 'B2: the disk number changes between restarts'
+    Dismount-VDisk 'second'
+    Check 'with the disk gone, the setup is a leftover' ((Get-InstallStatus) -eq 'leftover') (Get-InstallStatus)
+    Check 'and hop can tell the disk is missing' ($null -eq (Get-StateDisk (Read-State))) ''
+    Dismount-VDisk 'mbr'
+    Mount-VDisk 'second'
+    Mount-VDisk 'mbr'
+    Start-Sleep -Seconds 3
+    $moved = (Get-RealVDisk $script:VDisks['second']).Number
+    Write-Output "  second disk was $b, now $moved"
+    Check 'it really moved' ($moved -ne $b) $moved
+    Check 'found by GUID afterwards' ((Get-StateDisk (Read-State)) -eq $moved) ''
+    Check 'status is ready again' ((Get-InstallStatus) -eq 'ready') (Get-InstallStatus)
+    Invoke-Cleanup
+    Check 'undo works on the new number' ((Get-Layout $moved) -eq $beforeB) "$(Get-Layout $moved) vs $beforeB"
+    Check 'data on X: survived' ((Get-TestHash $xLetter) -eq $xHash) ''
+    $b = $moved
+
+    Step 'B3: second disk, must shrink X:, undo gives it back'
+    Reset-Run
+    # Use up the free space with a volume, so the only way is to shrink X:.
+    $x = Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$x.Offset }
+    $tail = Get-TailFree $x
+    $filler = New-Partition -DiskNumber $b -Offset ([int64]$x.Offset + [int64]$x.Size) -Size ([int64]([math]::Floor($tail / 1MB) * 1MB))
+    $withFiller = Get-Layout $b
+    $target = "volume:$($vdiskB.Guid):$([int64]$x.Offset)"
+    Invoke-Install 'ubuntu' $iso 6 $target ''
+    $afterX = Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$x.Offset }
+    Check 'X: shrank by exactly what was needed' ([int64]$x.Size - [int64]$afterX.Size -eq [int64]10GB) ([int64]$x.Size - [int64]$afterX.Size)
+    Check 'data on X: survived the shrink' ((Get-TestHash $xLetter) -eq $xHash) ''
+    Check 'Linux disk reads as second disk' ((Read-State).OnWindowsDisk -eq $false) ''
+    Invoke-Cleanup
+    Check 'undo: X: is back to its size and the filler untouched' ((Get-Layout $b) -eq $withFiller) "$(Get-Layout $b) vs $withFiller"
+    Check 'undo: data survived' ((Get-TestHash $xLetter) -eq $xHash) ''
+
+    Step 'B4: crash: state file lost, clean-up works from the labels on the second disk'
+    Reset-Run
+    Invoke-Install 'elementary' $iso 6 $target ''
+    Remove-Item -LiteralPath $StatePath -Force
+    Check 'status is leftover from labels alone' ((Get-InstallStatus) -eq 'leftover') (Get-InstallStatus)
+    Invoke-Cleanup
+    Check 'undo: X: gets its space back by neighbour' ((Get-Layout $b) -eq $withFiller) "$(Get-Layout $b) vs $withFiller"
+    Check 'undo: data survived' ((Get-TestHash $xLetter) -eq $xHash) ''
+    Check 'status is none' ((Get-InstallStatus) -eq 'none') (Get-InstallStatus)
+
+    Step 'B5: a failure half way puts everything back'
+    Reset-Run
+    $copyInstaller = ${function:Copy-Installer}
+    function Copy-Installer($Iso, [string]$Target) { throw 'Simulated failure while copying.' }
+    $threw = $false
+    try { Invoke-Install 'ubuntu' $iso 6 $target '' } catch { $threw = $_.Exception.Message -like '*Simulated*' }
+    Check 'the failure reached the caller' $threw ''
+    Check 'undo: layout is back' ((Get-Layout $b) -eq $withFiller) (Get-Layout $b)
+    Check 'state is gone' (-not (Test-Path $StatePath)) ''
+    ${function:Copy-Installer} = $copyInstaller
+
+    Step 'B6: a partition hop recorded but never formatted is found on the second disk'
+    Remove-Partition -DiskNumber $b -PartitionNumber $filler.PartitionNumber -Confirm:$false
+    Reset-Run
+    $raw = New-Partition -DiskNumber $b -Offset ([int64]$x.Offset + [int64]$x.Size + 1GB) -Size ([int64]2GB)
+    $half = [pscustomobject]@{
+        Partitions = @([pscustomobject]@{ Role = 'installer'; Offset = [int64]$raw.Offset; Size = [int64]$raw.Size })
+        DiskGuid = $vdiskB.Guid; TargetKind = 'volume'; TargetOffset = [int64]$x.Offset; WindowsShrunk = $false; OnWindowsDisk = $false; LoadersBefore = @(); LinuxBefore = @()
+    }
+    Save-State $half
+    Check 'it is recognised' (@(Get-RecordedPartitions (Read-State) @('installer')).Count -eq 1) ''
+    Invoke-Cleanup
+    Check 'and removed' ($null -eq (Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$raw.Offset })) ''
+
+    Step 'B7: free space with no volume to grow, prepared system'
+    Reset-Run
+    $gapRow = @(Get-DriveTargets) | Where-Object { $_.Kind -eq 'gap' -and $_.Id -like "gap:$($vdiskB.Guid)*" } | Sort-Object UsableGB -Descending | Select-Object -First 1
+    Check 'the second disk''s free space is offered' ($null -ne $gapRow) ''
+    $beforeGap = Get-Layout $b
+    Invoke-Install 'elementary' $iso 6 $gapRow.Id ''
+    $state = Read-State
+    Check 'it is recorded as free space' ($state.TargetKind -eq 'gap' -and $state.InstallerNextToWindows -eq $false) ($state | ConvertTo-Json -Compress)
+    Write-Output "  layout: $(Get-Layout $b)"
+    $linuxEnd = (@(Storage\Get-Partition -DiskNumber $b) | Measure-Object -Property Offset -Maximum).Maximum
+    $boot = @(Get-HopPartitions) | Where-Object Label -eq $BootLabel
+    $inst = @(Get-HopPartitions) | Where-Object Label -eq $InstallerLabel
+    Check 'LINUXBOOT is on the second disk' ($boot.Partition.DiskNumber -eq $b) ''
+    Check 'the installer sits straight before it' ([int64]$inst.Partition.Offset + [int64]$inst.Partition.Size -eq [int64]$boot.Partition.Offset) ''
+    Invoke-Cleanup
+    Check 'undo: the disk is as it was' ((Get-Layout $b) -eq $beforeGap) "$(Get-Layout $b) vs $beforeGap"
+    Check 'nothing grew' ((Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$x.Offset }).Size -eq $x.Size) ''
+
+    Step 'B8: someone''s own drive that happens to be called LINUXBOOT is safe'
+    Reset-Run
+    $mine = New-Volume $b 2GB $BootLabel
+    Add-TestFiles ([string]$mine.DriveLetter) 1 8
+    Check 'not counted as hop''s' (@(Get-HopPartitions | Where-Object { [int64]$_.Partition.Offset -eq [int64]$mine.Offset }).Count -eq 0) ''
+    Invoke-Cleanup
+    Check 'not removed by a clean-up' ($null -ne (Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$mine.Offset })) ''
+    Remove-Partition -DiskNumber $b -PartitionNumber $mine.PartitionNumber -Confirm:$false
+
+    Step 'C: Make room on a data drive, for real and with a limit'
+    Reset-Run
+    & fsutil.exe usn createjournal m=0x1000000 a=0x100000 "$dLetter`:" | Out-Null
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    $result = Start-MakeRoom $dLetter
+    $clock.Stop()
+    Write-Output "  result $result in $([int]$clock.Elapsed.TotalSeconds) seconds, with a limit of $DefragLimitSeconds"
+    Check 'no restart was needed' ($result -eq 'done') $result
+    Check 'stayed inside its limit' ($clock.Elapsed.TotalSeconds -lt $DefragLimitSeconds + 60) $clock.Elapsed.TotalSeconds
+    Check 'the phase is ready' ((Read-RoomState).Phase -eq 'ready') ''
+    Check 'data survived' ((Get-TestHash $dLetter) -eq $dHash) ''
+    & fsutil.exe usn queryjournal "$dLetter`:" 2>&1 | Out-Null
+    Check 'the journal is gone while room is being made' ($LASTEXITCODE -ne 0) $LASTEXITCODE
+    Restore-RoomSettings
+    & fsutil.exe usn queryjournal "$dLetter`:" 2>&1 | Out-Null
+    Check 'and comes back afterwards' ($LASTEXITCODE -eq 0) $LASTEXITCODE
+    Check 'the file is gone' (-not (Test-Path $RoomPath)) ''
+    Check 'the defrag limit really stops it' ((Measure-Command { Invoke-Defrag $dLetter }).TotalSeconds -lt $DefragLimitSeconds + 45) ''
+
+    Step 'D: Expand a drive into its free space'
+    $tailBefore = Get-TailFree (Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$x.Offset })
+    Expand-Windows "volume:$($vdiskB.Guid):$([int64]$x.Offset)"
+    $grown = Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$x.Offset }
+    Check 'X: grew into it' ([int64]$grown.Size -gt [int64]$x.Size) "$($grown.Size), tail was $tailBefore"
+    Check 'data survived' ((Get-TestHash $xLetter) -eq $xHash) ''
+} catch {
+    [void]$script:Failures.Add("Stopped: $($_.Exception.Message) at $($_.InvocationInfo.ScriptName):$($_.InvocationInfo.ScriptLineNumber)")
+    Write-Output "STOPPED: $($_.Exception.Message)"
+    Write-Output $_.ScriptStackTrace
+} finally {
+    $script:Pretend = $false
+    foreach ($name in @($script:VDisks.Keys)) { try { Dismount-VDisk $name } catch { Write-Output "Could not detach $name" } }
+    Write-Output ''
+    Write-Output "=== $script:Passes passed, $($script:Failures.Count) failed, in $([int]((Get-Date) - $started).TotalMinutes) minutes"
+    foreach ($failure in $script:Failures) { Write-Output "  FAILED: $failure" }
+    Stop-Transcript | Out-Null
+}
+if ($script:Failures.Count) { exit 1 }
