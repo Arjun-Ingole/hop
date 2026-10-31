@@ -76,6 +76,16 @@ each is casper 1.498, plus `+zorin2` on Zorin OS, where the manifest says.
 **The installer really can't use the space.** On Ubuntu with `writable` there, an autoinstall with `layout: {name: direct, mode:
 use_gap}` chose the 1 MiB left and failed with `No space left on device`.
 
+**With the fix, the same autoinstall finished, with Secure Boot on.** It made a 71.9 GB ext4 partition straight after
+`HOPINSTALL`, reused the EFI partition, and the NTFS and `HOPINSTALL` partitions came through byte for byte, after the
+install and after the restart. The kernel's line had `nopersistent` in the live system, and not in the installed one.
+
+**The restart isn't proven.** The firmware started Ubuntu's `shimx64.efi`, and its kernel started from the new partition
+with Secure Boot on. Then both consoles stopped at `Starting initrd-switch-root.service`, with no `Welcome to Ubuntu`,
+no login and no marker from inside the system, until the test's limit of 360 seconds. An erase install in the same
+test, with Secure Boot off, got past this to a login. The run doesn't say whether Secure Boot, the shared 100 MB
+EFI partition or something else made the difference.
+
 Fedora, Ultramarine, CachyOS and Arch weren't booted for this. Their initrds weren't read either, since none of them uses casper.
 
 ## Testing for real
