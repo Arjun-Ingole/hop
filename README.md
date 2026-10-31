@@ -13,24 +13,28 @@
 
 ## What it is
 
-hop is a single Windows app that installs Linux alongside Windows. Pick a system, drag to choose how
-much space it gets, and click Install. There's no USB stick to find and nothing to install first.
+hop is a single Windows app that installs Linux alongside Windows. Pick a system, choose a drive, drag
+to choose how much space it gets, and click Install. There's no USB stick to find and nothing to install
+first.
 
 ## What it does
 
 - **Downloads from official sources.** It gets the ISO from the project's own server and verifies its
   checksum where the project publishes one. You can also use an ISO you already have.
 - **Makes room safely.** It checks your PC first, and nothing on the disk changes until those checks pass.
+- **Goes where there's room.** Shrink C: or another drive, use free space, or use a second disk inside the
+  PC. If C: is full, hop suggests a drive that isn't, and the download can go elsewhere too.
 - **Tells you what to click.** It lists the exact choices to make in the Linux installer.
 - **Gets you unstuck.** If the PC goes back to Windows, reopening hop explains why and can restart into the BIOS.
-- **Cleans up after itself.** Undo gives the space back to Windows, and it can also remove another Linux
-  already on the drive.
+- **Cleans up after itself.** Undo gives the space back to the drive it came from, and it can also remove
+  another Linux already on the drive.
 
 **Systems:** elementary OS, Ubuntu and its flavours (Budgie, Xubuntu, Lubuntu, Cinnamon, Unity, Edubuntu,
 Studio), Linux Mint and Pop!_OS. Other Ubuntu-based ISOs should work too. Kubuntu, Fedora and Arch aren't
 supported.
 
-**Needs:** Windows 10 (1803 or newer) or 11, on a UEFI PC with a GPT disk, which is nearly every PC sold with them.
+**Needs:** Windows 10 (1803 or newer) or 11, on a UEFI PC with a GPT disk, which is nearly every PC sold with
+them. Linux has to go on a disk inside the PC, not a USB drive.
 
 ## How it works
 
@@ -43,7 +47,7 @@ After    [ EFI ][ C: Windows       ][ Installer ][ Linux  ][ Recovery ]
 ```
 
 1. **Download and check** the ISO, and confirm it's a system hop can install.
-2. **Make room** after C:, using free space first and shrinking C: only if needed.
+2. **Make room** after the drive you chose, using free space first and shrinking the drive only if needed.
 3. **Copy** the ISO's files onto a small FAT32 partition, and check each one.
 4. **Add a startup entry** with the ISO's signed boot loader, for the next restart only.
 5. **Restart.** The Linux installer opens and installs into the space hop made.

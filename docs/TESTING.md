@@ -7,6 +7,17 @@ Every pull request builds the exe, checks the scripts parse, lints them and runs
 parsers, the startup entry's bytes. They mock the disk and firmware, so **they can't tell you hop
 really boots**. A weekly job also checks every download in the catalog still resolves.
 
+## Real partitions, without a real PC
+
+`tests/Probe-VirtualDisks.ps1` runs the real engine on real partitions on virtual disks: shrinking, making
+partitions, formatting, copying, undo, disk numbers changing, recovering with no state file, Make room. It
+checks offsets and that files survive. It changes disks, so run it only on a disposable Windows machine, such
+as a GitHub Actions runner, as administrator. It stands in for the firmware and the EFI partition, so **it
+can't tell you anything about booting either.**
+
+hop refuses virtual disks. The script checks that it does, then defines its own `Get-Disk` that reports its
+disks as NVMe. The app has no way to do this.
+
 ## Testing for real
 
 Use a virtual machine, not a PC you care about. It has to use UEFI:
@@ -46,6 +57,16 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] Linux Mint's installer works when run from the installer partition
 - [ ] Plug in a USB stick with an Ubuntu ISO written to it: warned before starting, refused at restart
 - [ ] Click Cancel as "Making room" begins: either it cancels with the disk untouched, or the install carries on
+
+**Other drives**
+
+- [ ] D: on the Windows disk, with C: too full: hop suggests D:, and a `freespace` system installs through to a working Linux
+- [ ] Second disk with free space: `freespace` and `prepared` systems through to a working Linux, with Windows still starting
+- [ ] Second disk with Fast Boot on: the installer starts, or the grub> prompt appears and a restart goes back to Windows
+- [ ] Second disk with the Ubuntu boot loader on it: does the firmware start it? Mint's goes on Windows' EFI partition: does that start?
+- [ ] Swap the disks' SATA ports after preparing: the setup is still recognised
+- [ ] A locked BitLocker data drive: refused, with how to unlock it
+- [ ] Undo with each: the space goes back to the right drive
 
 **Undo**
 

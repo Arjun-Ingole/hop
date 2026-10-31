@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Choose where Linux goes.** hop can shrink another drive such as D:, use free space on any disk inside
+  the PC, or use a second disk. C: is still the default when it has room, and when it hasn't, hop suggests
+  a drive that has.
+- **hop says why it can't use a drive.** USB drives, virtual disks, Storage Spaces, RAID, MBR and dynamic
+  disks, locked BitLocker drives, drives that aren't NTFS, and disks holding another system are each
+  refused with the reason. A problem with C: only stops hop if no other drive will do.
+- **The download goes where there's room.** A full C: no longer blocks it, and you can choose the drive.
+
+### Changed
+
+- Make room works on the chosen drive. Other drives usually need no restart.
+- The steps for the Linux installer now depend on where Linux is going. They use the manual option if the
+  easy one would pick different free space.
+- Undo gives space back to the drive it came from, and clean-up finds hop's partitions on any internal disk.
+
 ## 0.2.0 - 2026-10-31
 
 ### Fixed
