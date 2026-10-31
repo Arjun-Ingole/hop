@@ -32,6 +32,7 @@ namespace Hop
         public string DiskName;
         public int DiskGB;
         public string[] Points;         // what the warning says
+        public string[] StopsStarting;  // other systems that start from the EFI partition on this disk
     }
 
     /// <summary>One place Linux could go, or a drive it can't go on and why.</summary>
@@ -334,6 +335,7 @@ namespace Hop
                 DiskName = Get<string>(plan, "DiskName"),
                 DiskGB = Get<int>(plan, "DiskGB"),
                 Points = Get<string[]>(plan, "Points"),
+                StopsStarting = Get<string[]>(plan, "StopsStarting"),
             };
         }
 

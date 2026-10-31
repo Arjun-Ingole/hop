@@ -471,6 +471,9 @@ namespace Hop
 
         string DiskOf(FullDiskPlan plan) => $"{plan.DiskName} ({plan.DiskGB} GB)";
 
+        string StopsNote(FullDiskPlan plan) => plan.StopsStarting != null && plan.StopsStarting.Length > 0
+            ? $" {string.Join(", ", plan.StopsStarting)} will stop starting too." : "";
+
         void ShowReplaceWarning(FullDiskPlan plan)
         {
             var system = Current;
@@ -478,7 +481,7 @@ namespace Hop
             Arrange(new[]
             {
                 new[] { Run.Gray("Replace"), Run.Black("Windows"), Run.Gray("with"), new Run { Text = system.Name, Color = Ink, Logo = LogoFor(selected) } },
-            }, $"Windows and every file on {DiskOf(plan)} will be erased. They can't be recovered.", Danger, steps, 24);
+            }, $"Windows and every file on {DiskOf(plan)} will be erased. They can't be recovered.{StopsNote(plan)}", Danger, steps, 24);
             Footer("Back", ShowChoose, "Continue", () => ShowReplaceConfirm(plan));
         }
 
@@ -488,7 +491,7 @@ namespace Hop
             const string word = "ERASE";
             var system = Current;
             Arrange(new[] { new[] { Run.Gray("Type"), Run.Black(word), Run.Gray("to confirm") } },
-                $"hop will set up {system.Name} to erase Windows and every file on {DiskOf(plan)}. They can't be recovered.", Danger, eraseWord, 28);
+                $"hop will set up {system.Name} to erase Windows and every file on {DiskOf(plan)}. They can't be recovered.{StopsNote(plan)}", Danger, eraseWord, 28);
             eraseWord.Font = Theme.Font(15);
             eraseWord.Text = "";
             onEraseWord = () => primary.Enabled = eraseWord.Text == word;
