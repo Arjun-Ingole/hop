@@ -53,6 +53,11 @@ function Get-Plan([int]$LinuxGB, [int]$InstallerGB, [string]$Target) {
     $space = Get-SpaceInfo $Target
     $drive = if ($space.Name) { $space.Name } else { 'C:' }
     $maxLinux = $space.UsableGB - $InstallerGB
+    # Replacing Windows only needs the installer: Linux gets the disk once it's been erased.
+    if ($LinuxGB -eq 0 -and $maxLinux -lt 0) {
+        if ($space.Kind -eq 'gap') { throw "That free space is too small for the installer. It needs $(-$maxLinux) GB more. Choose another drive." }
+        throw "Windows can't release enough space from $drive for the installer. It needs $(-$maxLinux) GB more. If $drive is nearly full, delete some files. If it has plenty free, $ShrinkAdvice"
+    }
     if ($LinuxGB -gt $maxLinux) {
         if ($space.Kind -eq 'gap') { throw "That free space is too small for $LinuxGB GB of Linux and its installer. Lower the Linux size to $maxLinux GB or less, or choose another drive." }
         if ($maxLinux -lt $MinLinuxGB) { throw "Windows can't release enough space from $drive. It needs $($MinLinuxGB - $maxLinux) GB more. If $drive is nearly full, delete some files. If it has plenty free, $ShrinkAdvice" }

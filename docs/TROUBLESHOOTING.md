@@ -1,5 +1,17 @@
 # Troubleshooting
 
+## Replacing Windows
+
+**Can't replace Windows, not enough memory.** The installer has to copy itself into memory before it can
+erase the disk it started from. hop checks this before anything changes. Install next to Windows instead,
+or add memory.
+
+**The Linux installer says the disk is in use, or doesn't offer to erase it.** Don't force it. Turn the PC off
+and on: Windows is still there, because nothing has been erased, and **Undo changes** in hop still works.
+
+**You came back to Windows without erasing.** Nothing has changed. hop treats it like any other install
+that came back: try again, or undo.
+
 If you need more help, open an issue and paste the report from **Copy a bug report**. Logs are in
 `C:\ProgramData\hop\logs`.
 

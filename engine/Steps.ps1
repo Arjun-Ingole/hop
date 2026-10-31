@@ -52,6 +52,7 @@ function Get-ReturnedHelp {
 # and Notes underneath; text between ** is shown in a heavier weight. $Place is the
 # saved state, which says where Linux is going; without it, that's next to C:.
 function Get-Steps($Distro, [int]$LinuxGB, $Place) {
+    if ($Place.FullDisk) { return Get-FullDiskSteps $Distro $Place }
     $otherDisk = $Place.OnWindowsDisk -eq $false
     if ($Distro.Steps) {
         $steps = @($Distro.Steps | ForEach-Object { $_ -replace '\{GB\}', $LinuxGB })

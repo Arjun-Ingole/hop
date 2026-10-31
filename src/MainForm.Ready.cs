@@ -27,7 +27,9 @@ namespace Hop
             Arrange(new[]
             {
                 new[] { new Run { Text = prepared.Name, Color = Ink, Logo = Logo(prepared.Logo) }, Run.Gray("is ready.") },
-            }, "Restart to open its installer. These are the choices to make there.", Secondary, steps, installSteps.Notes.Length > 1 ? 24 : 40);
+            }, installSteps.FullDisk
+                ? "Nothing has been erased yet. Restart to open its installer, which erases the disk when you choose that. Until then, Undo changes puts everything back."
+                : "Restart to open its installer. These are the choices to make there.", Secondary, steps, installSteps.Notes.Length > 1 ? 24 : 40);
             Footer("Undo changes", () => ShowUndo(() => _ = ShowReadyAsync()), "Restart now", () => _ = RestartAsync(),
                 "Later", Close, Secondary);
         }

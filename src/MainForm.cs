@@ -37,6 +37,7 @@ namespace Hop
         readonly StepsView steps = new StepsView();
         readonly BusyLine busyLine = new BusyLine();
         readonly TextBox log = new TextBox();
+        readonly TextBox eraseWord = new TextBox();
         readonly OptionRow removeAll, removeInstaller;
         readonly TextLink footerLink = new TextLink();
         readonly PillButton primary = new PillButton("", true), secondary = new PillButton("", false);
@@ -53,8 +54,9 @@ namespace Hop
 
         Distro prepared;          // what the ready screen is about
         bool busy, installing, working, cancelling, showingLog;
+        bool fullDisk;            // set only by typing the word on the last screen of replacing Windows
         string shownStatus;
-        Action onPrimary, onSecondary, onLink;
+        Action onPrimary, onSecondary, onLink, onEraseWord;
 
         public MainForm()
         {
@@ -87,6 +89,11 @@ namespace Hop
             log.BackColor = Fill;
             log.ForeColor = Secondary;
             log.Font = new System.Drawing.Font("Consolas", 8.5f);
+            eraseWord.Width = S(240);
+            eraseWord.BorderStyle = BorderStyle.None;
+            eraseWord.BackColor = Fill;
+            eraseWord.ForeColor = Ink;
+            eraseWord.TextChanged += (s, e) => onEraseWord?.Invoke();
             removeAll = new OptionRow("Linux isn't installed yet",
                 "Remove everything hop made and give the space back.", width);
             removeInstaller = new OptionRow("Linux is installed",
@@ -107,7 +114,7 @@ namespace Hop
 
             Controls.AddRange(new Control[]
             {
-                minimize, close, sentence, note, drive, steps, log, busyLine, removeAll, removeInstaller, footerLink, secondary, primary,
+                minimize, close, sentence, note, drive, steps, log, eraseWord, busyLine, removeAll, removeInstaller, footerLink, secondary, primary,
             });
             poll.Tick += (s, e) =>
             {
@@ -164,7 +171,8 @@ namespace Hop
             note.Location = new Point(S(Gutter), sentence.Top + S(46 * lines.Length + 18));
             note.Visible = !string.IsNullOrEmpty(noteText);
 
-            foreach (var c in new Control[] { drive, steps, log, busyLine, removeAll, removeInstaller }) c.Visible = false;
+            foreach (var c in new Control[] { drive, steps, log, eraseWord, busyLine, removeAll, removeInstaller }) c.Visible = false;
+            onEraseWord = null;
             int top = (note.Visible ? note.Bottom : sentence.Bottom) + S(bodyGap);
             if (body == drive || body == log)
             {
@@ -179,6 +187,7 @@ namespace Hop
                 removeInstaller.Visible = true;
             }
             if (body == steps) steps.Location = new Point(S(Gutter), top);
+            if (body == eraseWord) eraseWord.Location = new Point(S(Gutter), top);
             if (body == busyLine) busyLine.Location = new Point(S(Gutter), top);
             if (body != null) body.Visible = true;
             drive.Left = S(Gutter);

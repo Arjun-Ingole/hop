@@ -289,6 +289,31 @@ try {
     Check 'undo: data on the drive after it survived' ((Get-TestHash $eLetter) -eq $eHash) ''
     Check 'undo: status is none' ((Get-InstallStatus) -eq 'none') (Get-InstallStatus)
 
+    Step 'A1: replacing Windows: only the installer, a menu that asks for memory, undo'
+    Reset-Run
+    function Get-WindowsEsp { Storage\Get-Partition -DiskNumber $a | Where-Object GptType -eq $EspType | Select-Object -First 1 }
+    Invoke-Install 'ubuntu' $iso 60 $target '' -FullDisk
+    $state = Read-State
+    $afterD = Storage\Get-Partition -DiskNumber $a | Where-Object { [int64]$_.Offset -eq [int64]$d.Offset }
+    $installer = @(Get-HopPartitions) | Where-Object { $_.Label -eq $InstallerLabel }
+    Write-Output "  layout now: $(Get-Layout $a)"
+    Check 'D: shrank by the installer and no more' ([int64]$d.Size - [int64]$afterD.Size -eq [int64]4GB) ([int64]$d.Size - [int64]$afterD.Size)
+    Check 'the state says what this is' ($state.FullDisk -eq $true -and $state.LinuxGB -eq 0) ($state | ConvertTo-Json -Compress)
+    Check 'only the installer is hop''s' (@(Get-HopPartitions).Count -eq 1) @(Get-HopPartitions).Count
+    Check 'the menu on the partition asks for the copy to memory' ((Get-Content "$($installer.Letter):\boot\grub\grub.cfg" -Raw) -match '/casper/vmlinuz toram\s+--- quiet') (Get-Content "$($installer.Letter):\boot\grub\grub.cfg" -Raw)
+    Check 'the steps say to erase, and name the disk' (((Get-StateSteps).Steps -join ' ') -like "*Erase disk and install*$($state.DiskName) ($($state.DiskGB) GB)*") ((Get-StateSteps).Steps -join ' ')
+    Check 'status is ready, like any other' ((Get-InstallStatus) -eq 'ready') (Get-InstallStatus)
+    Invoke-Cleanup
+    Check 'undo: the layout is back exactly' ((Get-Layout $a) -eq $beforeA) "$(Get-Layout $a) vs $beforeA"
+    Check 'undo: data on D: survived' ((Get-TestHash $dLetter) -eq $dHash) ''
+    Check 'undo: status is none' ((Get-InstallStatus) -eq 'none') (Get-InstallStatus)
+    Reset-Run
+    $refused = $false
+    try { Invoke-Install 'elementary' $iso 60 $target '' -FullDisk } catch { $refused = $_.Exception.Message -like "*hasn't shown*" }
+    Check 'a system not shown to work is refused' $refused ''
+    Check 'and the disk was not touched' ((Get-Layout $a) -eq $beforeA) (Get-Layout $a)
+    function Get-WindowsEsp { throw 'No EFI partition in the probe.' }
+
     Step 'A2: same disk, second volume, prepared system, undo'
     Reset-Run
     Invoke-Install 'elementary' $iso 6 $target ''
