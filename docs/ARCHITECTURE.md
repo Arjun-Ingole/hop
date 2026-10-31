@@ -122,8 +122,34 @@ Other systems differ in steps 2, 3 and 5. The catalog holds what differs (`Live`
 | Arch Linux | systemd-boot, unsigned | See below | `archisolabel=HOPINSTALL` |
 
 Fedora's and Ultramarine's installer, Anaconda, protects the whole disk behind `/run/initramfs/live`,
-and so refuses the disk holding the installer partition. Its log says so, and after
-`umount -l /run/initramfs/live` it no longer does, which is why their steps have that command.
+and so refuses the disk holding the installer partition. So `Get-DracutBoot` adds kernel arguments that
+have systemd run `umount -l /run/initramfs/live` as it starts:
+
+| Argument | Why |
+| --- | --- |
+| `"systemd.run=..."` | The command. Quoted so GRUB keeps it as one argument |
+| `systemd.run_success_action=none`, `systemd.run_failure_action=none` | Otherwise the PC turns off once it has run |
+| `systemd.unit=graphical.target` | `systemd.run` points the default target at itself, which would mean no desktop |
+| `systemd.wants=kernel-command-line.service` | Naming a target drops the command, so this adds it back |
+
+The alternatives were worse. `rd.live.ram=1` doesn't help: it copies 2.5 GB to memory and leaves the
+partition mounted. [Dracut never unmounts it](https://github.com/dracut-ng/dracut-ng/blob/main/modules.d/70dmsquash-live/dmsquash-live-root.sh),
+and a test showed the same. A second initrd would have to be built on Windows. The live system still reads
+its image from the partition after this, so the partition stays busy, read-only, and must stay in place.
+
+**The EFI partition has to have room, because Anaconda doesn't check.** It warns about anything under 500 MB
+but carries on, and reuses Windows' partition. It adds 21 MB. With too little room it still says `Complete!`
+and exits 0, but leaves no `shimx64.efi`, so the PC starts hop's entry and the live system again. So
+`EspLinuxMB` adds 25 MB to what `Assert-EspRoom` asks for before the disk changes.
+
+What was tested, in QEMU with a 100 MB EFI partition and no real Windows, November 2026: Fedora 44 and
+Ultramarine 44 installed into free space and started from the disk with Secure Boot on, and the NTFS and
+installer partitions came through byte for byte. Anaconda was driven by a kickstart using its default
+layout, which is 2 GB of ext4 `/boot` and btrfs for the rest. **The graphical installer itself wasn't
+clicked through, so "Share disk" wasn't run.** See [Testing](TESTING.md).
+
+Anaconda also renames the EFI partition's GPT name to `EFI System Partition`, and puts its entry first in the
+firmware's boot order. Neither changes the files Windows has there.
 
 The edits only touch the copy on the installer partition. Shim checks the signatures of programs, not of
 GRUB's config, so a changed menu still starts with Secure Boot on.
