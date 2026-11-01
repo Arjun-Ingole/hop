@@ -130,7 +130,7 @@ function Get-MakeRoomSteps([string]$Drive) {
         if (Test-EnoughMemoryWithoutPaging) { $steps += "Turns off the **paging file** on drive $room." }
         $steps += 'Restarts this PC, opens again, and moves what''s left out of the way.'
         $steps += 'Turns everything back on once Linux has its space, or when you close hop.'
-        return [pscustomobject]@{ Steps = $steps; Restart = $true; Notes = @('Your files aren''t touched. Save your work first, because this PC restarts straight away.') }
+        return [pscustomobject]@{ Steps = $steps; Restart = $true; Notes = @('Save your work first. Your files aren''t touched.') }
     }
     $steps = @("Clears the **change journal** on drive $room.")
     $restart = (Test-PagingFileOn $room) -and (Test-EnoughMemoryWithoutPaging)
@@ -141,7 +141,7 @@ function Get-MakeRoomSteps([string]$Drive) {
         $steps += 'Moves files out of the way, for up to 15 minutes.'
     }
     $steps += 'Turns everything back on once Linux has its space, or when you close hop.'
-    $note = if ($restart) { 'Your files aren''t touched. Save your work first, because this PC restarts straight away.' } else { 'Your files aren''t touched, and this PC doesn''t restart.' }
+    $note = if ($restart) { 'Save your work first. Your files aren''t touched.' } else { 'Your files aren''t touched, and this PC doesn''t restart.' }
     [pscustomobject]@{ Steps = $steps; Restart = $restart; Notes = @($note) }
 }
 
@@ -230,7 +230,7 @@ function Complete-MakeRoom {
 # It can run for a very long time. Whatever it moved before the limit still counts.
 function Invoke-Defrag([string]$Drive) {
     $room = Get-RoomDrive $Drive
-    Set-Status 'Moving files out of the way. This can take several minutes...'
+    Set-Status 'This can take several minutes. Whatever hop moves still counts, even if it stops early.'
     $process = Start-Process defrag.exe -ArgumentList "$room /X" -WindowStyle Hidden -PassThru
     $null = $process.Handle   # keeps ExitCode readable after the process exits
     try {

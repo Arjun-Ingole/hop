@@ -158,10 +158,10 @@ namespace Hop
                 noteText = $"hop's steps for {system.Name} are for the disk Windows is on, and it hasn't been tried on a second disk. Choose a drive on that disk, or another system.";
             else if (unmeasured)
                 noteText = $"hop couldn't work out how much room {target.Title.ToLowerInvariant()} can give up. {measureError} Choose another drive, or open hop again.";
+            else if (stuck)
+                noteText = StuckNote(better);
             else if (!enoughSpace && better != null)
                 noteText = $"{target.Title} doesn't have room for Linux. {better.Title} on {better.DiskName} has {(better.Estimated ? "about " : "")}{better.UsableGB} GB to spare.";
-            else if (stuck)
-                noteText = StuckNote();
             else if (!enoughSpace && target.IsFreeSpace)
                 noteText = $"This free space is about {MinLinuxGB - MaxLinuxGB} GB too small. Choose another drive.";
             else if (!enoughSpace)
@@ -175,12 +175,14 @@ namespace Hop
                 noteText = $"{system.Name}{(system.Version != null ? " " + system.Version : "")}, downloaded from {system.Source}{saved}. Nothing on your disk changes until you click Install.";
             }
 
-            ConfigureDrive(DriveMode.Edit, system);
+            // Nothing has gone wrong yet if hop can still clear the way, so it doesn't read as an error.
+            bool calm = (enoughSpace || (stuck && (!RoomMadeHere || target.BlockerKind == "restore"))) && !systemStops;
+            ConfigureDrive(stuck ? DriveMode.Stuck : DriveMode.Edit, system);
             Arrange(new[]
             {
                 new[] { Run.Gray("Install"), new Run { Text = system.Name, Color = Ink, Logo = LogoFor(selected), Picker = true, Underline = system.Color } },
                 WhereLine(true, Hairline),
-            }, noteText, enoughSpace && !systemStops ? Secondary : Danger, usable ? drive : null, 64);
+            }, noteText, calm ? Secondary : Danger, usable ? drive : null, 64);
 
             Action install = enoughSpace && !systemStops ? () => _ = CheckThenConfirmAsync() : (Action)null;
             string primaryText = "Install";
@@ -214,11 +216,13 @@ namespace Hop
                 Footer("Windows and your files stay.", null, primaryText, primaryAction);
         }
 
-        string StuckNote()
+        string StuckNote(DriveChoice better)
         {
             int release = Math.Max(0, target.UsableGB);
             if (!RoomMadeHere)
-                return $"{target.Title} has free space, but Windows can only release {release} GB of it, because it can't move some files. hop can clear them.";
+                return better == null
+                    ? $"{target.Title} has room, but Windows can't release it yet. hop can clear what's in the way."
+                    : $"{target.Title} has room, but Windows can't release it yet. Make room clears what's in the way, or use {better.Title.ToLowerInvariant()}, which has {(better.Estimated ? "about " : "")}{better.UsableGB} GB to spare.";
             if (target.BlockerKind == "restore")
                 return $"Windows can release {release} GB. Restore points on {target.Title.ToLowerInvariant()} are stopping it releasing more.";
             return $"hop made what room it could, and Windows can release {release} GB. It can't move {target.ShrinkBlocker ?? "some system files"}, which limits the rest.";
@@ -301,10 +305,14 @@ namespace Hop
             try { plan = await engine.GetMakeRoomStepsAsync(target.Letter); }
             catch (Exception ex) { ShowBlocked(Describe(ex)); return; }
 
-            steps.Set(plan.Steps, plan.Notes);
-            Arrange(new[] { new[] { Run.Gray("Make room"), Run.Black("on " + target.Title.ToLowerInvariant()) } },
-                $"{target.Title} has {target.StuckGB} GB free that Windows can't release yet. hop can clear what's in the way.", Secondary, steps, 32);
-            Footer("Back", ShowChoose, plan.Restart ? "Make room and restart" : "Make room", () => _ = MakeRoomAsync());
+            string title = target.Title.ToLowerInvariant();
+            ConfigureDrive(DriveMode.Stuck, Current);
+            steps.Set(plan.Steps, null);
+            Arrange(new[] { new[] { Run.Black($"{target.StuckGB} GB"), Run.Gray($"is stuck on {title}") } },
+                $"Windows can only shrink {title} as far as the last file it can't move. hop can clear the way.", Secondary, drive, 24);
+            steps.Location = new Point(S(Gutter), drive.Bottom + S(24));
+            steps.Visible = true;
+            Footer(plan.Notes.FirstOrDefault(), null, plan.Restart ? "Make room and restart" : "Make room", () => _ = MakeRoomAsync(), "Back", ShowChoose);
         }
 
         async Task MakeRoomAsync()
@@ -411,6 +419,9 @@ namespace Hop
         void ConfigureDrive(DriveMode mode, Distro system)
         {
             drive.Mode = mode;
+            drive.FitToMode();
+            drive.ReleaseGB = Math.Max(0, target.UsableGB);
+            drive.StuckFile = FileNameOf(target.ShrinkBlocker);
             drive.DiskName = target.DiskName ?? "";
             drive.DriveTitle = target.Title;
             drive.DriveLabel = target.IsWindows ? "Windows" : target.Title;
@@ -427,6 +438,9 @@ namespace Hop
             drive.LinuxGB = fullDisk ? 0 : linuxGB;
             drive.Invalidate();
         }
+
+        /// <summary>Windows names it by its whole path, which can be too long for the header.</summary>
+        static string FileNameOf(string path) => string.IsNullOrEmpty(path) ? null : path.Substring(path.LastIndexOf('\\') + 1);
 
         void OpenPicker()
         {
