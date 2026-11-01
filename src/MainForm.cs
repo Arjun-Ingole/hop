@@ -191,7 +191,7 @@ namespace Hop
             {
                 drive.Top = top;
                 log.Bounds = new Rectangle(S(Gutter), top, drive.Width, drive.Height);
-                body = showingLog && body == drive ? log : body;
+                body = installing && showingLog && body == drive ? log : body;
             }
             if (body == removeAll)
             {

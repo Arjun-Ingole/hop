@@ -156,7 +156,6 @@ namespace Hop
             }
             catch { }
 
-            showingLog = true;
             Arrange(new[]
             {
                 new[] { Run.Gray("Couldn't prepare"), new Run { Text = system.Name, Color = Ink, Logo = LogoFor(selected) } },
