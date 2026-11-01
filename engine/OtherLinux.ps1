@@ -150,6 +150,11 @@ function Test-LinuxSignature($Partition) {
     $found -in $LinuxSignatures
 }
 
+function Invoke-Diskpart([string[]]$Commands) {
+    $ErrorActionPreference = 'Continue'
+    $Commands | & diskpart.exe 2>&1 | Out-String
+}
+
 # Only on the disk it was found on: a cloned disk can have the same GUIDs.
 function Remove-PartitionByGuid([string]$Guid, [int]$DiskNumber) {
     $partition = Get-Partition -DiskNumber $DiskNumber -ErrorAction SilentlyContinue | Where-Object Guid -eq $Guid | Select-Object -First 1
@@ -159,9 +164,8 @@ function Remove-PartitionByGuid([string]$Guid, [int]$DiskNumber) {
         return
     } catch { }
     # Windows protects EFI partitions; diskpart can still delete one that isn't Windows' own.
-    $ErrorActionPreference = 'Continue'
     # On its input, because a script in the temp folder could be changed by anything this user runs.
-    $output = @("select disk $($partition.DiskNumber)", "select partition $($partition.PartitionNumber)", 'delete partition override', 'exit') | & diskpart.exe 2>&1 | Out-String
+    $output = Invoke-Diskpart @("select disk $($partition.DiskNumber)", "select partition $($partition.PartitionNumber)", 'delete partition override', 'exit')
     # This way diskpart doesn't report failure in its exit code, so what counts is whether it's gone. Windows can take a moment to notice.
     for ($i = 0; $i -lt 5; $i++) {
         if (-not (Get-Partition -DiskNumber $partition.DiskNumber -ErrorAction SilentlyContinue | Where-Object Guid -eq $Guid)) { return }

@@ -2,7 +2,7 @@
 # and links are real, on files under TestDrive. Those that change an owner need an elevated PowerShell.
 
 BeforeDiscovery {
-    $elevated = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole('Administrator')
+    $elevated = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
 BeforeAll {
@@ -222,7 +222,7 @@ Describe 'Which recorded partitions Clean up removes' {
         $type = $BasicDataType
         Mock Get-StateDisk { 0 }
         Mock Get-Partition { [pscustomobject]@{ DiskNumber = 0; PartitionNumber = 5; Offset = [int64]400GB; Size = [int64]60GB; IsSystem = $false; IsBoot = $false; GptType = $type } }
-        Mock Get-Volume { $null }
+        Mock Get-VolumeOf { $null }
         Mock Read-PartitionHead { New-Object byte[] 16 }
     }
     It 'removes one that is unformatted and blank' {
@@ -242,7 +242,7 @@ Describe 'Which recorded partitions Clean up removes' {
         Should -Invoke Read-PartitionHead -Times 0
     }
     It 'keeps one with a file system' {
-        Mock Get-Volume { [pscustomobject]@{ FileSystemType = 'NTFS' } }
+        Mock Get-VolumeOf { [pscustomobject]@{ FileSystemType = 'NTFS' } }
         @(Get-RecordedPartitions $state @('root')).Count | Should -Be 0
     }
 }
@@ -535,7 +535,7 @@ Describe 'diskpart' {
         Mock Start-Sleep { }
         Mock Remove-Partition { throw 'protected' }
         $script:piped = @()
-        Mock diskpart.exe { $script:piped = @($input) }
+        Mock Invoke-Diskpart { $script:piped = $Commands; 'its output' }
         $script:looks = 0
         $partition = [pscustomobject]@{ DiskNumber = 1; PartitionNumber = 2; Guid = '{esp}' }
     }
@@ -552,8 +552,7 @@ Describe 'diskpart' {
     }
     It 'really does read commands that way' -Skip:(-not $elevated) {
         # The real program, only listing disks.
-        $output = @('list disk', 'exit') | & "$env:SystemRoot\System32\diskpart.exe" 2>&1 | Out-String
-        $output | Should -Match 'Disk 0'
+        Invoke-Diskpart @('list disk', 'exit') | Should -Match 'Disk 0'
     }
 }
 
@@ -562,7 +561,7 @@ Describe 'What a crash leaves' {
         $script:saved = @()
         Mock Save-State { $script:saved += ($State | ConvertTo-Json -Depth 5) }
         Mock Set-Status { }
-        Mock Format-Volume { }
+        Mock Format-Volume { } -RemoveParameterType Partition
         Mock Remove-DriveLetter { }
         Mock Resize-Partition { }
         $state = [pscustomobject]@{ Partitions = @(); WindowsShrunk = $false }
