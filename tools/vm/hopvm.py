@@ -81,11 +81,19 @@ class Agents(http.server.BaseHTTPRequestHandler):
         if url.path == '/next':
             who = query['who'][0]
             self.vm.saw_agent(who, query.get('boot', [''])[0])
+            boot = query.get('boot', [''])[0]
             try:
                 job = self.vm.jobs[who].get(timeout=15)
-                self.reply(json.dumps(job).encode())
             except queue.Empty:
-                self.reply()
+                return self.reply()
+            # A request left over from before Windows restarted would lose the job.
+            if self.vm.agent_boot.get(who) != boot:
+                self.vm.jobs[who].put(job)
+                return self.reply()
+            try:
+                self.reply(json.dumps(job).encode())
+            except OSError:
+                self.vm.jobs[who].put(job)
         elif url.path.startswith('/file/'):
             path = os.path.join(FILES, os.path.basename(url.path))
             if not os.path.isfile(path):
