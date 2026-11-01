@@ -134,9 +134,10 @@ That leaves more free before the installer than after it, which matters below. T
 | System | Driven by | Went where | EFI partition | Started from disk | Windows' EFI files, and the partitions |
 | --- | --- | --- | --- | --- | --- |
 | Omarchy 4.0.6 | Its real wizard on `tty1`, with keys pressed, as the steps say, without encryption | **The 129 GB before the installer**, the largest free space, not hop's 60 GB. Its screen said `Install Omarchy in the 129.0GB of free space` | Its own new 2 GB one, on the second disk | Yes: `Boot0009 "Limine"` from the second disk first in `BootOrder`, then the login screen in its journal and a screenshot | Unchanged. MSR, C:, recovery, `HOPINSTALL` and `HOPLIVE` byte for byte, after the install and the restart |
-| Fedora 44 | Anaconda's `--cmdline` mode with a kickstart: `ignoredisk --only-use=nvme1n1`, `clearpart --none`, `autopart`. Its graphical screens weren't seen | The 133 GB before the installer, not hop's 60 GB | Its own new 600 MB one, on the second disk, with a 2 GB `/boot` | Yes: `Boot000A "Fedora Linux"` from the second disk first in `BootOrder`, root on the second disk, and `Windows Boot Manager (on /dev/nvme0n1p1)` in its menu | Unchanged. MSR, C:, recovery and `HOPINSTALL` byte for byte, after both |
+| Fedora 44 | Anaconda's `--cmdline` mode with a kickstart: `ignoredisk --only-use=nvme1n1`, `clearpart --none`, `autopart`. Its graphical screens weren't seen | The 133 GB before the installer, not hop's 60 GB | Its own new 600 MB one, on the second disk, with a 2 GB `/boot` | Yes: `Boot000A "Fedora Linux"` from the second disk first in `BootOrder`, root on the second disk, and `Windows Boot Manager (on /dev/nvme0n1p1)` in its menu. The kickstart left it at `multi-user.target`, so it stopped at a text login and its desktop wasn't seen | Unchanged. MSR, C:, recovery and `HOPINSTALL` byte for byte, after both |
 | Ultramarine 44 | The same | The same, 133 GB | The same | Yes: `Boot000A "Ultramarine Linux"`, and a screenshot of its own setup at **Language**, which waits there, so the test's marker never ran. Its menu wasn't read | The same |
 | Arch 2026.10.01 | `archinstall --silent` with a `manual_partitioning` config that says what its screens would. Its real screens were read as far as **Select disks for the installation**, where Space marked both disks | hop's 60 GB, as ext4 | **Windows'**, unformatted, at `/boot/efi`. GRUB's files add about 18 MB there | Yes: `Boot000A "GRUB"` from Windows' EFI partition first in `BootOrder`, root on the second disk, `Windows Boot Manager` next | Unchanged. MSR, C: and recovery byte for byte. `HOPINSTALL` isn't: see below |
+| Debian 13.7, CachyOS | Not finished. A script read their real Calamares screens and clicked, but it chose the wrong disk or field, and nothing was installed | | | No | Still refused on a second disk |
 
 **`HOPINSTALL` changes when Arch starts.** Its copied `systemd-boot` adds a 32-byte `loader/random-seed`. In three runs, on either disk, that was the only file that differed, and 86 bytes in six sectors of the partition. Nothing else writes to it, and nothing reads it after the install.
 
@@ -150,6 +151,25 @@ The same, with one 130 GB disk: EFI partition, reserved partition, C:, `HOPINSTA
 | System | Driven by | Went where | Started from disk | Windows' EFI files, and the partitions |
 | --- | --- | --- | --- | --- |
 | Arch 2026.10.01 | The same config, as `archinstall --silent` | hop's 60 GB, as ext4, with `/boot/efi` on the existing EFI partition | Yes: `Boot0009 "GRUB"` first in `BootOrder`, root on the new partition, `Windows Boot Manager` next | Unchanged. MSR, C: and recovery byte for byte, and `HOPINSTALL` apart from `loader/random-seed` |
+| Zorin OS 18.1, Linux Mint 22.3 | Ubiquity's real screens under a small X server, and on Zorin OS its `noninteractive` mode | **Nothing installed.** See below | No | Unchanged, but nothing tried to change them |
+| Debian 13.7, CachyOS | Their real Calamares screens, as above, one attempt each. Not run to the end: the script didn't finish the partition screen. The steps offered next to Windows use the words on those screens, but nobody has followed them through | Nothing installed | No | Unchanged, but nothing tried to change them |
+
+**So hop refuses Zorin OS and every Linux Mint next to Windows and on a second disk.** Started from the disk it's installing to, Ubiquity's `Installation type` goes straight to its manual screen, with no option to install alongside Windows, and says: `Your installation medium is on /dev/nvme0n1p5. You will not be able to create, delete, or resize partitions on this disk, but you may be able to install to existing partitions there.` hop's steps asked for that option, then **+**, which is greyed out on Linux Mint. `noninteractive` mode stopped at `No root file system is defined`. Replacing Windows with Zorin OS isn't affected: that run copies it to memory first.
+
+Two routes got further, and neither was run to the end. The test's script stopped each run, on a **Continue** it clicked wrongly or couldn't find:
+
+| Route | System | Seen | Not seen |
+| --- | --- | --- | --- |
+| Copying to memory (`toram`) | Zorin OS, Linux Mint Cinnamon | `/cdrom` on `/dev/shm`, the first screen back with `Install Zorin OS alongside Windows Boot Manager` and `Install Linux Mint alongside Windows Boot Manager`, the question before writing naming `partition #6 of /dev/nvme0n1 as ext4`, then `Who are you?`. An ext4 partition was on the disk afterwards, with the NTFS, reserved, recovery and `HOPINSTALL` partitions byte for byte | The install finishing. The script couldn't find **Continue** on `Who are you?`, so it was stopped while copying, with no boot loader. The restart went to `Boot0042`, the installer, again |
+| hop's own partition (`prepared`) | Linux Mint Cinnamon | **Change...** on that partition, **Use as** `Ext4 journaling file system`, `Format the partition`, **Mount point** `/`, **Install Now**, the question before writing naming `partition #7 of /dev/nvme0n1 as ext4`, then `Who are you?`. That partition was ext4 afterwards, with the same four byte for byte | The same |
+| The same | Zorin OS, Linux Mint Xfce and MATE | As far as `Who are you?`, with an ext4 partition afterwards and the same four byte for byte | The same |
+| `toram` | Linux Mint Xfce and MATE, and Zorin OS and Linux Mint Cinnamon on a second disk | Nothing useful: they waited for the others, and were cancelled | Everything |
+| The same, on a second disk | Linux Mint Cinnamon | The usual first screen, because Windows' disk is free, so its alongside option would use that disk. **Something else**, then as above. After the question before writing, it said `/cdrom` `could not be unmounted`, and **Continue** there went on to `Who are you?`, filled in, where the script couldn't find **Continue** | The install, or a restart. `HOPINSTALL` and the rest unchanged, and no ext4 on the disk |
+| The same, on a second disk | Zorin OS | The same, except that **Continue** kept returning to `The installer needs to commit changes to partition tables, but cannot do so because` `/cdrom` `could not be unmounted`. It never got past that | The install, or a restart. Nothing was written |
+
+**So `prepared` may not be enough:** the partition table can't be written while `/cdrom` is on that disk, at least on Zorin OS. That's a finding from these screens, not from a finished install.
+
+The other results above are from runs whose partition checksums were read. Runs on a second kind of runner weren't counted: its loop devices didn't give hop's partitions, so they checked nothing.
 
 ## On a real Windows, in a virtual PC
 
@@ -225,7 +245,7 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] Open a second copy of hop: refused
 - [ ] Click **Later**, then restart Windows yourself: Windows starts, not the installer
 - [ ] Turn on Controlled Folder Access: making partitions still works, or the error explains why
-- [ ] Linux Mint's installer works when run from the installer partition
+- [ ] Zorin OS or Linux Mint chosen, next to Windows or on a second disk: refused before anything changes, with the reason
 - [ ] Plug in a USB stick with an Ubuntu ISO written to it: warned before starting, refused at restart
 - [ ] Click Cancel as "Making room" begins: either it cancels with the disk untouched, or the install carries on
 

@@ -1645,6 +1645,37 @@ Describe 'Assert-SystemFitsSpace' {
     }
 }
 
+Describe 'Systems whose installer can''t use free space on its own disk' {
+    It 'refuses <id> next to Windows and on a second disk, with the reason' -ForEach @(@{ id = 'zorin' }, @{ id = 'mint-cinnamon' }, @{ id = 'mint-xfce' }, @{ id = 'mint-mate' }) {
+        $distro = Get-Catalog | Where-Object Id -eq $id
+        { Assert-SystemFitsDrive $distro '' } | Should -Throw "*$($distro.Name)*won't make a partition on the disk it starts from*"
+        { Assert-SystemFitsDrive $distro 'gap:{disk-1}:1048576' } | Should -Throw '*next to Windows or on a second disk*'
+    }
+    It 'still offers replacing Windows with Zorin OS, where that erase was seen' {
+        (Get-Catalog | Where-Object Id -eq 'zorin').FullDisk | Should -Not -BeNullOrEmpty
+    }
+    It 'tells the window, and refuses nothing else' {
+        $engine = New-Object Hop.Engine
+        try {
+            @($engine.GetCatalog() | Where-Object Refused | ForEach-Object { $_.Id } | Sort-Object) | Should -Be @('mint-cinnamon', 'mint-mate', 'mint-xfce', 'zorin')
+        } finally { $engine.Dispose() }
+    }
+}
+
+Describe 'Get-EspLinuxMB' {
+    It 'keeps room on Windows'' EFI partition for <id>, wherever Linux goes' -ForEach @(@{ id = 'arch'; mb = 20 }) {
+        Get-EspLinuxMB (Get-Catalog | Where-Object Id -eq $id) $true | Should -Be $mb
+        Get-EspLinuxMB (Get-Catalog | Where-Object Id -eq $id) $false | Should -Be $mb
+    }
+    It 'asks for 25 MB for <id> on the disk Windows is on, and none on a second disk, where it makes its own' -ForEach @(@{ id = 'fedora' }, @{ id = 'ultramarine' }) {
+        Get-EspLinuxMB (Get-Catalog | Where-Object Id -eq $id) $true | Should -Be 25
+        Get-EspLinuxMB (Get-Catalog | Where-Object Id -eq $id) $false | Should -Be 0
+    }
+    It 'asks for nothing for a system that says nothing' {
+        Get-EspLinuxMB (Get-Catalog | Where-Object Id -eq 'ubuntu') $false | Should -Be 0
+    }
+}
+
 Describe 'Arch on a second disk' {
     It 'chooses both disks, puts Linux on the second and the mountpoint on Windows'' EFI partition' {
         $steps = Get-Steps (Get-Catalog | Where-Object Id -eq 'arch') 60 ([pscustomobject]@{ OnWindowsDisk = $false; DiskName = 'WD Blue'; DiskGB = 1000 })
@@ -1696,7 +1727,7 @@ Describe 'Assert-SystemFitsDrive' {
     It 'refuses <id> on a second disk, with the reason, and claims nothing it has not seen' -ForEach @(
         @{ id = 'debian' }, @{ id = 'cachyos' }
     ) {
-        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Throw "*for the disk Windows is on*hasn't been tried on a second disk*"
+        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Throw "hop hasn't got * to finish on a second disk yet*"
     }
     It 'lets them on another drive on the disk Windows is on' {
         Mock Resolve-Target { [pscustomobject]@{ Partition = [pscustomobject]@{ DiskNumber = 0 } } }

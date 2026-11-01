@@ -20,6 +20,7 @@
 - Fedora and Ultramarine no longer need a command typed in Terminal. Their installer can now use the drive
   by itself, with Secure Boot on. Automated installs into free space finished and started again in a virtual
   PC, though the installer's graphical screens haven't been clicked through yet.
+- hop checks the EFI partition has about 20 MB more room for Arch, whose GRUB files go there, before changing the disk. Fedora and Ultramarine on a second disk no longer need it, as they make their own.
 - hop checks the EFI partition has about 25 MB more room for Fedora and Ultramarine before changing the disk.
   Without it, their installer says it finished but the PC can't start the new system.
 - hop now changes the copy of the boot menu for systems that look for their USB stick by name. It checks
@@ -34,6 +35,7 @@
 
 ### Fixed
 
+- **Zorin OS and Linux Mint are refused next to Windows and on a second disk, for now.** Their installer, started from the disk it's installing to, says it can't make partitions there and doesn't offer to install alongside Windows, so hop's steps were wrong. No other route has been seen to the end yet. Replacing Windows with Zorin OS still works, as it starts from memory.
 - **The Ready screen could hide its buttons.** Omarchy's and Arch's steps ran over Undo changes, Restart now and Later, so they couldn't be seen or clicked. Long lists now stop above the buttons and scroll, with the wheel, the keyboard or a thin bar.
 - Clicking something while hop was checking the PC could start two things at once, and let hop be closed in the middle of changing the disk. Nothing can be clicked during those checks now.
 - After a failed install, Choose and Make room kept showing the old log in place of the drive.

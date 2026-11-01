@@ -22,6 +22,7 @@ namespace Hop
         public bool FullDisk;           // shown to work replacing Windows
         public bool WindowsDiskOnly;    // its steps are only for the disk Windows is on
         public int MinGB;               // the least its installer accepts, if more than hop's own least
+        public string Refused;          // why it can't go next to Windows or on a second disk
         public System.Drawing.Color Color;
     }
 
@@ -247,6 +248,7 @@ namespace Hop
                 Source = Get<string>(o, "Source"),
                 Logo = Get<string>(o, "Logo"),
                 SecureBootOff = Get<bool>(o, "SecureBootOff"),
+                Refused = Get<string>(o, "Refused"),
                 FullDisk = o.Properties["FullDisk"]?.Value != null,
                 WindowsDiskOnly = o.Properties["Steps"]?.Value != null && o.Properties["SecondDisk"]?.Value == null,
                 MinGB = Get<int>(o, "MinGB"),

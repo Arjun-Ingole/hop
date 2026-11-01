@@ -136,7 +136,8 @@ namespace Hop
             bool secureBootStops = selected != null && selected.SecureBootOff && startup.SecureBoot;
             bool secondDiskStops = usable && SecondDiskStops(target);
             bool unmeasured = usable && target.Estimated && measureError != null;
-            bool systemStops = secureBootStops || secondDiskStops || unmeasured;
+            bool refused = selected != null && selected.Refused != null;
+            bool systemStops = refused || secureBootStops || secondDiskStops || unmeasured;
             linuxGB = enoughSpace ? Math.Max(MinLinuxGB, Math.Min(MaxLinuxGB, linuxGB)) : MinLinuxGB;
 
             // The drive has the room, but Windows can't release it. Deleting files wouldn't help.
@@ -147,10 +148,12 @@ namespace Hop
             string noteText;
             if (!usable)
                 noteText = target.Blocker;
+            else if (refused)
+                noteText = selected.Refused;
             else if (secureBootStops)
                 noteText = $"{system.Name} doesn't start with Secure Boot on. Pick another system, or turn off Secure Boot in the BIOS and open hop again.";
             else if (secondDiskStops)
-                noteText = $"hop's steps for {system.Name} are for the disk Windows is on, and it hasn't been tried on a second disk. Choose a drive on that disk, or another system.";
+                noteText = $"hop hasn't got {system.Name} to finish on a second disk yet. Choose a drive on the disk Windows is on, or another system.";
             else if (unmeasured)
                 noteText = $"hop couldn't work out how much room {target.InSentence} can give up. {measureError} {(otherDrive ? "Choose another drive, or open hop again." : "Open hop again.")}";
             else if (stuck)
