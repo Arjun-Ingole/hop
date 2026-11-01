@@ -69,12 +69,7 @@ namespace Hop
         }
 
         /// <summary>What hop can fall back on if it can't list the drives: the same C: as ever.</summary>
-        DriveChoice WindowsDrive => startup.Drives.FirstOrDefault(d => d.IsWindows) ?? new DriveChoice
-        {
-            Id = "", Kind = "volume", Letter = WindowsLetter, Title = "Drive C:", DiskName = startup.DiskName, OnWindowsDisk = true,
-            SizeGB = startup.WindowsGB, UsedGB = startup.UsedGB, TailFreeGB = startup.TailFreeGB, UsableGB = startup.UsableGB,
-            StuckGB = startup.StuckGB, ShrinkBlocker = startup.Blocker, BlockerKind = startup.BlockerKind,
-        };
+        DriveChoice WindowsDrive => startup.Drives.FirstOrDefault(d => d.IsWindows) ?? startup.WindowsFallback;
 
         /// <summary>C: as ever, unless Make room is part way through elsewhere, or C: can't be used at all.</summary>
         async Task ChooseFirstTargetAsync()

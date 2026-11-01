@@ -81,14 +81,7 @@ namespace Hop
 
     public sealed class StartupInfo
     {
-        public int UsableGB;            // how much C: can give up while Windows keeps its reserve
-        public int WindowsGB;           // size of C:
-        public int UsedGB;
-        public string DiskName;
-        public int TailFreeGB;          // unallocated space right after C:
-        public int StuckGB;             // free on C:, but Windows can't release it
-        public string Blocker;          // the file in the way, as Windows names it
-        public string BlockerKind;      // hibernation, paging, restore, journal, ntfs, file or unknown
+        public DriveChoice WindowsFallback;   // C: on its own, for when the drives can't be listed
         public string RoomPhase;        // Make room: "continue" after its restart, "restore" if it stopped early
         public string OtherName;        // another Linux on this PC, such as Pond
         public int OtherGB;
@@ -273,16 +266,9 @@ namespace Hop
             var other = otherValue == null ? null : PSObject.AsPSObject(otherValue);
             return new StartupInfo
             {
-                UsableGB = Get<int>(info, "UsableGB"),
-                WindowsGB = Get<int>(info, "WindowsGB"),
-                UsedGB = Get<int>(info, "UsedGB"),
-                DiskName = Get<string>(info, "DiskName"),
+                WindowsFallback = ToDrive(PSObject.AsPSObject(info.Properties["WindowsFallback"].Value)),
                 Status = Get<string>(info, "Status"),
                 Leftovers = Get<string[]>(info, "Leftovers"),
-                TailFreeGB = Get<int>(info, "TailFreeGB"),
-                StuckGB = Get<int>(info, "StuckGB"),
-                Blocker = Get<string>(info, "Blocker"),
-                BlockerKind = Get<string>(info, "BlockerKind"),
                 RoomPhase = Get<string>(info, "RoomPhase"),
                 OtherName = other == null ? null : Get<string>(other, "Name"),
                 OtherGB = other == null ? 0 : Get<int>(other, "SizeGB"),

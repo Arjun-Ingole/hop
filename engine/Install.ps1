@@ -140,14 +140,18 @@ function Get-StartupInfo {
     $stateLetter = $null
     if ($state) { $stateLetter = if ($state.TargetOffset) { $state.TargetLetter } else { $env:SystemDrive.TrimEnd(':') } }
     [pscustomobject]@{
-        UsableGB  = $space.UsableGB
-        WindowsGB = [int][math]::Floor($space.Partition.Size / 1GB)
-        UsedGB    = [int][math]::Ceiling(($volume.Size - $volume.SizeRemaining) / 1GB)
-        DiskName  = ($disk.FriendlyName -replace '\s+', ' ').Trim()
-        TailFreeGB = [int][math]::Floor($space.TailFree / 1GB)
-        StuckGB   = $stuck
-        Blocker   = $blocker
-        BlockerKind = Get-BlockerKind $blocker
+        # C: on its own, for when the drives can't be listed.
+        WindowsFallback = [pscustomobject]@{
+            Id = ''; Kind = 'volume'; Letter = 'C'; Title = 'Drive C:'; OnWindowsDisk = $true
+            DiskName  = ($disk.FriendlyName -replace '\s+', ' ').Trim()
+            SizeGB    = [int][math]::Floor($space.Partition.Size / 1GB)
+            UsedGB    = [int][math]::Ceiling(($volume.Size - $volume.SizeRemaining) / 1GB)
+            TailFreeGB = [int][math]::Floor($space.TailFree / 1GB)
+            UsableGB  = $space.UsableGB
+            StuckGB   = $stuck
+            ShrinkBlocker = $blocker
+            BlockerKind = Get-BlockerKind $blocker
+        }
         RoomPhase = Get-RoomPhase
         Other     = Get-OtherSystem | Select-Object Name, SizeGB, OnWindowsDisk, Kept
         Status    = $status
