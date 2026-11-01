@@ -49,11 +49,28 @@ function Get-Warnings([string]$Target) {
     }
     if ($Target) {
         $place = Resolve-Target $Target
-        if ($place.Disk.Number -ne (Get-WindowsPartition).DiskNumber) {
+        if ($place.Disk -and $place.Disk.Number -ne (Get-WindowsPartition).DiskNumber) {
             '**Linux goes on a second drive.** If the PC stops at a **grub>** prompt when it restarts, turn off **Fast Boot** in the BIOS, because it can hide a second drive. Hold the power button to get back to Windows.'
         }
         if ($place.Kind -eq 'volume' -and (Get-PartitionSignature $place.Partition) -eq 'bitlocker') {
             "**Drive $(Get-LetterOf $place.Partition): is encrypted with BitLocker.** hop can shrink it while it's unlocked, and Linux won't be able to read it. Make sure you have its recovery key first."
+        }
+    }
+    $targetPartition = if ($Target) {
+        $place = Resolve-Target $Target
+        if ($place.Kind -eq 'volume') { $place.Partition } else { $null }
+    } else {
+        Get-WindowsPartition
+    }
+    if ($targetPartition) {
+        $rec = Get-AdjacentRecoveryPartition $targetPartition
+        if ($rec) {
+            $recMB = [int][math]::Round($rec.Size / 1MB)
+            if ($recMB -lt 750) {
+                "**Windows Recovery partition is directly after this space ($recMB MB).** hop leaves it untouched, but if a Windows recovery update (such as KB5028997) needs more room later, it cannot grow past Linux. Make sure Windows is fully updated first."
+            } else {
+                "**Windows Recovery partition sits directly after this space.** hop leaves it completely untouched. Note that future Windows updates won't be able to grow it past Linux."
+            }
         }
     }
     $memory = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory

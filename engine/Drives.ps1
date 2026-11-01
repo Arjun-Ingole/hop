@@ -6,6 +6,7 @@
 $InternalBusTypes = @('NVMe', 'SATA', 'SAS', 'ATA', 'SCSI')     # SCSI includes virtual machines' own disks
 $DynamicDiskTypes = @('{5808c8aa-7e8f-42e0-85d2-e1e90434cfb3}', '{af9b60a0-1431-4f62-bc68-3311714a69ad}')
 $RecoveryType = '{de94bba4-06d1-4d40-a16a-bfd50179d6ac}'
+$MbrRecoveryType = 0x27
 $DataReserve = 2GB          # free space left on a drive that isn't Windows'
 $MinGapBytes = 10GB         # smaller free space isn't worth listing
 $SizeQueryLimitSeconds = 300
@@ -18,6 +19,21 @@ function Get-DiskLabel($Disk) { ($Disk.FriendlyName -replace '\s+', ' ').Trim() 
 
 function Get-PartitionSignature($Partition) {
     try { [Hop.DiskProbe]::ReadSignature($Partition.DiskNumber, [int64]$Partition.Offset) } catch { $null }
+}
+
+# Finds a Windows Recovery partition situated directly after a partition or its trailing space.
+function Get-AdjacentRecoveryPartition($Partition) {
+    if (-not $Partition) { return $null }
+    $next = try {
+        Get-Partition -DiskNumber $Partition.DiskNumber -ErrorAction SilentlyContinue |
+            Where-Object { [int64]$_.Offset -gt [int64]$Partition.Offset } |
+            Sort-Object Offset |
+            Select-Object -First 1
+    } catch { $null }
+    if ($next -and ($next.GptType -eq $RecoveryType -or $next.MbrType -eq $MbrRecoveryType)) {
+        return $next
+    }
+    return $null
 }
 
 function Test-HoldsWindows([string]$Letter) {
@@ -237,7 +253,11 @@ function Get-DriveSpace([string]$Target) {
 
 # Turns a place's name back into what's there now.
 function Resolve-Target([string]$Target) {
-    if (-not $Target) { return [pscustomobject]@{ Kind = 'volume'; IsWindows = $true; Partition = Get-WindowsPartition; Disk = $null } }
+    if (-not $Target) {
+        $c = Get-WindowsPartition
+        $disk = if ($c) { try { Get-Disk -Number $c.DiskNumber -ErrorAction SilentlyContinue } catch { $null } } else { $null }
+        return [pscustomobject]@{ Kind = 'volume'; IsWindows = $true; Partition = $c; Disk = $disk }
+    }
     $parts = $Target -split ':'
     $disk = Get-Disk | Where-Object Guid -eq $parts[1] | Select-Object -First 1
     if (-not $disk) { throw "That drive isn't there any more. Open hop again." }

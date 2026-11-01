@@ -1475,6 +1475,7 @@ Describe 'Get-Warnings' {
         Mock Get-Disk { [pscustomobject]@{ BusType = 'NVMe' } }
         Mock Test-RestartPending { $false }
         Mock Test-BitLockerOn { $false }
+        Mock Get-AdjacentRecoveryPartition { $null }
     }
     It 'has nothing to say on a normal PC' {
         @(Get-Warnings).Count | Should -Be 0
@@ -1499,6 +1500,17 @@ Describe 'Get-Warnings' {
         Mock Test-RestartPending { $true }
         Mock Test-BitLockerOn { $true }
         @(Get-Warnings).Count | Should -Be 2
+    }
+    It 'warns when an undersized recovery partition is adjacent to C:' {
+        Mock Get-AdjacentRecoveryPartition { [pscustomobject]@{ PartitionNumber = 4; Offset = 50GB; Size = [int64]500MB } }
+        $w = @(Get-Warnings)
+        $w | Should -BeLike '*Windows Recovery partition is directly after this space (500 MB)*'
+        $w | Should -BeLike '*KB5028997*'
+    }
+    It 'advises when a normal recovery partition is adjacent to C:' {
+        Mock Get-AdjacentRecoveryPartition { [pscustomobject]@{ PartitionNumber = 4; Offset = 50GB; Size = [int64]1000MB } }
+        $w = @(Get-Warnings)
+        $w | Should -BeLike '*Windows Recovery partition sits directly after this space.*'
     }
 }
 
