@@ -322,6 +322,7 @@ off and on goes back to Windows. hop warns about this, and it's in Troubleshooti
 | Lubuntu (Calamares) | The existing one it's told to use | Its existing step, which is Windows' |
 | elementary OS, Pop!_OS ([distinst](https://github.com/pop-os/distinst/blob/master/src/installer/steps/bootloader.rs)) | Whichever is mounted at `/boot/efi`, which is hop's `LINUXBOOT` on the target disk. The startup entry points at it | The same steps as ever |
 
+| Omarchy | Its own new one, on the disk it's given, in that disk's largest free space. Seen in a virtual PC: see [Testing](TESTING.md) | Choose the second disk, and expect it to say more than hop set aside |
 | Debian, CachyOS, Arch, Fedora, Ultramarine | Not known | **Refused** by `Assert-SystemFitsDrive`. Their steps are written for Windows' disk, and name its EFI partition or the drive with the free space. None has been tried on a second disk |
 
 **The easy option isn't used for a second disk.** Ubuntu's [picks the largest free space on any

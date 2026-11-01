@@ -9,7 +9,7 @@ function New-Entry([string]$Id, [string]$Name, [string]$Note, [string]$Source, [
         Id = $Id; Name = $Name; Version = $null; Note = $Note; Source = $Source; Color = $Color; Logo = $Logo
         Strategy = 'freespace'; SecureBootOff = $false; Kind = $null; Base = $null; Prefix = $null; Edition = $null
         Mode = $null; Alongside = $null; Manual = $null; ManualExtra = $null; Steps = $null
-        Live = $null; LiveFiles = $null; UntriedFile = $null; NoBitLocker = $false; MinGB = 0; Notes = $null; BootConfigs = $null; BootEdits = $null; GrubDir = $null; EspShell = $null; EspLinuxMB = 0; FullDisk = $null
+        Live = $null; LiveFiles = $null; UntriedFile = $null; NoBitLocker = $false; MinGB = 0; Notes = $null; BootConfigs = $null; BootEdits = $null; GrubDir = $null; EspShell = $null; EspLinuxMB = 0; FullDisk = $null; SecondDisk = $null
     }
     foreach ($key in $More.Keys) { $entry[$key] = $More[$key] }
     [pscustomobject]$entry
@@ -107,6 +107,9 @@ function Get-FullDiskBoot([string]$Family) {
 # EspShell: the ISO's EFI Shell, for a boot loader that can't leave its own partition. See Get-EspShellScript.
 # EspLinuxMB: what its installer adds to the EFI partition, if it doesn't notice running out. Anaconda uses 21 MB.
 # Steps: the words to show when the usual choices don't fit its installer. {GB} is the size hop set aside.
+# SecondDisk: its Steps and Notes for a disk Windows isn't on, which replace the usual ones. Only for a system really seen
+#   installing on a second disk and then starting from it: see docs/TESTING.md. {DISK} names the disk. Without this, a system
+#   with its own Steps is refused there.
 # FullDisk: offers replacing Windows. Only for a system really seen erasing the disk it started from and then
 #   starting from that disk: see docs/TESTING.md. IsoGB is its ISO's size, for refusing before the download
 #   when memory's short. Steps is what to click, and {DISK} names the disk.
@@ -181,7 +184,18 @@ function Get-Catalog {
                 "Under **Select installation mode**, press Down to reach **Free space install (alongside existing data)**, then Return. **Don't choose Full disk install**, where the cursor starts: it erases Windows."
                 'It should say **Install Omarchy in the {GB} GB of free space**, or close to that. Choose **Yes, install**. To install without encryption, press **Ctrl+C** first.'
                 'When it has finished, choose **Reboot Now**.')
-            Notes = @("Afterwards this PC starts Omarchy, and its menu doesn't list Windows. To get to Windows, use your PC's boot menu, or run **limine-scan** in Omarchy to add it to the menu.") })
+            Notes = @("Afterwards this PC starts Omarchy, and its menu doesn't list Windows. To get to Windows, use your PC's boot menu, or run **limine-scan** in Omarchy to add it to the menu.")
+            # It always makes its own EFI partition, in the largest free space on the disk it's given, which isn't always hop's.
+            SecondDisk = @{
+                Steps = @(
+                    'Press **Return** to start, then choose your keyboard.'
+                    'Make your account. Your password also unlocks the disk if Omarchy encrypts it. Name, email and hostname can be left empty.'
+                    'Under **Select install disk**, press Down to reach **{DISK}**, then Return. **Don''t choose the disk Windows is on.**'
+                    "Under **Select installation mode**, press Down to reach **Free space install (alongside existing data)**, then Return. **Don't choose Full disk install**, where the cursor starts: it erases that disk."
+                    'It should say **Install Omarchy in the** and at least {GB} GB **of free space**. It uses the largest free space on the disk, which can be more than hop set aside. Check it says **Confirm installing on** that disk, then choose **Yes, install**. To install without encryption, press **Ctrl+C** first.'
+                    'When it has finished, choose **Reboot Now**.')
+                Notes = @("Afterwards this PC starts Omarchy, from that disk. To get to Windows, use your PC's boot menu.")
+            } })
         New-Entry 'ultramarine' 'Ultramarine' 'Fedora made easy' 'images.fyralabs.com' '#00078F' 'ultramarine' ((Get-DracutBoot 'boot/grub') + @{
             Kind = 'ultramarine'; Edition = 'gnome'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps })
         New-UbuntuFlavor 'ubuntu-budgie' 'Ubuntu Budgie' 'Dock at the bottom' '#404552'

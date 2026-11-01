@@ -49,11 +49,11 @@ function Get-ReturnedHelp {
 }
 
 # A catalog entry's own Steps are written for the disk Windows is on: some say to use "the existing EFI
-# partition" on the drive with free space, which a second disk hasn't got. None of these systems has
-# been tried on a second disk, so it's refused rather than guessed at. Replacing Windows isn't affected:
-# its installer always goes on Windows' disk.
+# partition" on the drive with free space, which a second disk hasn't got. A system that hasn't been seen
+# installing on a second disk has no SecondDisk steps, so it's refused rather than guessed at. Replacing
+# Windows isn't affected: its installer always goes on Windows' disk.
 function Assert-SystemFitsDrive($Distro, [string]$Target) {
-    if (-not $Distro.Steps -or -not $Target) { return }
+    if (-not $Distro.Steps -or $Distro.SecondDisk -or -not $Target) { return }
     if ((Resolve-Target $Target).Partition.DiskNumber -eq (Get-WindowsPartition).DiskNumber) { return }
     throw "hop's steps for $($Distro.Name) are for the disk Windows is on, and it hasn't been tried on a second disk. Choose a drive on that disk, or another system."
 }
@@ -92,8 +92,9 @@ function Assert-NoBitLocker($Distro, [string]$Target) {
 function Get-Steps($Distro, [int]$LinuxGB, $Place) {
     if ($Place.FullDisk) { return Get-FullDiskSteps $Distro $Place }
     $otherDisk = $Place.OnWindowsDisk -eq $false
+    $own = if ($otherDisk -and $Distro.SecondDisk) { $Distro.SecondDisk } else { $Distro }
     if ($Distro.Steps) {
-        $steps = @($Distro.Steps | ForEach-Object { $_ -replace '\{GB\}', $LinuxGB })
+        $steps = @($own.Steps | ForEach-Object { $_ -replace '\{GB\}', $LinuxGB -replace '\{DISK\}', "$($Place.DiskName) ($($Place.DiskGB) GB)" })
     } elseif ($Distro.Strategy -eq 'prepared') {
         $steps = @(
             "Pick your language and keyboard, then choose **$($Distro.Mode)**."
@@ -116,7 +117,7 @@ function Get-Steps($Distro, [int]$LinuxGB, $Place) {
         $steps += "Don't choose **Erase disk**. The installer is running from this drive."
     }
     $notes = @('If the PC starts Windows again or shows a security error, turn off Secure Boot in the BIOS, then open hop and restart again.')
-    if ($Distro.Notes) { $notes += @($Distro.Notes) }
+    if ($own.Notes) { $notes += @($own.Notes) }
     if ($otherDisk) { $notes += 'If it stops at a **grub>** prompt, turn off **Fast Boot** in the BIOS, because it can hide a second drive. Hold the power button to get back to Windows.' }
     [pscustomobject]@{ Steps = $steps; Notes = $notes }
 }
