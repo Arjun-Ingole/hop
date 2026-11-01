@@ -40,7 +40,7 @@ namespace Hop
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 using (var g = Graphics.FromHwnd(IntPtr.Zero))
-                    Theme.Scale = g.DpiX / 96f;
+                    Theme.Scale = MainForm.ScaleToFit(g.DpiX / 96f);
                 Theme.LoadFonts();
                 Application.Run(new MainForm());
             }

@@ -65,6 +65,13 @@ namespace Hop
         string shownStatus;
         Action onPrimary, onSecondary, onLink, onEraseWord;
 
+        /// <summary>1920×1080 at 200% has less height than the window at that scale, and its buttons are at the bottom.</summary>
+        public static float ScaleToFit(float dpiScale)
+        {
+            var room = Screen.PrimaryScreen.WorkingArea;
+            return Math.Min(dpiScale, Math.Min((float)room.Width / DesignWidth, (float)room.Height / DesignHeight));
+        }
+
         public MainForm()
         {
             Text = "hop";
