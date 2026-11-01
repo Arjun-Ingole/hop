@@ -35,6 +35,16 @@
 ### Fixed
 
 - Removing Omarchy left its `Limine` startup entry and its EFI partition behind, because hop didn't count its boot loader as a Linux one.
+- **Make room asked for permission at sign-in, with No already chosen.** hop came back through an elevation prompt after its
+  restart, from an unknown publisher. Clicking No left hibernation and the paging file off until hop was next opened. hop now
+  comes back by itself, with no prompt, through a scheduled task that it removes as soon as hop has opened.
+- **Make room's settings come back even if you never return to hop.** A second task puts them back from 20 minutes after Windows
+  starts, once hop isn't running. If either task can't be made, hop puts the settings back and doesn't restart.
+- **The tasks can't be used to get around UAC.** They run a copy of hop in a new folder under `%ProgramData%` that only administrators
+  can write to, with fixed arguments, and it's deleted when Make room is finished.
+- **Make room could leave hibernation off on a new Windows.** Windows only records a default there until something changes it, and hop
+  read that as hibernation being off, so it never turned it back on.
+- **Words ran together at 100% display scale,** as in "Movingfiles". Text was measured with different settings from those it was drawn with.
 - **Ubuntu's live system could take the space set aside for Linux.** If nothing came after that space on the disk, its
   `casper` startup code made a partition called `writable` over all of it, and the installer then had nowhere to put
   Linux. This also affects released builds, and every system built on it: Ubuntu's flavours, Linux Mint, elementary OS,

@@ -1,0 +1,96 @@
+name: Windows VM
+
+# Runs the real hop.exe on a real Windows, in QEMU with OVMF on a Linux runner. Run it before a
+# release. A green result proves nothing by itself: look at the screens. See docs/TESTING.md.
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: 'Scenarios from tools/vm/scenarios.py, separated by spaces'
+        default: screens stuck
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 170
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: key
+        run: echo "key=hopvm-win11-24h2-${{ hashFiles('tools/vm/autounattend.xml', 'tools/vm/firstlogon.ps1', 'tools/vm/boot.ps1') }}" >> "$GITHUB_OUTPUT"
+
+      - id: cached
+        uses: actions/cache/restore@v4
+        with:
+          path: /mnt/hopvm/image
+          key: ${{ steps.key.outputs.key }}
+          lookup-only: true
+
+      - name: Get ready to run a VM
+        if: steps.cached.outputs.cache-hit != 'true'
+        run: tools/vm/prepare-runner.sh
+
+      - name: Download the Windows 11 Enterprise evaluation
+        if: steps.cached.outputs.cache-hit != 'true'
+        run: curl -fL --retry 3 -o /mnt/hopvm/windows.iso 'https://go.microsoft.com/fwlink/?linkid=2289031&clcid=0x409&culture=en-us&country=us'
+
+      - name: Install Windows
+        if: steps.cached.outputs.cache-hit != 'true'
+        timeout-minutes: 120
+        run: python3 tools/vm/hopvm.py build-image --iso /mnt/hopvm/windows.iso --limit 110
+
+      - uses: actions/cache/save@v4
+        if: steps.cached.outputs.cache-hit != 'true'
+        with:
+          path: /mnt/hopvm/image
+          key: ${{ steps.key.outputs.key }}
+
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.cached.outputs.cache-hit != 'true'
+        with:
+          name: image-screens
+          path: /mnt/hopvm/out
+          retention-days: 7
+
+  run:
+    needs: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build hop
+        run: dotnet build Hop.csproj -c Release
+
+      - name: Get ready to run a VM
+        run: tools/vm/prepare-runner.sh
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: /mnt/hopvm/image
+          key: ${{ needs.image.outputs.key }}
+          fail-on-cache-miss: true
+
+      - name: Run the scenarios
+        timeout-minutes: 110
+        env:
+          SCENARIO: ${{ inputs.scenario }}
+        run: |
+          cp bin/Release/hop.exe /mnt/hopvm/files/hop.exe
+          python3 tools/vm/hopvm.py run $SCENARIO
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screens
+          path: /mnt/hopvm/out
+          retention-days: 14
