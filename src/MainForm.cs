@@ -120,6 +120,8 @@ namespace Hop
             {
                 minimize, close, sentence, note, drive, steps, log, eraseWord, busyLine, removeAll, removeInstaller, footerLink, secondary, primary,
             });
+            // A long body mustn't cover the footer. This leaves the order Tab goes in alone.
+            foreach (var c in new Control[] { footerLink, secondary, primary }) c.BringToFront();
             poll.Tick += (s, e) =>
             {
                 if (installing) UpdatePreparing();
@@ -163,6 +165,13 @@ namespace Hop
             if (e.Button == MouseButtons.Left) Native.BeginWindowDrag(Handle);
         }
 
+        /// <summary>The wheel comes here when a button has the focus and the pointer isn't over the list.</summary>
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            base.OnMouseWheel(e);
+            if (steps.Visible) steps.Wheel(e.Delta);
+        }
+
         static string Describe(Exception ex) => (ex is AggregateException agg ? agg.GetBaseException() : ex).Message;
 
         // --- Layout -----------------------------------------------------------------------
@@ -190,11 +199,20 @@ namespace Hop
                 removeInstaller.Location = new Point(S(Gutter), removeAll.Bottom + S(12));
                 removeInstaller.Visible = true;
             }
-            if (body == steps) steps.Location = new Point(S(Gutter), top);
+            if (body == steps) PlaceSteps(top);
             if (body == eraseWord) eraseWord.Location = new Point(S(Gutter), top);
             if (body == busyLine) busyLine.Location = new Point(S(Gutter), top);
             if (body != null) body.Visible = true;
             drive.Left = S(Gutter);
+        }
+
+        int FooterTop => ClientSize.Height - S(48) - primary.Height / 2;
+
+        /// <summary>The list stops short of the footer, and scrolls if that isn't room enough.</summary>
+        void PlaceSteps(int top)
+        {
+            steps.Location = new Point(S(Gutter), top);
+            steps.FitTo(FooterTop - S(12) - top);
         }
 
         void Footer(string link, Action linkAction, string primaryText, Action primaryAction,
@@ -208,7 +226,7 @@ namespace Hop
             primary.Text = primaryText ?? "";
             primary.Visible = primaryText != null;
             primary.Enabled = primaryAction != null;
-            primary.Location = new Point(ClientSize.Width - S(Gutter) - primary.Width, ClientSize.Height - S(48) - primary.Height / 2);
+            primary.Location = new Point(ClientSize.Width - S(Gutter) - primary.Width, FooterTop);
             onPrimary = primaryAction;
 
             secondary.Text = secondaryText ?? "";

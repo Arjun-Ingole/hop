@@ -216,18 +216,33 @@ namespace Hop
         protected override void Draw(Graphics g) => paragraph?.Draw(g, 0, 0, color);
     }
 
-    /// <summary>The numbered list of choices to make in the Linux installer.</summary>
+    /// <summary>
+    /// The numbered list: choices to make in the Linux installer, warnings, what's left behind. It's as tall
+    /// as its text, up to the room the screen gives it. Past that it scrolls, by wheel, keys or its thin bar.
+    /// </summary>
     sealed class StepsView : DrawnControl
     {
+        const float BarGutter = 16, BarWidth = 3, MinThumb = 24, BottomFade = 36, TopFade = 20, WheelStep = 66, KeyStep = 44;
+
         string[] steps = new string[0];
         string[] notes = new string[0];
         Paragraph[] stepLayouts = new Paragraph[0];
         Paragraph[] noteLayouts = new Paragraph[0];
+        int room = int.MaxValue;
+        float contentHeight, offset, grabbed = -1;
 
         public void Set(string[] stepTexts, string[] noteTexts)
         {
             steps = stepTexts ?? new string[0];
             notes = noteTexts ?? new string[0];
+            offset = 0;
+            Relayout();
+        }
+
+        /// <summary>The most it may take up, in pixels.</summary>
+        public void FitTo(int available)
+        {
+            room = Math.Max(S(44), available);
             Relayout();
         }
 
@@ -239,21 +254,112 @@ namespace Hop
         {
             if (relayingOut) return;
             relayingOut = true;
-            float textWidth = Width - F(28);
-            stepLayouts = Array.ConvertAll(steps, s => Paragraph.Layout(s, 15, 22, textWidth));
-            noteLayouts = Array.ConvertAll(notes, s => Paragraph.Layout(s, 13, 18, Width));
-            float h = 0;
-            foreach (var p in stepLayouts) h += p.Height + F(14);
-            if (noteLayouts.Length > 0) h += F(10);
-            foreach (var p in noteLayouts) h += p.Height + F(6);
-            Height = (int)Math.Ceiling(h);
+            contentHeight = Measure(Width);
+            bool scrolls = contentHeight > room;
+            if (scrolls) contentHeight = Measure(Width - F(BarGutter));   // narrower for the bar, so it can wrap to more lines
+            Height = scrolls ? room : (int)Math.Ceiling(contentHeight);
+            SetStyle(ControlStyles.Selectable, scrolls);
+            TabStop = scrolls;
+            offset = Math.Max(0, Math.Min(MaxOffset, offset));
             relayingOut = false;
             Invalidate();
         }
 
+        float Measure(float width)
+        {
+            stepLayouts = Array.ConvertAll(steps, s => Paragraph.Layout(s, 15, 22, width - F(28)));
+            noteLayouts = Array.ConvertAll(notes, s => Paragraph.Layout(s, 13, 18, width));
+            float h = 0;
+            foreach (var p in stepLayouts) h += p.Height + F(14);
+            if (noteLayouts.Length > 0) h += F(10);
+            foreach (var p in noteLayouts) h += p.Height + F(6);
+            return h;
+        }
+
+        // --- Scrolling ----------------------------------------------------------------
+
+        float MaxOffset => Math.Max(0, contentHeight - Height);
+
+        void ScrollTo(float value)
+        {
+            value = Math.Max(0, Math.Min(MaxOffset, value));
+            if (value == offset) return;
+            offset = value;
+            Invalidate();
+        }
+
+        /// <summary>Also called by the window, for a wheel turned while something else has the focus.</summary>
+        public void Wheel(int delta) => ScrollTo(offset - delta / 120f * F(WheelStep));
+
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            base.OnMouseWheel(e);
+            Wheel(e.Delta);
+            if (e is HandledMouseEventArgs handled) handled.Handled = true;
+        }
+
+        RectangleF Thumb
+        {
+            get
+            {
+                float h = Math.Min(Height, Math.Max(F(MinThumb), Height * Height / contentHeight));
+                return new RectangleF(Width - F(BarWidth), MaxOffset <= 0 ? 0 : (Height - h) * offset / MaxOffset, F(BarWidth), h);
+            }
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (MaxOffset <= 0) return;
+            Focus();
+            if (e.Button != MouseButtons.Left || e.X < Width - F(BarGutter)) return;
+            var thumb = Thumb;
+            grabbed = e.Y >= thumb.Top && e.Y <= thumb.Bottom ? e.Y - thumb.Top : thumb.Height / 2;
+            DragTo(e.Y);
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            if (grabbed >= 0) DragTo(e.Y);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            grabbed = -1;
+            Invalidate();
+        }
+
+        void DragTo(int y)
+        {
+            float travel = Height - Thumb.Height;
+            if (travel > 0) ScrollTo((y - grabbed) / travel * MaxOffset);
+        }
+
+        protected override bool IsInputKey(Keys keyData) =>
+            (MaxOffset > 0 && (keyData == Keys.Up || keyData == Keys.Down)) || base.IsInputKey(keyData);
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            switch (e.KeyCode)
+            {
+                case Keys.Up: ScrollTo(offset - F(KeyStep)); break;
+                case Keys.Down: ScrollTo(offset + F(KeyStep)); break;
+                case Keys.PageUp: ScrollTo(offset - Height * 0.85f); break;
+                case Keys.PageDown: ScrollTo(offset + Height * 0.85f); break;
+                case Keys.Home: ScrollTo(0); break;
+                case Keys.End: ScrollTo(MaxOffset); break;
+                default: base.OnKeyDown(e); return;
+            }
+            e.Handled = true;
+        }
+
+        // --- Drawing ---------------------------------------------------------------------
+
         protected override void Draw(Graphics g)
         {
-            float y = 0;
+            float y = -offset;
             var number = Font(15, true);
             for (int i = 0; i < stepLayouts.Length; i++)
             {
@@ -267,6 +373,22 @@ namespace Hop
                 p.Draw(g, 0, y, Tertiary);
                 y += p.Height + F(6);
             }
+            if (MaxOffset <= 0) return;
+
+            // The text fades out where there's more of it, and the bar is the same thin one the pickers have.
+            if (offset > 0) Fade(g, 0, F(TopFade), Background, Color.FromArgb(0, Background));
+            if (offset < MaxOffset) Fade(g, Height - F(BottomFade), F(BottomFade), Color.FromArgb(0, Background), Background);
+            var thumb = Thumb;
+            var color = Focused && ShowFocusCues ? Ink : grabbed >= 0 || Hovered ? Quaternary : Hairline;
+            FillRounded(g, color, thumb, thumb.Width / 2);
+        }
+
+        void Fade(Graphics g, float top, float height, Color from, Color to)
+        {
+            var area = new RectangleF(0, top, Width - F(BarGutter), height);
+            // A pixel over at each end: a gradient's own edge wraps round to its other color.
+            using (var brush = new System.Drawing.Drawing2D.LinearGradientBrush(RectangleF.Inflate(area, 0, 1), from, to, 90f))
+                g.FillRectangle(brush, area);
         }
     }
 

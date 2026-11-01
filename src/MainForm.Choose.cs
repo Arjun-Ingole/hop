@@ -310,7 +310,7 @@ namespace Hop
             steps.Set(plan.Steps, null);
             Arrange(new[] { new[] { Run.Black($"{target.StuckGB} GB"), Run.Gray($"is stuck on {title}") } },
                 $"Windows can only shrink {title} as far as the last file it can't move. hop can clear the way.", Secondary, drive, 24);
-            steps.Location = new Point(S(Gutter), drive.Bottom + S(24));
+            PlaceSteps(drive.Bottom + S(24));
             steps.Visible = true;
             Footer(plan.Notes.FirstOrDefault(), null, plan.Restart ? "Make room and restart" : "Make room", () => _ = MakeRoomAsync(), "Back", ShowChoose);
         }
