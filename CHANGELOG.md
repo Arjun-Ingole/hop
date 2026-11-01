@@ -14,6 +14,8 @@
 
 ### Fixed
 
+- **hop no longer says a system is ready when it isn't.** A Cancel could stop the install with no error, and hop read that as success: "ready", with steps for 0 GB. A stopped install now counts as stopped, hop checks it reached the end, and Cancel appears a moment later, so a double click on Start can't hit it.
+- **Screens only say what's been checked.** Removed, gone and space back now rest on reading the PC afterwards. A new partition alone no longer means Linux is installed. Clean up lists what it couldn't remove. Undo says the ISO stays, and where. A drive that can't be measured no longer reads as full.
 - **Make room gets past `$Mft::$BITMAP`.** Windows' defrag can leave this NTFS file near the end of a drive, where it stops Windows shrinking it. hop now moves it, and the other NTFS files Microsoft lists as movable, when Windows names one.
 - hop took its 8 GB safety margin off what Windows could release, even with plenty left free inside the drive, so a drive that could release a few GB showed 0.
 - Make room left the paging file on for most 8 GB PCs, which report less than 8 GB. PCs with too little memory now get told why it may not help.
