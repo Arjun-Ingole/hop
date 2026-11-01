@@ -649,7 +649,7 @@ Describe 'Get-Steps by where Linux goes' {
         $text | Should -BeLike '*Fast Boot*'
     }
     It 'tells Mint''s users to leave the boot loader list, since it always uses the first EFI partition' {
-        $text = Get-Text 'mint-cinnamon' $second
+        $text = Get-Text 'mint-mate' $second
         $text | Should -BeLike '*Something else*Leave **Device for boot loader installation** as it is*'
         $text | Should -Not -Match 'choose \*\*WD Blue'
     }
