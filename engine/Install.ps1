@@ -249,7 +249,8 @@ function Get-SpaceOwner($State, $HopPartitions) {
 function Invoke-Cleanup([switch]$InstallerOnly) {
     $state = Read-State
     $Sync.SpaceNote = $null
-    Unregister-RunAfterRestart
+    # While Make room's settings are off, its safety net is what brings them back.
+    if (-not (Test-Path -LiteralPath $RoomPath)) { Unregister-RunAfterRestart }
     # Choosing "Linux isn't installed yet" by mistake must not take its boot partition with it.
     if (-not $InstallerOnly -and $state -and (Test-LinuxInstalled $state)) {
         Write-Log 'Linux is installed, so only the installer will be removed.'

@@ -18,6 +18,7 @@ $DefragLimitSeconds = 900
 $DefragTries = 4
 $DefragRetrySeconds = 30
 $DefragCancelled = 1223
+$RoomRestoreTries = 8   # the task tries every 15 minutes, and each time hop opens or closes
 
 # Windows logs the file that limits a shrink whenever it works out the limit, so ask and read it.
 function Get-ShrinkBlocker($Partition) {
@@ -50,10 +51,16 @@ function Get-BlockerKind([string]$File) {
 }
 
 function Read-RoomState {
-    if (Test-Path -LiteralPath $RoomPath) {
-        try { Get-Content -LiteralPath $RoomPath -Raw | ConvertFrom-Json } catch { Write-Log "Could not read what Make room changed: $($_.Exception.Message)" }
-    }
+    if (-not (Test-Path -LiteralPath $RoomPath)) { return }
+    try {
+        $state = Get-Content -LiteralPath $RoomPath -Raw | ConvertFrom-Json
+        if ($state.Phase) { return $state }
+        Write-Log 'Could not read what Make room changed: the file makes no sense.'
+    } catch { Write-Log "Could not read what Make room changed: $($_.Exception.Message)" }
 }
+
+# It says what the settings were, and nothing else does, so it isn't replaced or removed.
+function Test-RoomFileDamaged { (Test-Path -LiteralPath $RoomPath) -and -not (Read-RoomState) }
 
 function Save-RoomState($State) {
     Write-StateFile $RoomPath ($State | ConvertTo-Json -Depth 4)
@@ -157,7 +164,13 @@ function Get-MakeRoomSteps([string]$Drive) {
 function Start-MakeRoom([string]$Drive) {
     # An earlier run on another drive saved its settings in the same file. They go back first, so
     # none are lost and what's saved next is what's really there.
-    if (Read-RoomState) { Restore-RoomSettings }
+    if (Test-RoomFileDamaged) {
+        throw "hop can't read what an earlier Make room turned off, and starting again would lose it. Check hibernation and the paging file are how you want them in Windows' settings, delete $RoomPath and try again."
+    }
+    if (Read-RoomState) {
+        Restore-RoomSettings
+        if (Test-Path -LiteralPath $RoomPath) { throw "hop couldn't turn back on what an earlier Make room turned off, and starting again would lose it. Restart this PC and try again." }
+    }
     $room = Get-RoomDrive $Drive
     $isWindows = $room -eq $env:SystemDrive
     $pagingOff = (Test-EnoughMemoryWithoutPaging) -and ($isWindows -or (Test-PagingFileOn $room))
@@ -286,6 +299,11 @@ function Remove-RestartCopy([string]$Folder) {
 function Restore-RoomFromTask {
     Write-Log 'Putting back what Make room changed, because hop did not.'
     Restore-RoomSettings
+    # The file still being there means they aren't all back, so this has to run again.
+    if (Test-Path -LiteralPath $RoomPath) {
+        Write-Log 'Make room''s settings are not all back. This task tries again later.'
+        return
+    }
     Remove-RoomTask $ResumeTaskName
     Remove-RoomTask $RestoreTaskName
 }
@@ -345,20 +363,42 @@ function Clear-RestorePoints([string]$Drive) {
     Invoke-Defrag $room
 }
 
-# Puts back whatever Make room changed. One failure must not stop the rest.
+# Puts back whatever Make room changed. One failure must not stop the rest. The file and the safety
+# net only go once it's all back, in that order, so being stopped part way loses nothing. What didn't
+# go back is tried again by the task or the next time hop opens, a limited number of times, since
+# something like a full disk mustn't keep this going for ever.
 function Restore-RoomSettings {
     $Sync.RoomRestarting = $false
     $state = Read-RoomState
     if (-not $state) { return }
-    Unregister-RunAfterRestart
     $back = @()
+    $failed = @()
     if ($state.Hibernation) {
-        try { Set-Hibernation $true; if (Test-HibernationOn) { $back += 'hibernation' } } catch { Write-Log "Could not turn hibernation back on: $($_.Exception.Message)" }
+        try { Set-Hibernation $true } catch { Write-Log "Could not turn hibernation back on: $($_.Exception.Message)" }
+        if (Test-HibernationOn) { $back += 'hibernation' } else { $failed += 'hibernation' }
     }
     if ($state.PagingOff) {
-        try { Restore-Paging $state.Paging; $back += 'the paging file' } catch { Write-Log "Could not turn the paging file back on: $($_.Exception.Message)" }
+        try { Restore-Paging $state.Paging; $back += 'the paging file' } catch {
+            Write-Log "Could not turn the paging file back on: $($_.Exception.Message)"
+            $failed += 'the paging file'
+        }
     }
     try { New-ChangeJournal $state.Drive } catch { Write-Log "Could not make a new change journal: $($_.Exception.Message)" }
-    Remove-Item -LiteralPath $RoomPath -Force -ErrorAction SilentlyContinue
     if ($back.Count) { Write-Log "Turned $($back -join ' and ') back on." }
+    if ($failed.Count) {
+        $tries = [int]$state.RestoreTries + 1
+        if ($tries -lt $RoomRestoreTries) {
+            Write-Log "Could not turn $($failed -join ' and ') back on. hop will try again ($tries of $RoomRestoreTries)."
+            # Not 'restarting', or the next time hop opens it would carry on with Make room. Only what's left gets tried again.
+            $state.Phase = 'restore'
+            $state.Hibernation = $failed -contains 'hibernation'
+            $state.PagingOff = $failed -contains 'the paging file'
+            $state | Add-Member -NotePropertyName RestoreTries -NotePropertyValue $tries -Force
+            try { Save-RoomState $state } catch { Write-Log "Could not save that: $($_.Exception.Message)" }
+            return
+        }
+        Write-Log "Gave up turning $($failed -join ' and ') back on after $tries tries. Turn it on in Windows' settings."
+    }
+    Unregister-RunAfterRestart
+    Remove-Item -LiteralPath $RoomPath -Force -ErrorAction SilentlyContinue
 }
