@@ -85,7 +85,7 @@ function Get-OmarchyBoot {
 # IsoGB and Steps come from the entry.
 function Get-FullDiskBoot([string]$Family) {
     switch ($Family) {
-        'casper' { @{ Word = 'toram'; Configs = @('boot/grub/grub.cfg'); Edits = [ordered]@{ '(?m)^(\s*linux\s+/casper/\S+)' = '$1 toram' } } }
+        'casper' { @{ Word = 'toram'; Configs = @('boot/grub/grub.cfg'); Edits = [ordered]@{ '(?m)^(\s*linux\s+/casper[^/\s]*/\S+)' = '$1 toram' } } }
         'liveboot' { @{ Word = 'toram'; Configs = @('boot/grub/grub.cfg'); Edits = [ordered]@{ '(?m)^(\s*linux\s+/live/\S+)' = '$1 toram' } } }
         'dracut' { @{ Word = 'rd.live.ram=1'; Configs = @(); Edits = [ordered]@{ 'root=live:LABEL=(\S+)' = 'root=live:LABEL=$1 rd.live.ram=1' } } }
         'archiso' { @{ Word = 'copytoram'; Configs = @(); Edits = [ordered]@{ '(archisobasedir=\S+)' = '$1 copytoram' } } }
