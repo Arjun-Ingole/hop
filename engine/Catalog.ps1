@@ -131,7 +131,12 @@ function Get-Catalog {
         "Don't choose **Use entire disk**. The installer is running from this drive.")
     @(
         New-Entry 'elementary' 'elementary OS' 'Mac-like' 'elementary.io' '#3689E6' 'elementary' ((Get-CasperBoot) + @{
-            Kind = 'elementary'; Strategy = 'prepared'; Mode = 'Custom Install (Advanced)' })
+            Kind = 'elementary'; Strategy = 'prepared'; Mode = 'Custom Install (Advanced)'
+            FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 4; Steps = @(
+                'Pick your language and keyboard.'
+                'At **Try or Install**, choose **Erase Disk and Install**, then click **Next**.'
+                'At **Select a Drive**, choose **{DISK}**. Leave any other drive alone. Then click **Next**.'
+                "Choose **Don't Encrypt**, or **Enable Drive Encryption** and set a password. The install starts straight after that.") } })
         New-UbuntuFlavor 'ubuntu' 'Ubuntu' 'Most popular' '#E95420' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 6; Steps = @(
                 'Pick your language and keyboard, then start the installer.'
                 'When asked how to install, choose **Erase disk and install Ubuntu**.'
@@ -189,7 +194,8 @@ function Get-Catalog {
                 'When it has finished, choose **Reboot Now**.')
             Notes = @("Afterwards this PC starts Omarchy, and its menu doesn't list Windows. To get to Windows, use your PC's boot menu, or run **limine-scan** in Omarchy to add it to the menu.") })
         New-Entry 'ultramarine' 'Ultramarine' 'Fedora made easy' 'images.fyralabs.com' '#00078F' 'ultramarine' ((Get-DracutBoot 'boot/grub') + @{
-            Kind = 'ultramarine'; Edition = 'gnome'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps })
+            Kind = 'ultramarine'; Edition = 'gnome'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps
+            FullDisk = (Get-FullDiskBoot 'dracut') + @{ IsoGB = 4; Steps = $AnacondaErase } })
         New-UbuntuFlavor 'ubuntu-budgie' 'Ubuntu Budgie' 'Dock at the bottom' '#404552'
         New-UbuntuFlavor 'xubuntu' 'Xubuntu' 'Lightweight' '#0044AA'
         New-UbuntuFlavor 'lubuntu' 'Lubuntu' 'Lightest' '#0068C8' @{
