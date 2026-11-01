@@ -31,7 +31,8 @@ function Get-FullDiskBlocker($Distro) {
     $reason = Get-DriveBlocker $disk $windows -Windows
     if ($reason) { return $reason }
     if ($disk.BusType -eq 'RAID') { return "This PC's drive is in RAID or Intel RST mode, which most Linux installers can't see. Change that in the BIOS first, which needs care while Windows is still on it." }
-    if ([int64]$disk.Size -lt [int64]$MinLinuxGB * 1GB) { return "$(Get-DiskLabel $disk) is too small for Linux. It needs at least $MinLinuxGB GB." }
+    $leastGB = [math]::Max([int]$MinLinuxGB, [int]$Distro.MinGB)
+    if ([int64]$disk.Size -lt [int64]$leastGB * 1GB) { return "$(Get-DiskLabel $disk) is too small for $($Distro.Name). It needs at least $leastGB GB." }
     # Erasing this disk then wouldn't take the startup files with it, and hop hasn't tried that.
     $esp = try { Get-WindowsEsp } catch { $null }
     if (-not $esp -or $esp.DiskNumber -ne $windows.DiskNumber) { return 'Windows starts from a different disk from the one it is on, so hop can''t tell what erasing it would leave behind. You can still install Linux next to Windows.' }

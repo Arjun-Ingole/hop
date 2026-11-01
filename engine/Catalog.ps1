@@ -192,7 +192,14 @@ function Get-Catalog {
                 "Under **Select installation mode**, press Down to reach **Free space install (alongside existing data)**, then Return. **Don't choose Full disk install**, where the cursor starts: it erases Windows."
                 'It should say **Install Omarchy in the {GB} GB of free space**, or close to that. Choose **Yes, install**. To install without encryption, press **Ctrl+C** first.'
                 'When it has finished, choose **Reboot Now**.')
-            Notes = @("Afterwards this PC starts Omarchy, and its menu doesn't list Windows. To get to Windows, use your PC's boot menu, or run **limine-scan** in Omarchy to add it to the menu.") })
+            Notes = @("Afterwards this PC starts Omarchy, and its menu doesn't list Windows. To get to Windows, use your PC's boot menu, or run **limine-scan** in Omarchy to add it to the menu.")
+            FullDisk = (Get-FullDiskBoot 'archiso') + @{ IsoGB = 7; Steps = @(
+                'Press **Return** to start, then choose your keyboard.'
+                'Make your account. Your password also unlocks the disk if Omarchy encrypts it. Name, email and hostname can be left empty.'
+                'Under **Select install disk**, choose **{DISK}**. Leave any other drive alone.'
+                'Under **Select installation mode**, choose **Full disk install**, where the cursor starts.'
+                'At **Confirm overwriting**, choose **Yes, install**. To install without encryption, press **Ctrl+C** first.'
+                'When it has finished, choose **Reboot Now**.') } })
         New-Entry 'ultramarine' 'Ultramarine' 'Fedora made easy' 'images.fyralabs.com' '#00078F' 'ultramarine' ((Get-DracutBoot 'boot/grub') + @{
             Kind = 'ultramarine'; Edition = 'gnome'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps
             FullDisk = (Get-FullDiskBoot 'dracut') + @{ IsoGB = 4; Steps = $AnacondaErase } })

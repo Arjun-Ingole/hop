@@ -26,7 +26,7 @@ BeforeAll {
 
 Describe 'Which systems are offered' {
     It 'only offers what was really seen erasing a disk and starting afterwards' {
-        @(Get-Catalog | Where-Object FullDisk).Id | Should -Be @('elementary', 'ubuntu', 'zorin', 'fedora', 'debian', 'arch', 'ultramarine')
+        @(Get-Catalog | Where-Object FullDisk).Id | Should -Be @('elementary', 'ubuntu', 'zorin', 'fedora', 'debian', 'arch', 'omarchy', 'ultramarine')
     }
     It 'has what the install needs for every system it offers' {
         foreach ($distro in Get-Catalog | Where-Object FullDisk) {
@@ -92,6 +92,11 @@ Describe 'Boot config for a full disk' {
         $edited = Get-EditedBootConfig $fedora "linux /x root=live:CDLABEL=F44 rd.live.image" -FullDisk
         $edited | Should -BeLike '*rd.live.ram=1*'
         $edited | Should -BeLike '*umount -l /run/initramfs/live*'
+    }
+    It 'copies Omarchy to memory as well, and still lets go of the disk as it starts' {
+        $omarchy = Get-Catalog | Where-Object Id -eq 'omarchy'
+        $edited = Get-EditedBootConfig $omarchy 'chainloader /x archisobasedir=arch archisosearchuuid=2026-10-19 quiet' -FullDisk
+        $edited | Should -BeLike "*archisobasedir=arch copytoram archisolabel=$LiveLabel *umount -l /run/archiso/bootmnt*"
     }
     It 'adds copytoram to Arch''s' {
         Edit-With 'archiso' 'options  archisobasedir=arch archisolabel=HOPINSTALL' | Should -Be 'options  archisobasedir=arch copytoram archisolabel=HOPINSTALL'
