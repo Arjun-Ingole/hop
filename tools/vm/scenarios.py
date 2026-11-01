@@ -276,15 +276,22 @@ New-ItemProperty -Path $key -Name PagingFiles -PropertyType MultiString -Value (
 $key = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management'
 $free = (Get-Volume -DriveLetter C).SizeRemaining
 # Windows puts each file in the smallest gap it fits, so the big file takes the start of the big gap.
-$size = [int64]($free - 10GB)
+$size = [int64]($free - 16GB)
 fsutil file createnew C:\probe\filler.bin $size
 fsutil file setvaliddata C:\probe\filler.bin $size
+# Then little ones, which go in the small gaps first, so what's left free is the big gap's end.
+$n = 0
+while ((Get-Volume -DriveLetter C).SizeRemaining -gt 5GB) {
+    $n++
+    fsutil file createnew C:\probe\filler$n.bin 536870912 | Out-Null
+    fsutil file setvaliddata C:\probe\filler$n.bin 536870912 | Out-Null
+}
 New-ItemProperty -Path $key -Name PagingFiles -PropertyType MultiString -Value ([string[]]@(Get-Content C:\probe\paging-before.txt)) -Force | Out-Null
 "filler {0:N1} GB, then {1:N1} GB free" -f ($size/1GB), ((Get-Volume -DriveLetter C).SizeRemaining/1GB)
 """, timeout=600), flush=True)
     restart_and_wait(vm)
     print(vm.ps(r"""
-Remove-Item C:\probe\filler.bin -Force
+Remove-Item C:\probe\filler*.bin -Force
 Optimize-Volume -DriveLetter C -ReTrim | Out-Null
 "filler gone"
 """, timeout=600), flush=True)
