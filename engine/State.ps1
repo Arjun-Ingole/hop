@@ -100,7 +100,7 @@ function Test-LinuxInstalled($State) {
     $disk = Get-StateDisk $State
     if (@(Get-LinuxLoaders $disk | Where-Object { $_.Path -notin @($State.LoadersBefore) }).Count) { return $true }
     if ($names -notcontains 'LinuxBefore' -or $null -eq $disk) { return $false }
-    $partitions = @(Get-Partition -DiskNumber $disk)
+    $partitions = @(Get-Partition -DiskNumber $disk -ErrorAction SilentlyContinue)
     $casper = @(Get-CasperPartition $State $partitions | ForEach-Object { $_.Guid })
     @(Get-LinuxPartitions $partitions | Where-Object { $_.Guid -notin @($State.LinuxBefore) -and $_.Guid -notin $casper }).Count -gt 0
 }
@@ -141,7 +141,7 @@ function Remove-CasperPartition($State) {
     if (-not $State.RestartedAt) { return }
     $disk = Get-StateDisk $State
     if ($null -eq $disk) { return }
-    $partition = Get-CasperPartition $State @(Get-Partition -DiskNumber $disk)
+    $partition = Get-CasperPartition $State @(Get-Partition -DiskNumber $disk -ErrorAction SilentlyContinue)
     if (-not $partition) { return }
     Set-Status 'Removing the partition the live system made...'
     Remove-PartitionAt $partition.DiskNumber $partition.Offset

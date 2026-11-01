@@ -17,7 +17,7 @@ $LinuxLoaderPattern = '(shim|grub|systemd-boot|refind|limine)[^\\]*\.efi$'
 # disk. Whichever else is named, the Windows disk counts, since Linux Mint starts from there.
 function Get-DiskGuids([object[]]$Disks) {
     foreach ($disk in @(@($Disks) + (Get-WindowsPartition).DiskNumber | Where-Object { $null -ne $_ } | Sort-Object -Unique)) {
-        Get-Partition -DiskNumber $disk | ForEach-Object { $_.Guid }
+        Get-Partition -DiskNumber $disk -ErrorAction SilentlyContinue | ForEach-Object { $_.Guid }
     }
     try { (Get-WindowsEsp).Guid } catch { }
 }
@@ -98,7 +98,7 @@ function Get-OwnedEspFolders([string[]]$Folders, $Linux, [int]$Disk) {
 # Linux made its own. Windows' EFI partition is never included. Kept names the startup entries there
 # that can't be tied to this Linux, which stay.
 function Find-OtherSystem([int]$Disk) {
-    $partitions = @(Get-Partition -DiskNumber $Disk)
+    $partitions = @(Get-Partition -DiskNumber $Disk -ErrorAction SilentlyContinue)
     $state = Read-State
     $casper = if ($state) { @(Get-CasperPartition $state $partitions | ForEach-Object { $_.Guid }) } else { @() }
     $linux = @(Get-LinuxPartitions $partitions | Where-Object { $_.Guid -notin $casper })
@@ -152,7 +152,7 @@ function Test-LinuxSignature($Partition) {
 
 # Only on the disk it was found on: a cloned disk can have the same GUIDs.
 function Remove-PartitionByGuid([string]$Guid, [int]$DiskNumber) {
-    $partition = Get-Partition -DiskNumber $DiskNumber | Where-Object Guid -eq $Guid | Select-Object -First 1
+    $partition = Get-Partition -DiskNumber $DiskNumber -ErrorAction SilentlyContinue | Where-Object Guid -eq $Guid | Select-Object -First 1
     if (-not $partition) { return }
     try {
         Remove-Partition -DiskNumber $partition.DiskNumber -PartitionNumber $partition.PartitionNumber -Confirm:$false

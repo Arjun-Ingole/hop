@@ -105,7 +105,7 @@ function Get-DriveLetter($Partition) {
 # Partition numbers can shift once a partition is removed, and acting on a stale one could
 # delete Windows' recovery partition. So each is looked up again by where it starts.
 function Get-PartitionAt([int]$DiskNumber, [int64]$Offset) {
-    Get-Partition -DiskNumber $DiskNumber | Where-Object { [int64]$_.Offset -eq $Offset } | Select-Object -First 1
+    Get-Partition -DiskNumber $DiskNumber -ErrorAction SilentlyContinue | Where-Object { [int64]$_.Offset -eq $Offset } | Select-Object -First 1
 }
 
 function Remove-PartitionAt([int]$DiskNumber, [int64]$Offset) {

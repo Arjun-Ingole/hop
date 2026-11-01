@@ -56,7 +56,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
             DiskNumber = $plan.DiskNumber; WindowsShrunk = $false; Partitions = @(); BootNumber = $null
             IsoPath = $IsoPath; Created = (Get-Date).ToString('s'); Copied = $false; RestartedAt = $null
             LoadersBefore = @(Get-LinuxLoaders $plan.DiskNumber | ForEach-Object { $_.Path })
-            LinuxBefore = @(Get-LinuxPartitions @(Get-Partition -DiskNumber $plan.DiskNumber) | ForEach-Object { $_.Guid })
+            LinuxBefore = @(Get-LinuxPartitions @(Get-Partition -DiskNumber $plan.DiskNumber -ErrorAction SilentlyContinue) | ForEach-Object { $_.Guid })
             # WindowsShrunk and InstallerNextToWindows now mean the chosen drive, and keep their names so older files still read.
             FastStartupWasOn = (Get-FastStartup) -eq 1; BitLockerPaused = $false; InstallerNextToWindows = $plan.Kind -eq 'volume'
             DiskGuid = $disk.Guid; DiskName = Get-DiskLabel $disk; DiskGB = [int][math]::Round($disk.Size / 1GB)
@@ -153,7 +153,7 @@ function Get-StartupInfo {
             BlockerKind = Get-BlockerKind $blocker
         }
         RoomPhase = Get-RoomPhase
-        Other     = Get-OtherSystem | Select-Object Name, SizeGB, OnWindowsDisk, Kept
+        Other     = try { Get-OtherSystem | Select-Object Name, SizeGB, OnWindowsDisk, Kept } catch { Write-Log "Could not look for another Linux: $($_.Exception.Message)"; $null }
         Status    = $status
         Leftovers = @(if ($status -ne 'none') { try { Get-LeftoverList | Select-Object -Unique } catch { Write-Log "Could not list what hop left: $($_.Exception.Message)" } })
         State     = $state
@@ -237,7 +237,7 @@ function Get-SpaceOwner($State, $HopPartitions) {
     $first = @($HopPartitions | Where-Object { $_.Partition.DiskNumber -ne $windowsDisk } | Sort-Object { [int64]$_.Partition.Offset }) | Select-Object -First 1
     if (-not $first) { return $windows }
     $disk = $first.Partition.DiskNumber
-    $before = @(Get-Partition -DiskNumber $disk | Where-Object { [int64]$_.Offset -lt [int64]$first.Partition.Offset } | Sort-Object { [int64]$_.Offset }) | Select-Object -Last 1
+    $before = @(Get-Partition -DiskNumber $disk -ErrorAction SilentlyContinue | Where-Object { [int64]$_.Offset -lt [int64]$first.Partition.Offset } | Sort-Object { [int64]$_.Offset }) | Select-Object -Last 1
     if (-not $before -or -not (Get-LetterOf $before)) { return }
     if (($before | Get-Volume -ErrorAction SilentlyContinue).FileSystemType -ne 'NTFS') { return }
     [pscustomobject]@{ DiskNumber = $disk; Offset = [int64]$before.Offset; Windows = $false }
