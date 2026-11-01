@@ -205,6 +205,7 @@ function Invoke-Curl([string]$Url, [string]$Part, [int64]$Total, [string]$Name) 
         }
         Start-Sleep -Milliseconds 700
     }
+    $Sync.ChildPid = $null   # that number can go to another process now
     $proc.ExitCode
 }
 

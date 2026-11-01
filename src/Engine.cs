@@ -197,6 +197,7 @@ namespace Hop
         public void ResetProgress()
         {
             Sync["Gate"] = new CancelGate();
+            Sync["ChildPid"] = null;
             Sync["Status"] = "";
             Sync["Percent"] = -1;
             Sync["Stage"] = 0;
