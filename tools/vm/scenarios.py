@@ -7,7 +7,7 @@ import os
 import time
 
 import hopvm
-from hopvm import log, OUT, FILES
+from hopvm import log
 
 HOP = r'C:\Users\hop\Downloads\hop.exe'
 
@@ -164,13 +164,13 @@ class Bench:
         self.secure_boot = secure_boot
         self.vm = None
 
-    def fresh(self, second_disk=False, secure_boot=None):
+    def fresh(self, second_disk=False):
         """Back to Windows as it was installed, with a new VM."""
         if self.vm:
             self.vm.stop()
             self.vm.server.shutdown()
             self.vm.server.server_close()
-        vm = hopvm.Vm(secure_boot=self.secure_boot if secure_boot is None else secure_boot)
+        vm = hopvm.Vm(secure_boot=self.secure_boot)
         if second_disk:
             path = os.path.join(hopvm.RUN, 'second.qcow2')
             os.makedirs(hopvm.RUN, exist_ok=True)
@@ -261,21 +261,6 @@ Optimize-Volume -DriveLetter C -ReTrim | Out-Null
 
 
 # --- Scenarios ----------------------------------------------------------------------------------
-
-
-def scenario_hello(bench):
-    vm, s = bench.fresh()
-    s.desktop()
-    s.facts('first look')
-    print(vm.ps(r"""
-Get-Disk | Format-Table Number, FriendlyName, BusType, PartitionStyle, Size -Auto
-powercfg /a
-(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
-"Secure Boot: " + (Confirm-SecureBootUEFI)
-"EnableLUA: " + (Get-ItemProperty HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System).EnableLUA
-"integrity: " + (whoami /groups | Select-String 'Mandatory Label')
-bcdedit /enum firmware
-"""), flush=True)
 
 
 def scenario_screens(bench):
@@ -506,12 +491,12 @@ Get-ScheduledTaskInfo -TaskName 'hop restore settings' -ErrorAction SilentlyCont
     s.hop_log()
 
 
-def install(vm, s, system_row=1, tag='install'):
+def install(vm, s, tag='install'):
     """Install, from hop's first screen until it says it's ready."""
     s.click_hop(236, LINE_ONE_Y)
     time.sleep(1.5)
     vm.shot(f'{tag}-system-picker')
-    s.click_hop(236, SYSTEM_ROW_Y + DRIVE_ROW_H * system_row)
+    s.click_hop(236, SYSTEM_ROW_Y + DRIVE_ROW_H)
     time.sleep(3)
     vm.shot(f'{tag}-choose')
     s.press('Install', limit=30)
@@ -539,13 +524,13 @@ def install(vm, s, system_row=1, tag='install'):
 LIVE_REPORT = 'wget -qO- 10.0.2.2:8765/file/live-report.sh | sudo sh\n'
 
 
-def restart_into_linux(vm, s, tag='linux', wait_seconds=420):
+def restart_into_linux(vm, s):
     """Restart now, and what the firmware does next. The screen is how to tell."""
     before = vm.agent_boot.get('user')
     s.press('Restart now', limit=30)
-    for second in range(0, wait_seconds, 15):
+    for second in range(0, 420, 15):
         time.sleep(15)
-        vm.shot(f'{tag}-{second:03}s')
+        vm.shot(f'linux-{second:03}s')
     return before
 
 
@@ -605,7 +590,6 @@ def undo_after_linux(vm, s, before):
     s.hop_log()
     ui = s.ui()
     vm.click(ui['right'] - 24, ui['top'] + 22)
-    before = vm.agent_boot.get('user')
     restart_and_wait(vm)
     vm.shot('undo-windows-still-starts')
     s.facts('after Undo and a restart')

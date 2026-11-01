@@ -19,11 +19,9 @@ import socket
 import socketserver
 import struct
 import subprocess
-import sys
 import threading
 import time
 import urllib.parse
-import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WORK = os.environ.get('HOPVM_WORK', '/mnt/hopvm')
@@ -72,9 +70,6 @@ class Agents(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_HEAD(self):
-        self.do_GET()
-
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
         query = urllib.parse.parse_qs(url.query)
@@ -102,9 +97,8 @@ class Agents(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Length', str(size))
             self.end_headers()
-            if self.command != 'HEAD':
-                with open(path, 'rb') as f:
-                    shutil.copyfileobj(f, self.wfile, 1024 * 1024)
+            with open(path, 'rb') as f:
+                shutil.copyfileobj(f, self.wfile, 1024 * 1024)
         else:
             self.reply(b'', 404)
 
@@ -149,7 +143,6 @@ class Vm:
         self.agent_seen = {}
         self.agent_boot = {}
         self.extra_disks = []
-        self.cds = []
         self.stop_lapse = threading.Event()
         os.makedirs(OUT, exist_ok=True)
         os.makedirs(os.path.join(OUT, 'lapse'), exist_ok=True)
@@ -197,7 +190,7 @@ class Vm:
         for index, path in enumerate(self.extra_disks):
             argv += ['-drive', f'file={path},if=none,id=data{index},format=qcow2,cache=unsafe,discard=unmap,aio=threads',
                      '-device', f'nvme,drive=data{index},serial=HOP100{index}']
-        for index, path in enumerate(list(cds) + self.cds):
+        for index, path in enumerate(cds):
             argv += ['-drive', f'file={path},if=none,id=cd{index},media=cdrom,readonly=on',
                      '-device', f'ide-cd,drive=cd{index},bus=ide.{index}' + (f',bootindex={index}' if boot_from_cd else '')]
         log('$ ' + ' '.join(argv))
