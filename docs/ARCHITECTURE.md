@@ -85,7 +85,7 @@ A failure in steps 4 to 6 runs `Invoke-Cleanup`, which puts everything back.
 | Boot loader copy | `\EFI\hop` on Windows' EFI partition | Fixed path |
 | Startup entry | UEFI variables | `(hop)` in its name |
 | ISO | Downloads, or `\hop` on another drive | Named in the log |
-| State and logs | `C:\ProgramData\hop` | Fixed path |
+| State and logs | `C:\ProgramData\hop`, writable only by administrators. hop moves aside one it can't trust | Fixed path |
 | Which disks hold Linux hop put there | `C:\ProgramData\hop\linux-disks.json` | Fixed path |
 | What Make room changed, until it's put back | `C:\ProgramData\hop\make-room.json` | Fixed path |
 | Scheduled tasks, while Make room is under way | `hop resume`, to come back after its restart, and `hop restore settings`, in case hop doesn't open again | Fixed names |

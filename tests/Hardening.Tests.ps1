@@ -721,3 +721,28 @@ Describe 'Make room''s steps' {
         $steps.Steps[1] | Should -Be 'On drive Y: turns off the **paging file**.'
     }
 }
+
+Describe 'Saying when Make room gave up' {
+    BeforeEach { $script:RoomGaveUpPath = Join-Path $TestDrive 'gave-up.txt' }
+
+    It 'says nothing when it did not' {
+        Get-RoomGaveUpWarning | Should -BeNullOrEmpty
+    }
+    It 'names what stayed off, once' {
+        Set-Content -LiteralPath $RoomGaveUpPath 'hibernation'
+        Get-RoomGaveUpWarning | Should -Match "couldn't turn hibernation back on"
+        Get-RoomGaveUpWarning | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'A restart Windows refused' {
+    It 'forgets the one-time start and that it restarted' {
+        Mock Invoke-Shutdown { throw 'no' }
+        Mock Clear-BootOnce { }
+        Mock Read-State { [pscustomobject]@{ RestartedAt = '2026-01-01T00:00:00' } }
+        Mock Save-State { }
+        { Invoke-InstallerRestart '/r' } | Should -Throw 'no'
+        Should -Invoke Clear-BootOnce -Times 1
+        Should -Invoke Save-State -Times 1 -ParameterFilter { $null -eq $State.RestartedAt }
+    }
+}

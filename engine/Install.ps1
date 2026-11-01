@@ -202,6 +202,8 @@ function Restart-IntoFirmware {
 function Invoke-InstallerRestart([string[]]$Arguments) {
     try { Invoke-Shutdown $Arguments } catch {
         try { Clear-BootOnce } catch { Write-Log "Could not forget the one-time start: $($_.Exception.Message)" }
+        # It never went, so coming back to this screen isn't the installer failing to start.
+        try { $state = Read-State; $state.RestartedAt = $null; Save-State $state } catch { Write-Log "Could not save that the PC didn't restart: $($_.Exception.Message)" }
         throw
     }
 }

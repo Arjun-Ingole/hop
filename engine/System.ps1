@@ -30,6 +30,7 @@ function Test-System {
 
 # Things hop can go ahead with, but that are worth checking first. ** marks emphasis.
 function Get-Warnings([string]$Target) {
+    Get-RoomGaveUpWarning
     $battery = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($battery -and $battery.BatteryStatus -eq 1) {
         "**Plug in the charger.** This PC is on battery ($($battery.EstimatedChargeRemaining)%), and losing power while the disk is changing could stop Windows starting."
