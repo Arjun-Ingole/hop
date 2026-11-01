@@ -488,8 +488,8 @@ Describe 'Limits on moving files' {
         Mock Write-Log { $script:logged += $Message }
     }
     It 'shares one limit across its tries' {
-        $DefragLimitSeconds = 1
-        Mock Start-DefragRun { [Threading.Thread]::Sleep(1100); 1223 }
+        $DefragLimitSeconds = 2
+        Mock Start-DefragRun { [Threading.Thread]::Sleep(2100); 1223 }
         Invoke-Defrag 'C:'
         Should -Invoke Start-DefragRun -Times 1
     }
@@ -550,8 +550,10 @@ Describe 'diskpart' {
         Mock Get-Partition { $partition }
         { Remove-PartitionByGuid '{esp}' 1 } | Should -Throw '*Could not delete partition 2*'
     }
-    It 'really does read commands that way' -Skip:(-not $elevated) {
-        # The real program, only listing disks.
+}
+
+Describe 'The real diskpart' {
+    It 'reads commands from its input, here only listing disks' -Skip:(-not $elevated) {
         Invoke-Diskpart @('list disk', 'exit') | Should -Match 'Disk 0'
     }
 }
@@ -561,7 +563,7 @@ Describe 'What a crash leaves' {
         $script:saved = @()
         Mock Save-State { $script:saved += ($State | ConvertTo-Json -Depth 5) }
         Mock Set-Status { }
-        Mock Format-Volume { } -RemoveParameterType Partition
+        Mock Format-NewPartition { }
         Mock Remove-DriveLetter { }
         Mock Resize-Partition { }
         $state = [pscustomobject]@{ Partitions = @(); WindowsShrunk = $false }

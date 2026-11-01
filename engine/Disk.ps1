@@ -123,6 +123,10 @@ function Remove-DriveLetter($Partition) {
     }
 }
 
+function Format-NewPartition($Partition, [string]$FileSystem, [string]$Label) {
+    Format-Volume -Partition $Partition -FileSystem $FileSystem -NewFileSystemLabel $Label -Confirm:$false -Force | Out-Null
+}
+
 # Written down first, so a crash straight after making it can't leave one nothing knows about. It's
 # only ever acted on if a blank partition is really there: see Get-RecordedPartitions.
 function New-RecordedPartition($Plan, $State, [string]$Role, [int64]$Offset, [int64]$Size) {
@@ -159,26 +163,26 @@ function New-LinuxSpace($Plan, [string]$Strategy, $State) {
     if ($Strategy -eq 'prepared') {
         Set-Status 'Creating the Linux partitions...'
         $boot = New-RecordedPartition $Plan $State 'boot' $Plan.FreeStart 1GB
-        Format-Volume -Partition $boot -FileSystem FAT32 -NewFileSystemLabel $BootLabel -Confirm:$false -Force | Out-Null
+        Format-NewPartition $boot FAT32 $BootLabel
         Remove-DriveLetter $boot
 
         $root = New-RecordedPartition $Plan $State 'root' ($Plan.FreeStart + 1GB) ([int64]($Plan.LinuxGB - 1) * 1GB)
         # A placeholder file system: it gives the partition a recognisable label in the
         # Linux installer and stops Windows offering to format a blank partition.
         # The installer replaces it with ext4.
-        Format-Volume -Partition $root -FileSystem exFAT -NewFileSystemLabel $RootLabel -Confirm:$false -Force | Out-Null
+        Format-NewPartition $root exFAT $RootLabel
         Remove-DriveLetter $root
     }
 
     if ($Plan.LiveSize) {
         Set-Status 'Creating the partition for the live system...'
         $live = New-RecordedPartition $Plan $State 'live' $Plan.LiveOffset $Plan.LiveSize
-        Format-Volume -Partition $live -FileSystem exFAT -NewFileSystemLabel $LiveLabel -Confirm:$false -Force | Out-Null
+        Format-NewPartition $live exFAT $LiveLabel
     }
 
     Set-Status 'Creating the installer partition...'
     $installer = New-RecordedPartition $Plan $State 'installer' $Plan.InstallerOffset $Plan.InstallerSize
-    Format-Volume -Partition $installer -FileSystem FAT32 -NewFileSystemLabel $InstallerLabel -Confirm:$false -Force | Out-Null
+    Format-NewPartition $installer FAT32 $InstallerLabel
     $installer
 }
 
