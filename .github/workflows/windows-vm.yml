@@ -114,7 +114,7 @@ jobs:
           SCENARIO: ${{ inputs.scenario }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          if [ -z "$SCENARIO" ]; then SCENARIO=$(printf '%s' "$COMMIT_MESSAGE" | grep -oP 'scenario=\K.*' || echo live); fi
+          if [ -z "$SCENARIO" ]; then SCENARIO=$(printf '%s' "$COMMIT_MESSAGE" | grep -oP 'scenario=\K\S+' || echo live); fi
           cp bin/Release/hop.exe /mnt/hopvm/files/hop.exe
           python3 tools/vm/hopvm.py run $SCENARIO
 

@@ -117,6 +117,14 @@ class Agents(http.server.BaseHTTPRequestHandler):
         self.reply()
 
 
+class Server(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        pass    # an agent gone mid-request, because Windows restarted
+
+
 class Vm:
     def __init__(self, secure_boot=True, memory_gb=12, cpus=4):
         self.secure_boot = secure_boot
@@ -139,9 +147,7 @@ class Vm:
         os.makedirs(OUT, exist_ok=True)
         os.makedirs(os.path.join(OUT, 'lapse'), exist_ok=True)
         Agents.vm = self
-        socketserver.ThreadingTCPServer.allow_reuse_address = True
-        self.server = socketserver.ThreadingTCPServer(('127.0.0.1', PORT), Agents)
-        self.server.daemon_threads = True
+        self.server = Server(('127.0.0.1', PORT), Agents)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
     # --- Starting and stopping ---------------------------------------------------------
@@ -264,7 +270,7 @@ class Vm:
     def key(self, *combo, hold=80):
         self.qmp('send-key', keys=[{'type': 'qcode', 'data': k} for k in combo], **{'hold-time': hold})
 
-    def type(self, text, delay=0.04):
+    def type(self, text, delay=0.12):
         for ch in text:
             if ch.isascii() and ch.isalpha():
                 combo = ['shift', ch.lower()] if ch.isupper() else [ch]
@@ -276,7 +282,8 @@ class Vm:
                 combo = [PLAIN[ch]]
             else:
                 raise ValueError(f'no key for {ch!r}')
-            self.key(*combo)
+            # One at a time, or the next arrives while this is held, and Linux sees it repeat for ever.
+            self.key(*combo, hold=40)
             time.sleep(delay)
 
     def screen_size(self):
