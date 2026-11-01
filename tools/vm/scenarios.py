@@ -603,6 +603,8 @@ LIVE_REPORT = 'wget -qO- 10.0.2.2:8765/file/live-report.sh | sudo sh\n'
 def restart_into_linux(vm, s):
     """Restart now, and what the firmware does next. The screen is how to tell."""
     before = vm.agent_boot.get('user')
+    # Its sign-in window comes up over everything when it likes, and takes the click.
+    vm.ps('Stop-Process -Name OneDrive* -Force -ErrorAction SilentlyContinue; Start-Sleep 2', timeout=30)
     s.press('Restart now', limit=30)
     for second in range(0, 420, 15):
         time.sleep(15)

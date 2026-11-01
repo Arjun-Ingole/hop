@@ -404,7 +404,8 @@ try {
     }
     Save-State $old
     Check 'the old file reads as ready' ((Get-InstallStatus) -eq 'ready') (Get-InstallStatus)
-    Check 'steps read as they did' (((Get-Steps (Get-Distro 'ubuntu' '') 1 (Read-State)).Steps -join ' ') -like '*alongside*') ''
+    # An old file can't say the easy option would pick hop's space, so it gets the steps that don't depend on that.
+    Check 'its steps are the manual ones' (((Get-Steps (Get-Distro 'ubuntu' '') 1 (Read-State)).Steps -join ' ') -like '*select the 1 GB of free space*') ''
     Invoke-Cleanup
     Check 'undo gives C: its space back' ((Get-Layout $a) -eq $beforeOld) "$(Get-Layout $a) vs $beforeOld"
 
