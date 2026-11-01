@@ -46,13 +46,18 @@ function Get-WindowsEsp {
 # Windows' EFI partition is small, and other systems may have filled it. $LinuxMB is what the Linux
 # installer will add there later, for those whose installer doesn't notice when it runs out. hop's own
 # boot loader doesn't count against it, because it's replaced by what's about to be copied.
-function Assert-EspRoom([string]$Root, [string]$Source, [int]$LinuxMB = 0) {
-    $needed = (Get-ChildItem -LiteralPath $Source -Filter '*.efi' -Force | Measure-Object -Property Length -Sum).Sum + 1MB + [int64]$LinuxMB * 1MB
-    $free = ([IO.DriveInfo]$Root).AvailableFreeSpace
+function Get-OwnLoaderBytes([string]$Root) {
+    [int64]$bytes = 0
     foreach ($name in $EspFolders) {
         $own = Join-Path $Root $name
-        if (Test-Path -LiteralPath $own) { $free += [int64](Get-ChildItem -LiteralPath $own -Recurse -Force -File | Measure-Object -Property Length -Sum).Sum }
+        if (Test-Path -LiteralPath $own) { $bytes += [int64](Get-ChildItem -LiteralPath $own -Recurse -Force -File | Measure-Object -Property Length -Sum).Sum }
     }
+    $bytes
+}
+
+function Assert-EspRoom([string]$Root, [string]$Source, [int]$LinuxMB = 0) {
+    $needed = (Get-ChildItem -LiteralPath $Source -Filter '*.efi' -Force | Measure-Object -Property Length -Sum).Sum + 1MB + [int64]$LinuxMB * 1MB
+    $free = ([IO.DriveInfo]$Root).AvailableFreeSpace + (Get-OwnLoaderBytes $Root)
     if ($free -lt $needed) {
         throw ('The EFI system partition is too full: the startup files need {0:N0} MB and {1:N0} MB is free. Remove boot files from other systems and try again.' -f ($needed / 1MB), ($free / 1MB))
     }
