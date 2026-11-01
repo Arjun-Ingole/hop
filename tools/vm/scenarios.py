@@ -603,7 +603,7 @@ def scenario_install(bench):
     time.sleep(10)
     vm.shot('linux-report')
     time.sleep(5)
-    vm.type('sudo reboot\n')
+    vm.type('sudo systemctl reboot -i\n')
     undo_after_linux(vm, s, before)
 
 

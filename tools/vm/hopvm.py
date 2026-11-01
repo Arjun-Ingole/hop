@@ -111,7 +111,7 @@ class Agents(http.server.BaseHTTPRequestHandler):
             name = os.path.basename(query.get('name', ['post'])[0])
             with open(os.path.join(OUT, f'post-{name}.txt'), 'ab') as f:
                 f.write(body + b'\n')
-            log(f'post {name}: {body[:4000].decode("utf-8", "replace")}')
+            log(f'post {name}: {body[:20000].decode("utf-8", "replace")}')
         else:
             log(f'guest: {body.decode("utf-8", "replace")}')
         self.reply()
