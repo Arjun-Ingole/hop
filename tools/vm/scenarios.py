@@ -441,7 +441,9 @@ def scenario_stuck(bench):
 
 
 def scenario_protect(bench):
-    """hop's folder as an earlier build left it, with files a program that isn't elevated planted, then hop opened."""
+    """hop's folder as an earlier build left it, with files an ordinary user planted, then hop opened. The agent
+    is elevated, so what it makes is the administrators', which hop rightly trusts. The planted files go to the
+    Users group, which is the owner an ordinary user's files can't be told apart from here."""
     vm, s = bench.fresh()
     s.desktop()
     vm.wait_agent('system', limit=300)
@@ -457,6 +459,7 @@ Set-Content C:\ProgramData\hop\make-room.json '{"Phase":"ready","Saved":"2030-01
 Set-Content C:\ProgramData\hop\state.json.tmp 'planted'
 New-Item -ItemType Directory C:\ProgramData\LinuxHop | Out-Null
 Set-Content C:\ProgramData\LinuxHop\state.json '{"Distro":"planted","Partitions":[]}'
+foreach ($planted in 'C:\ProgramData\hop\make-room.json', 'C:\ProgramData\hop\state.json.tmp', 'C:\ProgramData\LinuxHop') { icacls $planted /setowner '*S-1-5-32-545' /T | Out-Null }
 Get-ChildItem C:\ProgramData\hop -Force | ForEach-Object { "$($_.Name) owner $((Get-Acl $_.FullName).Owner)" }
 "LinuxHop owner " + (Get-Acl C:\ProgramData\LinuxHop).Owner
 """), flush=True)
@@ -473,7 +476,6 @@ icacls C:\ProgramData\hop
 Get-ChildItem C:\ProgramData -Force -Filter 'hop*' | ForEach-Object { $_.FullName }
 Get-ChildItem C:\ProgramData -Force -Filter 'LinuxHop*' | ForEach-Object { $_.FullName }
 Get-ChildItem C:\ProgramData\hop -Recurse -Force | ForEach-Object { "$($_.FullName) owner $((Get-Acl $_.FullName).Owner)" }
-try { Set-Content C:\ProgramData\hop\again.json 'planted'; 'not elevated: COULD write there' } catch { 'not elevated: refused' }
 """), flush=True)
     s.hop_log()
 
