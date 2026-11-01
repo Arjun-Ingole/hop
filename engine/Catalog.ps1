@@ -174,7 +174,7 @@ function Get-Catalog {
                 'Under **Bootloader**, choose **Grub**. Set up the rest of the menu as you like, including a Profile if you want a desktop, then choose **Install**.'
                 "Don't change any other partition. The installer is running from this drive.") })
         New-Entry 'omarchy' 'Omarchy' 'Hyprland, ready to go' 'omarchy.org' '#9ECE6A' 'omarchy' ((Get-OmarchyBoot) + @{
-            Kind = 'omarchy'; SecureBootOff = $true; NoBitLocker = $true; MinGB = 33; UntriedFile = 'arch\x86_64\omarchy-root.img.zst'; Steps = @(
+            Kind = 'omarchy'; Manual = 'Free space install'; SecureBootOff = $true; NoBitLocker = $true; MinGB = 33; UntriedFile = 'arch\x86_64\omarchy-root.img.zst'; Steps = @(
                 'Press **Return** to start, then choose your keyboard.'
                 'Make your account. Your password also unlocks the disk if Omarchy encrypts it. Name, email and hostname can be left empty.'
                 'Under **Select install disk**, choose the disk Windows is on.'

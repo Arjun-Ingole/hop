@@ -61,7 +61,8 @@ Describe 'Catalog' {
     It 'edits the boot files of the systems that need it, with the edit they cannot start without first' {
         foreach ($distro in $catalog | Where-Object BootEdits) {
             $distro.BootConfigs | Should -Not -BeNullOrEmpty
-            if ($distro.Live) { @($distro.BootEdits.Values)[0] | Should -Match "=$InstallerLabel(\s|$)" }
+            $label = if ($distro.LiveFiles) { $LiveLabel } else { $InstallerLabel }
+            if ($distro.Live) { @($distro.BootEdits.Values)[0] | Should -Match "=$label(\s|$)" }
         }
     }
     It 'stops casper making a partition for everything that starts with it, including a chosen ISO' {
@@ -859,7 +860,7 @@ Describe 'Read-Iso' {
         }
     }
     It 'has no second partition for anything else' {
-        New-IsoFiles @{ 'EFI\BOOT\BOOTX64.EFI' = 'x'; 'arch\x86_64\airootfs.sfs' = 'x'; 'boot\grub\grub.cfg' = 'linux /k archisobasedir=arch archisosearchuuid=2026' }
+        New-IsoFiles @{ 'EFI\BOOT\BOOTX64.EFI' = 'x'; 'arch\x86_64\airootfs.sfs' = 'x'; 'k' = 'x'; 'boot\grub\grub.cfg' = 'linux /k archisobasedir=arch archisosearchuuid=2026' }
         $iso = Read-Iso 'a.iso' (Get-Catalog | Where-Object Id -eq 'cachyos')
         $iso.LiveGB | Should -Be 0
         $iso.Bytes | Should -BeGreaterThan 0
@@ -1669,7 +1670,7 @@ Describe 'Assert-SystemFitsDrive' {
     It 'tells the window which systems this is' {
         $engine = New-Object Hop.Engine
         try {
-            @($engine.GetCatalog() | Where-Object WindowsDiskOnly | ForEach-Object { $_.Id } | Sort-Object) | Should -Be @('arch', 'cachyos', 'debian', 'fedora', 'ultramarine')
+            @($engine.GetCatalog() | Where-Object WindowsDiskOnly | ForEach-Object { $_.Id } | Sort-Object) | Should -Be @('arch', 'cachyos', 'debian', 'fedora', 'omarchy', 'ultramarine')
         } finally { $engine.Dispose() }
     }
 }
