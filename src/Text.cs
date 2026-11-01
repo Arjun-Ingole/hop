@@ -11,7 +11,15 @@ namespace Hop
     static class TextKit
     {
         static readonly StringFormat Format = CreateFormat();
-        static readonly Graphics Measurer = Graphics.FromImage(new Bitmap(1, 1));
+        // Measured as it's drawn: see Theme.Prepare. Widths differ between hints, and words are placed by them.
+        static readonly Graphics Measurer = CreateMeasurer();
+
+        static Graphics CreateMeasurer()
+        {
+            var g = Graphics.FromImage(new Bitmap(1, 1));
+            g.TextRenderingHint = Theme.TextHint;
+            return g;
+        }
 
         static StringFormat CreateFormat()
         {

@@ -440,6 +440,37 @@ def make_room(vm, s):
     s.hop_log()
 
 
+def scenario_scales(bench):
+    """The screens that hold most text, at 100%, 125% and 150%, with the setting a person would use."""
+    vm, s = bench.fresh()
+    s.desktop()
+    s.get_hop()
+    for percent, dpi in ((100, 96), (125, 120), (150, 144)):
+        vm.ps(f"""
+Set-ItemProperty 'HKCU:\\Control Panel\\Desktop' -Name LogPixels -Value {dpi} -Type DWord
+Set-ItemProperty 'HKCU:\\Control Panel\\Desktop' -Name Win8DpiScaling -Value 1 -Type DWord
+""", timeout=30)
+        restart_and_wait(vm)
+        time.sleep(15)
+        s.open_as_a_person(f'scale{percent}-elevation')
+        s.settle()
+        vm.shot(f'scale{percent}-choose')
+        ui = s.ui()
+        print(f'{percent}%: window {ui.get("left")},{ui.get("top")} to {ui.get("right")},{ui.get("bottom")}', flush=True)
+        s.press('Install', limit=30)
+        time.sleep(3)
+        vm.shot(f'scale{percent}-install-pressed')
+        if 'Continue' in s.names():
+            s.press('Continue')
+            time.sleep(3)
+            vm.shot(f'scale{percent}-confirm')
+        s.press('Back', limit=30)
+        time.sleep(2)
+        ui = s.ui()
+        vm.click(ui['right'] - int(24 * dpi / 96), ui['top'] + int(22 * dpi / 96))
+        time.sleep(5)
+
+
 def scenario_stuck(bench):
     """Make room, for real, then closing hop. The one that had only ever been mocked."""
     vm, s = bench.fresh()
