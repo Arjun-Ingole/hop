@@ -309,7 +309,7 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
             # Looked up again now: numbers can shift once partitions have gone, and offsets can't.
             $c = if ($owner.Windows) { Get-WindowsPartition } else { Get-PartitionAt $owner.DiskNumber $owner.Offset }
             if (-not $c) { throw "The drive that gave up the space isn't there any more." }
-            $max = (Get-PartitionSupportedSize -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber).SizeMax
+            $max = (Get-SupportedSize $c).SizeMax
             if ($max -gt $c.Size + 1MB) {
                 Set-Status "Giving the space back to $(if ($owner.Windows) { 'Windows' } else { "drive $(Get-LetterOf $c):" })..."
                 Resize-Partition -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber -Size $max

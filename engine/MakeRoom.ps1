@@ -24,7 +24,7 @@ $RoomRestoreTries = 8   # the task tries every 15 minutes, and each time hop ope
 function Get-ShrinkBlocker($Partition) {
     $c = if ($Partition) { $Partition } else { Get-WindowsPartition }
     $since = (Get-Date).AddSeconds(-5)
-    try { [void](Get-PartitionSupportedSize -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber) } catch { }
+    try { [void](Get-SupportedSize $c) } catch { }
     for ($i = 0; $i -lt 3; $i++) {
         $found = Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = 'Microsoft-Windows-Defrag'; Id = 259; StartTime = $since } -MaxEvents 1 -ErrorAction SilentlyContinue
         if ($found) { return Get-BlockerFile $found.Message }
@@ -327,12 +327,12 @@ function Complete-MakeRoom {
 }
 
 # It can run for a very long time. Whatever it moved before the limit still counts. Says the code it finished with.
-function Start-DefragRun([string]$Room) {
+function Start-DefragRun([string]$Room, [int]$Seconds = $DefragLimitSeconds) {
     $process = Start-Process defrag.exe -ArgumentList "$Room /X" -WindowStyle Hidden -PassThru
     $null = $process.Handle   # keeps ExitCode readable after the process exits
     try {
-        if ($process.WaitForExit($DefragLimitSeconds * 1000)) { return $process.ExitCode }
-        Write-Log "Stopped moving files after $DefragLimitSeconds seconds."
+        if ($process.WaitForExit($Seconds * 1000)) { return $process.ExitCode }
+        Write-Log "Stopped moving files after $Seconds seconds."
     } finally {
         if (-not $process.HasExited) { $process.Kill() }
     }
@@ -341,17 +341,27 @@ function Start-DefragRun([string]$Room) {
 function Invoke-Defrag([string]$Drive) {
     $room = Get-RoomDrive $Drive
     Set-Status 'This can take several minutes. Whatever hop moves still counts, even if it stops early.'
+    # All the tries share one limit: closing hop is refused meanwhile, and the safety net can't run.
+    $deadline = (Get-Date).AddSeconds($DefragLimitSeconds)
+    $cancelled = 0
     # Straight after signing in it can give up at once with 1223, having moved nothing, as seen on a real Windows.
     for ($try = 1; $try -le $DefragTries; $try++) {
-        $code = Start-DefragRun $room
+        $left = [int][math]::Floor(($deadline - (Get-Date)).TotalSeconds)
+        if ($left -le 0) { break }
+        $code = Start-DefragRun $room $left
         Write-Log "Finished moving files (code $code)."
         if ($code -ne $DefragCancelled) { break }
-        if ($try -lt $DefragTries) { Start-Sleep -Seconds $DefragRetrySeconds }
+        $cancelled++
+        if ($try -lt $DefragTries) { Start-Sleep -Seconds ([math]::Min($DefragRetrySeconds, $left)) }
     }
+    if ($cancelled -eq $DefragTries) { Write-Log "Windows cancelled moving files all $DefragTries times, so nothing moved." }
     # Windows can't work out the limit for a moment after that.
     $c = Get-Partition -DriveLetter $room.TrimEnd(':')
     for ($i = 0; $i -lt 6; $i++) {
-        try { [void](Get-PartitionSupportedSize -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber -ErrorAction Stop); break } catch { Start-Sleep -Seconds 5 }
+        try { [void](Get-SupportedSize $c); break } catch {
+            if ((Get-Date) -ge $deadline) { break }
+            Start-Sleep -Seconds 5
+        }
     }
 }
 
