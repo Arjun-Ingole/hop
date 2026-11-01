@@ -4,7 +4,8 @@
 
 ### Added
 
-- **Replace Windows, where hop has seen it work.** For Ubuntu, Zorin OS, Debian and Arch, hop can set up an installer
+- **Replace Windows, where hop has seen it work.** For Ubuntu, Xubuntu, Ubuntu Budgie, Ubuntu Cinnamon, Edubuntu, Ubuntu Studio, Zorin OS, Fedora Workstation, Ultramarine,
+  elementary OS, Debian, Arch and Omarchy, hop can set up an installer
   that erases the whole disk Windows is on. It's the last row of the drive list, is never chosen for you, and shows the disk,
   its size and every drive on it that would go, then asks you to type ERASE. hop itself still only makes the
   installer: the Linux installer does the erasing, when you tell it to. Undo works until then.

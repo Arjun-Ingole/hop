@@ -40,22 +40,28 @@ Each check is from the serial log or the disk image, not the job's result:
 | Zorin OS 18.1 | Yes | Yes | By its installer | Yes, with Ubiquity's `noninteractive` mode and a preseed that erases the disk, so its screens weren't seen |
 | Debian 13.7 | Yes | Yes | Yes | Yes, in its real installer's screens under a small X server, with keys pressed, its **Erase disk** preset and its users screen left out |
 | Arch 2026.10.01 | Yes | Yes | Yes | Yes, with `archinstall --silent`, a config file that wipes the disk and the internet |
-| Lubuntu 26.04.1 | No | Yes | No | Its installer offered **Erase disk**, but the test stopped there, because it has one more screen than Debian's |
-| Ubuntu Unity 26.04 | No | Yes | No | The test had nothing to drive: it doesn't run the installer service Ubuntu's does |
 | elementary OS 8.1 | Yes | Yes | By its installer | Yes, by asking its installer's own service for `InstallWithDefaultDiskLayout`, which is what its erase choice calls, at 7.1 GB of memory, with Secure Boot on and BitLocker's signature on "C:". Its screens weren't seen. The firmware started `\EFI\ubuntu\shimx64.efi`, which said `elementary OS 8`, root on the new `data-root` volume, `secureboot=1`, and `dm=active` |
 | Ultramarine 44 | Yes | Yes | By its installer | Yes, as Fedora, at 7.4 GB of memory and with Secure Boot on. The firmware started `\EFI\fedora\shimx64.efi`, and the system then stopped at its own first-start **Language** screen, `taidan-initial-setup.service`, so the probe's message didn't run |
 | Omarchy 4.0.6 | Yes | Yes, as it starts, with `copytoram` added to hop's `umount -l` | By its installer | Yes, in its real wizard on `tty1` with keys pressed: **Full disk install**, at 10 GB of memory, with BitLocker's signature on "C:", which that mode doesn't check for. Once encrypted, with the password typed at its prompt, to its desktop, and once not, to its login screen, with `Reached target Graphical Interface`. Secure Boot off, as it needs |
-| Xubuntu, Ubuntu Budgie, Ubuntu Cinnamon, Edubuntu 26.04.1 | Yes | Yes | By its installer | Yes, as Ubuntu, with its autoinstall, each at its ISO plus 4 GB, with Secure Boot on and BitLocker's signature on "C:". Their screens weren't seen. The firmware started `\EFI\ubuntu\shimx64.efi`, each said root on the new partition, `secureboot=1` and `dm=active`, and a screenshot shows each flavour's own login screen |
-| Linux Mint 22.3, other flavours, CachyOS, Pop!_OS | No | Not shown | No | Not finished, or not run, in the time allowed |
+| Xubuntu, Ubuntu Budgie, Ubuntu Cinnamon, Edubuntu, Ubuntu Studio 26.04.1 | Yes | Yes | By its installer | Yes, as Ubuntu, with its autoinstall, each at its ISO plus 4 GB, with Secure Boot on and BitLocker's signature on "C:". Their screens weren't seen. The firmware started `\EFI\ubuntu\shimx64.efi`, each said root on the new partition, `secureboot=1` and `dm=active`, and a screenshot shows each one's login screen |
+| Linux Mint 22.3, all three | No | Yes, and `blockdev --rereadpt` succeeded, with Secure Boot on | No | Not shown. Its `noninteractive` mode stopped at a question it can't ask, with `does not implement question_dialog`, and its graphical installer under a small X server waited at **Welcome** because the test pressed no keys. The disk was untouched |
+| Pop!_OS 24.04 | No | Yes, once hop's edit found its `/casper_pop-os_...` folder | By `distinst` | Erased it with `distinst` and a table given by hand, but without `--modify-boot`, so the firmware found nothing to start: `No bootable option or device was found`. Not shown starting |
+| Lubuntu 26.04.1, CachyOS | No | Yes | No | Not shown. They use Calamares, and the test stopped at its **Location** screen, so the disk was untouched |
+| Ubuntu Unity 26.04 | No | Yes, with Secure Boot on | No | Not run. It uses Calamares, not the installer service Ubuntu's does |
 | Fedora 44 | Yes | Yes, as it starts: `rd.live.ram=1` stays mounted, and hop's `umount -l` takes that away | By its installer | Yes, with Anaconda's `--cmdline` and a kickstart that clears the disk, at 6.7 GB of memory and with Secure Boot on. Its screens weren't seen. The firmware started `\EFI\fedora\shimx64.efi`, which said `Fedora Linux 44`, root on the new partition, `secureboot=1`. The kickstart left it at `multi-user.target`, so its desktop wasn't seen |
 
 Ubuntu's ISO in a virtual PC with 7 GB of memory copied itself to memory and then hadn't reached a login after seven
 minutes, which is why hop refuses it.
 
-The installer's choices weren't clicked by a person. Unattended settings stand in for them, except on Debian, and
-the words in the steps come from the installer's own strings. The installers were also shown fewer disks or
-choices than a PC would give them. **No real PC has done this,** the screens in hop have never been opened, and
-neither Secure Boot nor BitLocker was part of these runs.
+The installer's choices weren't clicked by a person. Unattended settings stand in for them, except on Debian and Omarchy,
+and the words in the steps come from the installer's own strings or source. The installers were also shown fewer disks or
+choices than a PC would give them. **No real PC has done this,** and the screens in hop have never been opened.
+
+**Secure Boot and BitLocker:** Fedora, Ultramarine, elementary OS and the Ubuntu flavours above erased the disk and then
+started with Secure Boot on, through their own `shimx64.efi`. Omarchy needs it off. The other runs before these left it off.
+"C:" had BitLocker's signature in the runs that say so, and on Fedora and Ultramarine only the bytes hop and Omarchy read,
+which `blkid` didn't call BitLocker. It's a signature and its metadata block, not a real encrypted volume, so nothing here
+shows what an installer does with one that's really encrypted, or with a real Windows on the disk.
 
 ## Casper's partition, in a virtual PC
 
