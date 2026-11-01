@@ -1679,13 +1679,16 @@ Describe 'Systems whose installer can''t use free space on its own disk' {
             ($result.Notes -join ' ') | Should -BeLike '*starts*first*Windows Boot Manager*bootx64.efi*'
         }
     }
+    It 'stops anything marked refused, wherever it was going, with its reason' {
+        { Assert-SystemFitsDrive ([pscustomobject]@{ Name = 'Test'; Refused = 'Not this one.' }) '' } | Should -Throw 'Not this one.'
+    }
     It 'still offers replacing Windows with Zorin OS, where that erase was seen' {
         (Get-Catalog | Where-Object Id -eq 'zorin').FullDisk | Should -Not -BeNullOrEmpty
     }
     It 'tells the window, and refuses nothing else' {
         $engine = New-Object Hop.Engine
         try {
-            @($engine.GetCatalog() | Where-Object Refused | ForEach-Object { $_.Id } | Sort-Object) | Should -Be @($ubiquity | Where-Object { $_ -notin $UbiquityProven } | Sort-Object)
+            (@($engine.GetCatalog() | Where-Object Refused | ForEach-Object { $_.Id } | Sort-Object) -join ',') | Should -Be (@($ubiquity | Where-Object { $_ -notin $UbiquityProven } | Sort-Object) -join ',')
             @($engine.GetCatalog() | Where-Object WindowsDiskOnly | ForEach-Object { $_.Id } | Sort-Object) | Should -Be @(@('cachyos', 'debian') + $UbiquityProven | Sort-Object)
         } finally { $engine.Dispose() }
     }

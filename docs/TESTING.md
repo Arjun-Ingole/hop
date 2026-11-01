@@ -154,7 +154,7 @@ The same, with one 130 GB disk: EFI partition, reserved partition, C:, `HOPINSTA
 | Zorin OS 18.1, Linux Mint 22.3 | Ubiquity's real screens under a small X server, and on Zorin OS its `noninteractive` mode | **Nothing installed.** See below | No | Unchanged, but nothing tried to change them |
 | Debian 13.7, CachyOS | Their real Calamares screens, as above, one attempt each. Not run to the end: the script didn't finish the partition screen. The steps offered next to Windows use the words on those screens, but nobody has followed them through | Nothing installed | No | Unchanged, but nothing tried to change them |
 
-**So hop's own partition is how these go next to Windows: see the next section. They're refused on a second disk, and so is Linux Mint MATE next to Windows.** Started from the disk it's installing to, Ubiquity's `Installation type` goes straight to its manual screen, with no option to install alongside Windows, and says: `Your installation medium is on /dev/nvme0n1p5. You will not be able to create, delete, or resize partitions on this disk, but you may be able to install to existing partitions there.` hop's steps asked for that option, then **+**, which is greyed out on Linux Mint. `noninteractive` mode stopped at `No root file system is defined`. Replacing Windows with Zorin OS isn't affected: that run copies it to memory first.
+**So hop's own partition is how these go next to Windows: see the next section. They're refused on a second disk.** Started from the disk it's installing to, Ubiquity's `Installation type` goes straight to its manual screen, with no option to install alongside Windows, and says: `Your installation medium is on /dev/nvme0n1p5. You will not be able to create, delete, or resize partitions on this disk, but you may be able to install to existing partitions there.` hop's steps asked for that option, then **+**, which is greyed out on Linux Mint. `noninteractive` mode stopped at `No root file system is defined`. Replacing Windows with Zorin OS isn't affected: that run copies it to memory first.
 
 Two routes got further, and neither was run to the end. The test's script stopped each run, on a **Continue** it clicked wrongly or couldn't find:
 
@@ -209,7 +209,7 @@ The same 130 GB disk, plus hop's real `prepared` partitions: 1 GB FAT32 `LINUXBO
 | --- | --- | --- | --- |
 | Linux Mint Xfce 22.3 | **Pass.** `partition #7` as ext4, with `/boot/efi` on the existing EFI partition, and `LINUXBOOT` left alone | `Boot0009 "Ubuntu"` first in `BootOrder`, then `Windows Boot Manager`. The marker says root on `/dev/nvme0n1p7`, efi on `/dev/nvme0n1p1`, `graphical.target` active and a `lightdm` session on seat0. Its menu has `Windows Boot Manager (on /dev/nvme0n1p1)` | `\EFI\Microsoft` unchanged. **`\EFI\Boot\bootx64.efi` replaced**, and `fbx64.efi` and `mmx64.efi` added. MSR, C:, recovery and `HOPINSTALL` byte for byte, after the install and the restart |
 | Linux Mint Cinnamon 22.3 | **Pass.** The same | `Boot0009 "Ubuntu"`, then `Windows Boot Manager`. The marker says root on `/dev/nvme0n1p7`, efi on `/dev/nvme0n1p1`, a `lightdm` session on seat0. Its menu has `Windows Boot Manager (on /dev/nvme0n1p1)` | The same |
-| Linux Mint MATE 22.3 | **Not known.** The runner's own disk filled up after 15 minutes, with no artifact, so nothing can be said about MATE. An earlier run of it stopped at the end with no restart. Still refused | No | Not read |
+| Linux Mint MATE 22.3 | **Pass**, on its second try, with the runner's disk cleared first: the first filled it up after 15 minutes. The same | `Boot0009 "Ubuntu"`, then `Windows Boot Manager`. The marker says root on `/dev/nvme0n1p7`, efi on `/dev/nvme0n1p1`, a `lightdm` session on seat0. Its menu has `Windows Boot Manager (on /dev/nvme0n1p1)` | The same |
 | Zorin OS 18.1 | **Pass.** The same, `partition #7` | `Boot0009 "Zorin OS"` first in `BootOrder`, then `Windows Boot Manager`. The marker says root on `/dev/nvme0n1p7`, efi on `/dev/nvme0n1p1`, `gdm active` with a session on seat0. Its menu has `Windows Boot Manager (on /dev/nvme0n1p1)` | The same |
 
 **What this doesn't show:** no real PC, so no real Windows was started afterwards, and nobody logged in. `\EFI\Boot\bootx64.efi` is what a firmware starts when it has no entries, so on such a PC that's Linux now. hop's Undo doesn't put it back.
@@ -259,8 +259,8 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] Open a second copy of hop: refused
 - [ ] Click **Later**, then restart Windows yourself: Windows starts, not the installer
 - [ ] Turn on Controlled Folder Access: making partitions still works, or the error explains why
-- [ ] Zorin OS or Linux Mint Cinnamon or Xfce next to Windows: click through the steps yourself, press **Restart Now**, and check Windows still starts
-- [ ] Those on a second disk, or Linux Mint MATE anywhere: refused before anything changes, with the reason
+- [ ] Zorin OS or any Linux Mint next to Windows: click through the steps yourself, press **Restart Now**, and check Windows still starts
+- [ ] Those on a second disk: refused before anything changes, with the reason
 - [ ] Plug in a USB stick with an Ubuntu ISO written to it: warned before starting, refused at restart
 - [ ] Click Cancel as "Making room" begins: either it cancels with the disk untouched, or the install carries on
 
