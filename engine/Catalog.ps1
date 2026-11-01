@@ -9,7 +9,7 @@ function New-Entry([string]$Id, [string]$Name, [string]$Note, [string]$Source, [
         Id = $Id; Name = $Name; Version = $null; Note = $Note; Source = $Source; Color = $Color; Logo = $Logo
         Strategy = 'freespace'; SecureBootOff = $false; Kind = $null; Base = $null; Prefix = $null; Edition = $null
         Mode = $null; Alongside = $null; Manual = $null; ManualExtra = $null; Steps = $null
-        Live = $null; LiveFiles = $null; UntriedFile = $null; NoBitLocker = $false; MinGB = 0; Notes = $null; BootConfigs = $null; BootEdits = $null; GrubDir = $null; EspShell = $null; EspLinuxMB = 0; FullDisk = $null; SecondDisk = $null
+        Live = $null; LiveFiles = $null; UntriedFile = $null; NoBitLocker = $false; MinGB = 0; Notes = $null; BootConfigs = $null; BootEdits = $null; GrubDir = $null; EspShell = $null; EspLinuxMB = 0; FullDisk = $null; SecondDisk = $null; Refused = $null
     }
     foreach ($key in $More.Keys) { $entry[$key] = $More[$key] }
     [pscustomobject]$entry
@@ -27,6 +27,12 @@ function Get-CasperBoot {
     }
 }
 
+# Ubiquity, started from the disk it's installing to, says it can't make partitions there, and shows no way to install
+# alongside Windows. See docs/TESTING.md. Its steps stay in the catalog for when a route has been seen to the end.
+function Get-UbiquityRefusal([string]$Name) {
+    "hop can't install $Name next to Windows or on a second disk yet. Its installer won't make a partition on the disk it starts from, and hop hasn't got it to finish another way."
+}
+
 # Official Ubuntu flavours of 26.04 LTS, all published with SHA256SUMS on ubuntu.com.
 function New-UbuntuFlavor([string]$Id, [string]$Name, [string]$Note, [string]$Color, [hashtable]$More = @{}) {
     $base = if ($Id -eq 'ubuntu') { 'https://releases.ubuntu.com/26.04/' } else { "https://cdimage.ubuntu.com/$Id/releases/26.04/release/" }
@@ -38,7 +44,7 @@ function New-UbuntuFlavor([string]$Id, [string]$Name, [string]$Note, [string]$Co
 
 function New-MintEdition([string]$Edition, [string]$Name, [string]$Note) {
     New-Entry "mint-$Edition" $Name $Note 'the Linux Mint mirror at kernel.org' '#69B53F' 'mint' ((Get-CasperBoot) + @{
-        Kind = 'mint'; Edition = $Edition; Alongside = 'Install Linux Mint alongside Windows Boot Manager'; Manual = 'Something else' })
+        Kind = 'mint'; Edition = $Edition; Refused = (Get-UbiquityRefusal $Name); Alongside = 'Install Linux Mint alongside Windows Boot Manager'; Manual = 'Something else' })
 }
 
 # How live systems that don't search every partition, as casper does, find the installer.
@@ -110,6 +116,7 @@ function Get-FullDiskBoot([string]$Family) {
 # SecondDisk: its Steps and Notes for a disk Windows isn't on, which replace the usual ones. Only for a system really seen
 #   installing on a second disk and then starting from it: see docs/TESTING.md. {DISK} names the disk. Without this, a system
 #   with its own Steps is refused there. EspLinuxMB here replaces the usual one, for a system that makes its own EFI partition there.
+# Refused: why it can't go next to Windows or on a second disk, in plain words. Replacing Windows is separate.
 # FullDisk: offers replacing Windows. Only for a system really seen erasing the disk it started from and then
 #   starting from that disk: see docs/TESTING.md. IsoGB is its ISO's size, for refusing before the download
 #   when memory's short. Steps is what to click, and {DISK} names the disk.
@@ -146,7 +153,7 @@ function Get-Catalog {
         New-Entry 'pop' 'Pop!_OS' 'Gaming' 'pop-os.org' '#48B9C7' 'pop' ((Get-CasperBoot) + @{
             Kind = 'pop'; Version = '24.04'; Strategy = 'prepared'; Mode = 'Custom (Advanced)'; SecureBootOff = $true })
         New-Entry 'zorin' 'Zorin OS' 'Windows-like' 'the Zorin OS mirror at kernel.org' '#15A6F0' 'zorin' ((Get-CasperBoot) + @{
-            Kind = 'zorin'; Alongside = 'Install Zorin OS alongside Windows Boot Manager'; Manual = 'Something else'
+            Kind = 'zorin'; Refused = (Get-UbiquityRefusal 'Zorin OS'); Alongside = 'Install Zorin OS alongside Windows Boot Manager'; Manual = 'Something else'
             FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 3; Steps = @(
                 'Pick your language and keyboard, then start the installer.'
                 'When asked how to install, choose **Erase disk and install Zorin OS**.'

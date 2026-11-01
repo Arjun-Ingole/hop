@@ -34,6 +34,7 @@
 
 ### Fixed
 
+- **Zorin OS and Linux Mint are refused next to Windows and on a second disk, for now.** Their installer, started from the disk it's installing to, says it can't make partitions there and doesn't offer to install alongside Windows, so hop's steps were wrong. No other route has been seen to the end yet. Replacing Windows with Zorin OS still works, as it starts from memory.
 - Removing Omarchy left its `Limine` startup entry and its EFI partition behind, because hop didn't count its boot loader as a Linux one.
 - **Ubuntu's live system could take the space set aside for Linux.** If nothing came after that space on the disk, its
   `casper` startup code made a partition called `writable` over all of it, and the installer then had nowhere to put

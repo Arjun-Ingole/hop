@@ -53,6 +53,7 @@ function Get-ReturnedHelp {
 # installing on a second disk has no SecondDisk steps, so it's refused rather than guessed at. Replacing
 # Windows isn't affected: its installer always goes on Windows' disk.
 function Assert-SystemFitsDrive($Distro, [string]$Target) {
+    if ($Distro.Refused) { throw $Distro.Refused }
     if (-not $Distro.Steps -or $Distro.SecondDisk -or -not $Target) { return }
     if ((Resolve-Target $Target).Partition.DiskNumber -eq (Get-WindowsPartition).DiskNumber) { return }
     throw "hop hasn't got $($Distro.Name) to finish on a second disk yet. Choose a drive on the disk Windows is on, or another system."

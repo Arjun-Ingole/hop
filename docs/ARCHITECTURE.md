@@ -318,7 +318,7 @@ off and on goes back to Windows. hop warns about this, and it's in Troubleshooti
 | | Which EFI partition | What hop tells people |
 | --- | --- | --- |
 | Ubuntu and flavours ([subiquity](https://github.com/canonical/subiquity/blob/main/subiquity/common/storage/boot.py)) | The one on the disk named under **Device for boot loader installation**, made in that disk's first big enough free space if it has none. So this is chosen before making the Linux partition | Choose the target disk, which keeps GRUB off Windows' partition. If Fast Boot hides the disk, the PC goes back to Windows instead of stopping at a prompt |
-| Linux Mint ([partman-efi](https://github.com/linuxmint/ubiquity/blob/master/d-i/source/partman-efi/fstab.d/efi), [bug](https://bugs.launchpad.net/bugs/1396379)) | The first one it finds, whatever the list says. Usually Windows' | Leave the list alone |
+| Linux Mint, Zorin OS: **refused**, see [Testing](TESTING.md) ([partman-efi](https://github.com/linuxmint/ubiquity/blob/master/d-i/source/partman-efi/fstab.d/efi), [bug](https://bugs.launchpad.net/bugs/1396379)) | The first one it finds, whatever the list says. Usually Windows' | Leave the list alone |
 | Lubuntu (Calamares) | The existing one it's told to use | Its existing step, which is Windows' |
 | elementary OS, Pop!_OS ([distinst](https://github.com/pop-os/distinst/blob/master/src/installer/steps/bootloader.rs)) | Whichever is mounted at `/boot/efi`, which is hop's `LINUXBOOT` on the target disk. The startup entry points at it | The same steps as ever |
 

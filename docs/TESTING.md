@@ -141,10 +141,19 @@ The same, with one 130 GB disk: EFI partition, reserved partition, C:, `HOPINSTA
 | System | Driven by | Went where | Started from disk | Windows' EFI files, and the partitions |
 | --- | --- | --- | --- | --- |
 | Arch 2026.10.01 | The same config, as `archinstall --silent` | hop's 60 GB, as ext4, with `/boot/efi` on the existing EFI partition | Yes: `Boot0009 "GRUB"` first in `BootOrder`, root on the new partition, `Windows Boot Manager` next | Unchanged. MSR, C: and recovery byte for byte, and `HOPINSTALL` apart from `loader/random-seed` |
-| Zorin OS 18.1 | Ubiquity's real screens under a small X server, then its `noninteractive` mode | **Nothing installed, either way.** See below | No | Unchanged, but nothing tried to change them |
-| Debian 13.7, CachyOS | Their real Calamares screens, as above | Nothing installed: the script didn't finish the partition screen | No | Unchanged, but nothing tried to change them |
+| Zorin OS 18.1, Linux Mint 22.3 | Ubiquity's real screens under a small X server, and on Zorin OS its `noninteractive` mode | **Nothing installed.** See below | No | Unchanged, but nothing tried to change them |
+| Debian 13.7, CachyOS | Their real Calamares screens, as above, one attempt each. Not run to the end: the script didn't finish the partition screen. The steps offered next to Windows use the words on those screens, but nobody has followed them through | Nothing installed | No | Unchanged, but nothing tried to change them |
 
-**Zorin OS's steps don't match its installer, when it starts from the disk it's installing to.** `Installation type` went straight to its manual screen, titled `Something else`, with no option to install alongside Windows. It said: `Your installation medium is on /dev/nvme0n1p5. You will not be able to create, delete, or resize partitions on this disk, but you may be able to install to existing partitions there.` hop's steps ask for the alongside option, then for **+** on that screen. `noninteractive` mode stopped at `No root file system is defined`. The erase in the first table worked because that copy to memory lets go of the disk. Using it next to Windows wasn't tested to the end. Linux Mint has the same installer, and its run didn't reach this screen, so it isn't known either way.
+**So hop refuses Zorin OS and every Linux Mint next to Windows and on a second disk.** Started from the disk it's installing to, Ubiquity's `Installation type` goes straight to its manual screen, with no option to install alongside Windows, and says: `Your installation medium is on /dev/nvme0n1p5. You will not be able to create, delete, or resize partitions on this disk, but you may be able to install to existing partitions there.` hop's steps asked for that option, then **+**, which is greyed out on Linux Mint. `noninteractive` mode stopped at `No root file system is defined`. Replacing Windows with Zorin OS isn't affected: that run copies it to memory first.
+
+Two routes got further, and neither was run to the end, because the test's script clicked the wrong **Continue**:
+
+| Route | System | Seen | Not seen |
+| --- | --- | --- | --- |
+| Copying to memory (`toram`) | Zorin OS, Linux Mint Cinnamon | `/cdrom` on `/dev/shm`, the first screen back with `Install Zorin OS alongside Windows Boot Manager` and `Install Linux Mint alongside Windows Boot Manager`, then the question before writing, naming `partition #6 of /dev/nvme0n1 as ext4` | The install, or a restart. Nothing was written |
+| hop's own partition (`prepared`) | Linux Mint Cinnamon and Xfce | **Change...** on that partition, **Use as** `Ext4 journaling file system`, `Format the partition`, **Mount point** `/`, **Install Now**, then the question before writing, naming `partition #7 of /dev/nvme0n1 as ext4` | The install, or a restart. Nothing was written |
+| The same | Zorin OS, Linux Mint MATE | The same as far as **Change...**. The run was stopped there | The rest |
+| The same, on a second disk | Zorin OS, Linux Mint Cinnamon | The usual first screen, because Windows' disk is free, so its alongside option would use that disk. **Something else**, then as above, up to the question before writing | The install, or a restart. Nothing was written |
 
 The other results above are from runs whose partition checksums were read. Runs on a second kind of runner weren't counted: its loop devices didn't give hop's partitions, so they checked nothing.
 
@@ -192,7 +201,7 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] Open a second copy of hop: refused
 - [ ] Click **Later**, then restart Windows yourself: Windows starts, not the installer
 - [ ] Turn on Controlled Folder Access: making partitions still works, or the error explains why
-- [ ] Linux Mint's installer works when run from the installer partition. Zorin OS's said it couldn't create partitions on that disk: see above
+- [ ] Zorin OS or Linux Mint chosen, next to Windows or on a second disk: refused before anything changes, with the reason
 - [ ] Plug in a USB stick with an Ubuntu ISO written to it: warned before starting, refused at restart
 - [ ] Click Cancel as "Making room" begins: either it cancels with the disk untouched, or the install carries on
 
