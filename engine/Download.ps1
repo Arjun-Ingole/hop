@@ -58,6 +58,19 @@ function Resolve-Download($Distro) {
             }
             throw 'Could not find the Linux Mint ISO on the mirror.'
         }
+        'lmde' {
+            $base = 'https://mirrors.edge.kernel.org/linuxmint/debian/'
+            $sums = Get-WebText ($base + 'sha256sum.txt')
+            $best = $null
+            foreach ($m in [regex]::Matches($sums, '(?m)^([0-9a-f]{64})\s+\*?(lmde-(\d+)-cinnamon-64bit\.iso)\s*$')) {
+                $v = [int]$m.Groups[3].Value
+                if (-not $best -or $v -gt $best.Version) {
+                    $best = @{ Version = $v; Sha = $m.Groups[1].Value; File = $m.Groups[2].Value }
+                }
+            }
+            if (-not $best) { throw 'Could not find the LMDE ISO on the mirror.' }
+            return New-Download ($base + $best.File) $best.Sha 0
+        }
         'pop' {
             $build = Invoke-RestMethod -Uri 'https://api.pop-os.org/builds/24.04/generic' -UseBasicParsing -TimeoutSec 60
             return New-Download $build.url $build.sha_sum ([int64]$build.size)

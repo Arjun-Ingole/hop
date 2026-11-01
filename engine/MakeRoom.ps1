@@ -13,7 +13,7 @@ $ResumeTaskName = 'hop resume'
 $RestoreTaskName = 'hop restore settings'
 $RestoreArgument = '--restore-room'
 $PagingKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management'
-$MinMemoryWithoutPaging = 8GB
+$MinMemoryWithoutPaging = 7GB   # 8 GB PCs have hardware/GPU reserved memory and report ~7.2-7.8 GB
 $DefragLimitSeconds = 900
 $DefragTries = 4
 $DefragRetrySeconds = 30
@@ -310,7 +310,7 @@ function Complete-MakeRoom {
 
 # It can run for a very long time. Whatever it moved before the limit still counts. Says the code it finished with.
 function Start-DefragRun([string]$Room) {
-    $process = Start-Process defrag.exe -ArgumentList "$Room /X" -WindowStyle Hidden -PassThru
+    $process = Start-Process defrag.exe -ArgumentList "$Room /X /H" -WindowStyle Hidden -PassThru
     $null = $process.Handle   # keeps ExitCode readable after the process exits
     try {
         if ($process.WaitForExit($DefragLimitSeconds * 1000)) { return $process.ExitCode }
@@ -331,9 +331,11 @@ function Invoke-Defrag([string]$Drive) {
         if ($try -lt $DefragTries) { Start-Sleep -Seconds $DefragRetrySeconds }
     }
     # Windows can't work out the limit for a moment after that.
-    $c = Get-Partition -DriveLetter $room.TrimEnd(':')
-    for ($i = 0; $i -lt 6; $i++) {
-        try { [void](Get-PartitionSupportedSize -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber -ErrorAction Stop); break } catch { Start-Sleep -Seconds 5 }
+    $c = try { Get-Partition -DriveLetter $room.TrimEnd(':') -ErrorAction SilentlyContinue } catch { $null }
+    if ($c) {
+        for ($i = 0; $i -lt 6; $i++) {
+            try { [void](Get-PartitionSupportedSize -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber -ErrorAction Stop); break } catch { Start-Sleep -Seconds 5 }
+        }
     }
 }
 

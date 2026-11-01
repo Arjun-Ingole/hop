@@ -253,6 +253,8 @@ function Get-Catalog {
         New-UbuntuFlavor 'ubuntu-unity' 'Ubuntu Unity' 'Classic Ubuntu' '#5A06C3'
         New-MintEdition 'xfce' 'Linux Mint Xfce' 'Lighter Mint'
         New-MintEdition 'mate' 'Linux Mint MATE' 'Traditional'
+        New-Entry 'lmde' 'Linux Mint Debian' 'Mint on Debian base' 'the Linux Mint mirror at kernel.org' '#69B53F' 'mint' @{
+            Kind = 'lmde'; Live = 'live/filesystem.squashfs'; Alongside = 'Install Linux Mint alongside Windows Boot Manager'; Manual = 'Something else' }
         New-UbuntuFlavor 'edubuntu' 'Edubuntu' 'For students' '#A30B00' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 8; Steps = $UbuntuErase } }
         New-UbuntuFlavor 'ubuntustudio' 'Ubuntu Studio' 'For creators' '#009BF9' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 7; Steps = $UbuntuErase } }
     )

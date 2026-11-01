@@ -440,7 +440,17 @@ namespace Hop
         }
 
         /// <summary>Windows names it by its whole path, which can be too long for the header.</summary>
-        static string FileNameOf(string path) => string.IsNullOrEmpty(path) ? null : path.Substring(path.LastIndexOf('\\') + 1);
+        static string FileNameOf(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return null;
+            if (path.IndexOf("UsnJrnl", StringComparison.OrdinalIgnoreCase) >= 0) return "change journal";
+            if (path.IndexOf("hiberfil", StringComparison.OrdinalIgnoreCase) >= 0) return "hibernation file";
+            if (path.IndexOf("pagefile", StringComparison.OrdinalIgnoreCase) >= 0 || path.IndexOf("swapfile", StringComparison.OrdinalIgnoreCase) >= 0) return "paging file";
+            if (path.IndexOf("System Volume Information", StringComparison.OrdinalIgnoreCase) >= 0) return "restore points";
+            string file = path.Substring(path.LastIndexOf('\\') + 1);
+            int colon = file.IndexOf(':');
+            return colon > 0 ? file.Substring(0, colon) : file;
+        }
 
         void OpenPicker()
         {
