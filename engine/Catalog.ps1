@@ -112,6 +112,11 @@ function Get-FullDiskBoot([string]$Family) {
 #   when memory's short. Steps is what to click, and {DISK} names the disk.
 # Kubuntu is missing on purpose: its ISO has a file over 4 GB, which FAT32 cannot hold.
 function Get-Catalog {
+    $AnacondaErase = @(
+        'On the welcome screen, choose **Not Now**.'
+        'Open the install app from the dock, then pick your language.'
+        'Select **{DISK}** and choose **Use entire disk**. Leave any other drive alone.'
+        'On the last screen, check it names only **{DISK}**, then click **Erase data and install**.')
     $EspExtra = 'Also click the existing **EFI System Partition**, choose Edit, set the mount point to **/boot/efi** and keep it unformatted.'
     $CalamaresSteps = @(
         'When asked about partitions, choose **Manual partitioning**. If it lists several drives, pick the one with the {GB} GB of free space.'
@@ -143,7 +148,8 @@ function Get-Catalog {
                 'If it lists more than one drive, choose **{DISK}**. Leave any other drive alone.'
                 'Click **Install Now**, check that only **{DISK}** is in the list of changes, then click **Continue**.') } })
         New-Entry 'fedora' 'Fedora Workstation' 'Up to date' 'fedoraproject.org' '#51A2DA' 'fedora' ((Get-DracutBoot 'boot/grub2') + @{
-            Kind = 'fedora'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps })
+            Kind = 'fedora'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps
+            FullDisk = (Get-FullDiskBoot 'dracut') + @{ IsoGB = 3; Steps = $AnacondaErase } })
         New-Entry 'debian' 'Debian' 'Rock solid' 'cdimage.debian.org' '#A80030' 'debian' @{
             Kind = 'debian'; Live = 'live/filesystem.squashfs'; Manual = 'Manual partitioning'; ManualExtra = $EspExtra
             FullDisk = (Get-FullDiskBoot 'liveboot') + @{ IsoGB = 3; Steps = @(

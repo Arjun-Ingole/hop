@@ -43,7 +43,7 @@ Each check is from the serial log or the disk image, not the job's result:
 | Lubuntu 26.04.1 | No | Yes | No | Its installer offered **Erase disk**, but the test stopped there, because it has one more screen than Debian's |
 | Ubuntu Unity 26.04 | No | Yes | No | The test had nothing to drive: it doesn't run the installer service Ubuntu's does |
 | Linux Mint 22.3, other flavours, CachyOS, Ultramarine, Pop!_OS, elementary OS | No | Not shown | No | Not finished, or not run, in the time allowed |
-| Fedora 44 | No | Only after `umount /run/initramfs/live`: `rd.live.ram=1` copies but stays mounted | No | Anaconda stopped at "Installation Destination" with a kickstart that clears the disk |
+| Fedora 44 | Yes | Yes, as it starts: `rd.live.ram=1` stays mounted, and hop's `umount -l` takes that away | By its installer | Yes, with Anaconda's `--cmdline` and a kickstart that clears the disk, at 6.7 GB of memory and with Secure Boot on. Its screens weren't seen. The firmware started `\EFI\fedora\shimx64.efi`, which said `Fedora Linux 44`, root on the new partition, `secureboot=1`. The kickstart left it at `multi-user.target`, so its desktop wasn't seen |
 
 Ubuntu's ISO in a virtual PC with 7 GB of memory copied itself to memory and then hadn't reached a login after seven
 minutes, which is why hop refuses it.
