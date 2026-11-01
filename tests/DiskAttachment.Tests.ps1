@@ -3,10 +3,7 @@
 # these only say what hop does with the answers Windows is documented to give.
 
 BeforeAll {
-    $root = Split-Path $PSScriptRoot -Parent
-    $Sync = [hashtable]::Synchronized(@{ Log = [Collections.ArrayList]::Synchronized((New-Object Collections.ArrayList)); Version = 'test' })
-    . (Join-Path $root 'engine\Common.ps1')
-    foreach ($module in Get-ChildItem (Join-Path $root 'engine\*.ps1') | Where-Object Name -ne 'Common.ps1') { . $module.FullName }
+    . (Join-Path $PSScriptRoot 'Load-Engine.ps1')
     Mock Write-Log { }
 
     $disk = [pscustomobject]@{ Number = 1 }

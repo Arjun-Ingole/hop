@@ -3,12 +3,7 @@
 # booting one: see docs/TESTING.md for what was run and what wasn't.
 
 BeforeAll {
-    $root = Split-Path $PSScriptRoot -Parent
-    $Sync = [hashtable]::Synchronized(@{ Log = [Collections.ArrayList]::Synchronized((New-Object Collections.ArrayList)); Version = 'test' })
-    . (Join-Path $root 'engine\Common.ps1')
-    foreach ($module in Get-ChildItem (Join-Path $root 'engine\*.ps1') | Where-Object Name -ne 'Common.ps1') { . $module.FullName }
-    # Add-Type refuses .exe files.
-    [void][Reflection.Assembly]::LoadFrom((Join-Path $root 'bin\Release\hop.exe'))
+    . (Join-Path $PSScriptRoot 'Load-Engine.ps1') -WithHop
     Mock Write-Log { }
     Mock Get-DiskAttachment { 'internal' }
 
