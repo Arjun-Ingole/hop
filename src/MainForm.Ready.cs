@@ -36,7 +36,7 @@ namespace Hop
             }, installSteps.FullDisk
                 ? "Nothing has been erased yet. Restart to open its installer, which erases the disk when you choose that. Until then, Undo changes puts everything back."
                 : "Restart to open its installer. These are the choices to make there.", Secondary, steps, installSteps.Notes.Length > 1 ? 24 : 40);
-            Footer("Undo changes", () => ShowUndo(() => _ = ShowReadyAsync()), "Restart now", () => _ = RestartAsync(),
+            Footer("Undo changes", () => ShowUndo(() => _ = ShowReadyAsync()), "Restart now", () => _ = RestartIntoInstallerAsync(),
                 "Later", Close, Secondary);
         }
 
@@ -58,36 +58,38 @@ namespace Hop
             {
                 new[] { new Run { Text = prepared.Name, Color = Ink, Logo = Logo(prepared.Logo) }, Run.Gray("isn't installed yet.") },
             }, "The PC is back in Windows, and your setup is still here. If the installer opened and you left it, click Try again. If it didn't open:", Secondary, steps, 32);
-            Footer("Undo changes", () => ShowUndo(() => _ = ShowReadyAsync()), "Try again", () => _ = RestartAsync(),
-                "Open BIOS", () => _ = OpenBiosAsync(), Secondary);
+            Footer("Undo changes", () => ShowUndo(() => _ = ShowReadyAsync()), "Try again", () => _ = RestartIntoInstallerAsync(),
+                "Open BIOS", () => _ = RestartIntoBiosAsync(), Secondary);
         }
 
-        async Task RestartAsync()
+        Task RestartIntoInstallerAsync() => RestartAsync(engine.RestartIntoInstallerAsync,
+            $"You can also restart yourself and tap {startup.BootKey} while the PC starts, then choose the installer.");
+
+        Task RestartIntoBiosAsync() => RestartAsync(engine.RestartIntoFirmwareAsync, "Restart yourself and tap Delete, F2 or F10 while the PC starts.");
+
+        /// <summary>Windows closes hop as it restarts. If that's cancelled, the buttons have to come back.</summary>
+        async Task RestartAsync(Func<Task> restart, string doItYourself)
         {
-            primary.Enabled = secondary.Enabled = false;
+            int shown = screen;
+            primary.Enabled = secondary.Enabled = footerLink.Enabled = false;
+            string problem;
             try
             {
-                await engine.RestartIntoInstallerAsync();
+                await restart();
+                await Task.Delay(RoomRestartWaitSeconds * 1000);
+                problem = "This PC didn't restart. Something stopped Windows restarting. Save your work and try again.";
             }
-            catch (Exception ex)
-            {
-                note.Set(Describe(ex) + $" You can also restart yourself and tap {startup.BootKey} while the PC starts, then choose the installer.", Danger);
-                primary.Enabled = secondary.Enabled = true;
-            }
+            catch (Exception ex) { problem = Describe(ex); }
+            if (shown != screen) return;
+            SayAboveSteps(problem + " " + doItYourself, Danger);
+            primary.Enabled = secondary.Enabled = footerLink.Enabled = true;
         }
 
-        async Task OpenBiosAsync()
+        /// <summary>A longer note than the screen started with mustn't run into the list under it.</summary>
+        void SayAboveSteps(string text, Color color)
         {
-            primary.Enabled = secondary.Enabled = false;
-            try
-            {
-                await engine.RestartIntoFirmwareAsync();
-            }
-            catch (Exception ex)
-            {
-                note.Set(Describe(ex) + " Restart yourself and tap Delete, F2 or F10 while the PC starts.", Danger);
-                primary.Enabled = secondary.Enabled = true;
-            }
+            note.Set(text, color);
+            if (steps.Visible) PlaceSteps(Math.Max(steps.Top, note.Bottom + S(12)));
         }
 
         // --- Installed -------------------------------------------------------------------------
