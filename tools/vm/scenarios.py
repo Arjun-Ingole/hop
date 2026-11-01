@@ -559,12 +559,12 @@ Get-ScheduledTaskInfo -TaskName 'hop restore settings' -ErrorAction SilentlyCont
     s.hop_log()
 
 
-def install(vm, s, tag='install'):
+def install(vm, s, tag='install', row=1):
     """Install, from hop's first screen until it says it's ready."""
     s.click_hop(236, LINE_ONE_Y)
     time.sleep(1.5)
     vm.shot(f'{tag}-system-picker')
-    s.click_hop(236, SYSTEM_ROW_Y + DRIVE_ROW_H)
+    s.click_hop(236, SYSTEM_ROW_Y + row * DRIVE_ROW_H)
     time.sleep(3)
     vm.shot(f'{tag}-choose')
     s.press('Install', limit=30)
@@ -631,6 +631,21 @@ $state = Get-Content C:\ProgramData\hop\state.json -Raw -ErrorAction SilentlyCon
 "BootOrder: " + (([Hop.Firmware]::BootOrderNumbers() | ForEach-Object { '{0:X4}' -f $_ }) -join ' ')
 "BootNext sticks: " + [Hop.Firmware]::BootNextSticks() + ", and BootNext afterwards: " + [Hop.Firmware]::BootNext()
 '''
+
+
+def scenario_omarchy(bench):
+    """Omarchy on a real Windows, from its real download, with Secure Boot off as it needs."""
+    bench.secure_boot = False
+    vm, s = bench.fresh()
+    s.desktop()
+    s.get_hop()
+    s.open_as_a_person('omarchy-elevation-prompt')
+    s.settle()
+    install(vm, s, 'omarchy', row=9)
+    print(vm.ps(r'''
+"state.json there: " + (Test-Path C:\ProgramData\hop\state.json)
+Get-Content (Get-ChildItem C:\ProgramData\hop\logs\*.log | Sort-Object LastWriteTime | Select-Object -Last 1).FullName -Tail 40
+''', timeout=60), flush=True)
 
 
 def scenario_biosbutton(bench):

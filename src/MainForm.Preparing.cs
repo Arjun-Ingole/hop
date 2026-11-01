@@ -58,6 +58,7 @@ namespace Hop
             var system = Current;
             engine.Log.Clear();
             engine.ResetProgress();
+            engine.ClearLastError();
             log.Clear();
             busy = installing = true;
             closeRefused = null;
@@ -71,14 +72,22 @@ namespace Hop
                 var download = DownloadSpot;
                 await engine.InstallAsync(selected?.Id ?? "custom", isoPath, linuxGB, target.Id, download == null || download.IsDefault ? "" : download.Letter, fullDisk);
                 // What hop knows is from before the install, and Undo has to say what it changed.
+                bool reread = false;
                 try
                 {
                     startup = await engine.GetStartupInfoAsync();
                     target = startup.Drives.FirstOrDefault(d => d.Id == target.Id) ?? WindowsDrive;
+                    reread = true;
                 }
                 catch (Exception) { }
                 poll.Stop();
                 busy = installing = false;
+                // The engine can end with nothing thrown, so only what's on the PC says it worked.
+                if (reread && startup.Status != "ready" && startup.Status != "installed")
+                {
+                    await ShowFailureAsync($"hop stopped before {system.Name} was ready, and nothing was installed. {engine.LastError ?? "Use the report below to tell us."}");
+                    return;
+                }
                 prepared = system;
                 await ShowReadyAsync();
             }

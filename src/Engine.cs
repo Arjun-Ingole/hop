@@ -221,10 +221,31 @@ namespace Hop
                     ps.AddCommand(command);
                     if (parameters != null) ps.AddParameters(parameters);
                     running = ps;
-                    try { return new Collection(ps.Invoke()); }
+                    try
+                    {
+                        var items = new Collection(ps.Invoke());
+                        LogErrors(ps);
+                        return items;
+                    }
                     catch (Exception ex) when (!(ex is PipelineStoppedException)) { LogStop(ex); throw; }
                     finally { running = null; }
                 }
+            }
+        }
+
+        /// <summary>The last error PowerShell reported without stopping anything.</summary>
+        public string LastError { get; private set; }
+
+        public void ClearLastError() => LastError = null;
+
+        // These stop nothing and raise nothing, so without this they'd never be seen.
+        void LogErrors(PowerShell ps)
+        {
+            if (!ps.HadErrors) return;
+            foreach (var error in ps.Streams.Error)
+            {
+                LastError = error.Exception?.Message ?? error.ToString();
+                LogStop(new Exception($"{LastError} ({error.InvocationInfo?.PositionMessage?.Split('\n')[0]?.Trim()})"));
             }
         }
 
