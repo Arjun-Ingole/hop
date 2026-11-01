@@ -22,3 +22,4 @@ The files come from Wikimedia Commons; the PNGs are rendered from the SVGs at 12
 | ultramarine | Ultramarine-Linux-Logo.svg | Public domain |
 | cachyos | CachyOS Logo.svg | GPL |
 | arch | Arch Linux "Crystal" icon.svg | GPL |
+| omarchy | `logo.svg` and `icon.png` from Omarchy's own repository, not Commons | MIT |

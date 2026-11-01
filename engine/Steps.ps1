@@ -58,6 +58,34 @@ function Assert-SystemFitsDrive($Distro, [string]$Target) {
     throw "hop's steps for $($Distro.Name) are for the disk Windows is on, and it hasn't been tried on a second disk. Choose a drive on that disk, or another system."
 }
 
+# The most an installer's refusal can cost is a restart, but it's cheaper here, before the download.
+function Assert-SystemFitsSpace($Distro, [int]$LinuxGB) {
+    if ($Distro.MinGB -and $LinuxGB -lt $Distro.MinGB) { throw "$($Distro.Name)'s installer needs at least $($Distro.MinGB) GB. Set the Linux size to that or more and click Install again." }
+}
+
+# BitLocker's mark, at the start of a partition, whether it's locked, unlocked or paused. It stays until the drive has finished decrypting.
+function Test-BitLockerHead([byte[]]$Head) {
+    $Head.Length -ge 11 -and [Text.Encoding]::ASCII.GetString($Head, 3, 8) -ceq '-FVE-FS-'
+}
+
+function Read-PartitionHead($Partition) { [Hop.DiskProbe]::ReadHead($Partition.DiskNumber, [int64]$Partition.Offset) }
+
+# Omarchy's installer reads every partition on its disk for that mark, and stops if it finds one. Pausing BitLocker, which
+# hop does for everything else, doesn't remove it. So this looks the same way, while nothing has changed. Turning it off is
+# the owner's decision, and hop doesn't make it. Not being able to look counts as a no: the installer would look too.
+function Assert-NoBitLocker($Distro, [string]$Target) {
+    if (-not $Distro.NoBitLocker) { return }
+    $disk = if ($Target) { (Resolve-Target $Target).Partition.DiskNumber } else { (Get-WindowsPartition).DiskNumber }
+    foreach ($partition in @(Get-Partition -DiskNumber $disk)) {
+        $head = try { Read-PartitionHead $partition } catch { throw "hop couldn't check this disk for BitLocker, which $($Distro.Name)'s installer refuses: $($_.Exception.Message)" }
+        if (Test-BitLockerHead $head) {
+            $letter = Get-LetterOf $partition
+            $name = if ($letter) { "Drive $letter`:" } else { 'A drive on this disk' }
+            throw "$name is encrypted with BitLocker, and $($Distro.Name)'s installer won't use a disk with BitLocker on it. Pausing it isn't enough. To install $($Distro.Name), turn off BitLocker or Device encryption in Windows Settings, wait until the drive has finished decrypting, then open hop again. hop won't do this for you."
+        }
+    }
+}
+
 # What to click in the Linux installer. The app shows Steps as a numbered list
 # and Notes underneath; text between ** is shown in a heavier weight. $Place is the
 # saved state, which says where Linux is going; without it, that's next to C:.
@@ -88,6 +116,7 @@ function Get-Steps($Distro, [int]$LinuxGB, $Place) {
         $steps += "Don't choose **Erase disk**. The installer is running from this drive."
     }
     $notes = @('If the PC starts Windows again or shows a security error, turn off Secure Boot in the BIOS, then open hop and restart again.')
+    if ($Distro.Notes) { $notes += @($Distro.Notes) }
     if ($otherDisk) { $notes += 'If it stops at a **grub>** prompt, turn off **Fast Boot** in the BIOS, because it can hide a second drive. Hold the power button to get back to Windows.' }
     [pscustomobject]@{ Steps = $steps; Notes = $notes }
 }
