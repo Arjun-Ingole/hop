@@ -124,12 +124,13 @@ namespace Hop
         {
             if (!HasDriveChoice)
                 return new[] { Run.Gray("next to Windows, with"), Run.Black(linuxGB + " GB") };
+            string size = linuxGB + " GB";
             return new[]
             {
                 Run.Gray("on"),
-                new Run { Text = target.Kind == "disk" ? target.Title : target.InSentence, Color = Ink, Picker = picker, Underline = brand },
+                new Run { Text = sentence.FitName(target.Kind == "disk" ? target.Title : target.InSentence, picker, "on", "with", size), Color = Ink, Picker = picker, Underline = brand },
                 Run.Gray("with"),
-                Run.Black(linuxGB + " GB"),
+                Run.Black(size),
             };
         }
 
@@ -427,6 +428,7 @@ namespace Hop
         {
             drive.Mode = mode;
             drive.FitToMode();
+            drive.InstallerGB = ExpectedInstallerGB;
             drive.ReleaseGB = Math.Max(0, target.UsableGB);
             drive.StuckFile = FileNameOf(target.ShrinkBlocker);
             drive.DiskName = target.DiskName ?? "";

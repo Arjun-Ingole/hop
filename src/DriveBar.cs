@@ -164,10 +164,15 @@ namespace Hop
             string size = IsFreeSpace ? $"Free space {TailFreeGB} GB"
                 : TailFreeGB > 0 ? $"{DriveTitle} {WindowsGB} GB + {TailFreeGB} GB free" : $"{DriveTitle} {WindowsGB} GB";
             string header = DiskName.Length > 0 ? $"{DiskName} · {size}" : size;
-            TextKit.Draw(g, header, smallStrong, Ink, 0, headerBaseline);
-            string right = Mode == DriveMode.Edit ? "Drag to resize" : Mode == DriveMode.Stuck ? StuckFile ?? "" : Status;
+            string right = Mode == DriveMode.Edit ? (MinLinuxGB < MaxLinuxGB ? "Drag to resize" : "") : Mode == DriveMode.Stuck ? StuckFile ?? "" : Status;
             var rightFont = Mode == DriveMode.Edit ? small : smallStrong;
-            TextKit.Draw(g, right, rightFont, Mode == DriveMode.Edit ? Tertiary : Ink, Width - TextKit.Width(right, rightFont), headerBaseline);
+            // The header says which drive, so it comes first: the right side has what it leaves, and at least some.
+            float gap = F(16), headerWidth = TextKit.Width(header, smallStrong);
+            right = TextKit.Ellipsize(right, rightFont, Math.Max(Width * 0.4f, Width - headerWidth - gap));
+            float rightWidth = TextKit.Width(right, rightFont);
+            header = TextKit.Ellipsize(header, smallStrong, Width - (rightWidth > 0 ? rightWidth + gap : 0));
+            TextKit.Draw(g, header, smallStrong, Ink, 0, headerBaseline);
+            TextKit.Draw(g, right, rightFont, Mode == DriveMode.Edit ? Tertiary : Ink, Width - rightWidth, headerBaseline);
 
             var bar = Bar;
             var saved = g.Clip;
@@ -201,7 +206,9 @@ namespace Hop
 
             var onLinux = preparing ? Mix(Brand, Color.Black, 0.45f) : TextOn(Brand);
             var onLinuxSoft = preparing ? Mix(Brand, Color.Black, 0.2f) : Color.FromArgb(210, onLinux);
-            DrawLabels(g, new RectangleF(linux.X + F(18), bar.Y, linux.Width - F(34), bar.Height), labelBottom,
+            // Linux can want more than the bar has, on a space smaller than its least.
+            float linuxLabel = Math.Max(linux.X, bar.X);
+            DrawLabels(g, new RectangleF(linuxLabel + F(18), bar.Y, bar.Right - linuxLabel - F(34), bar.Height), labelBottom,
                 SystemName, $"{linuxGB} GB", onLinux, onLinuxSoft);
 
             if (preparing && linux.Width > F(60))

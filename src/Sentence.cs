@@ -47,6 +47,15 @@ namespace Hop
             Invalidate();
         }
 
+        /// <summary>Cuts the name in a line so that the rest stays on screen, with its chevron if it's a picker.</summary>
+        public string FitName(string name, bool picker, params string[] others)
+        {
+            var font = Font(Px, true);
+            float room = Width - (picker ? F(6 + ChevronSize) : 0);
+            foreach (string other in others) room -= TextKit.Width(other, font, Tracking) + F(WordGap);
+            return TextKit.Ellipsize(name, font, room, Tracking);
+        }
+
         /// <summary>Where a picker sits, in screen coordinates, for placing what it opens.</summary>
         public Rectangle PickerScreenBounds(int picker) => RectangleToScreen(pickerRects.Count == 0
             ? new Rectangle(0, 0, 0, Height)
