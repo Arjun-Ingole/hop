@@ -19,13 +19,13 @@ jobs:
     outputs:
       key: ${{ steps.key.outputs.key }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - id: key
         run: echo "key=hopvm-win11-24h2-${{ hashFiles('tools/vm/autounattend.xml', 'tools/vm/firstlogon.ps1', 'tools/vm/boot.ps1') }}" >> "$GITHUB_OUTPUT"
 
       - id: cached
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: /mnt/hopvm/image
           key: ${{ steps.key.outputs.key }}
@@ -44,13 +44,13 @@ jobs:
         timeout-minutes: 120
         run: python3 tools/vm/hopvm.py build-image --iso /mnt/hopvm/windows.iso --limit 110
 
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@v6
         if: steps.cached.outputs.cache-hit != 'true'
         with:
           path: /mnt/hopvm/image
           key: ${{ steps.key.outputs.key }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && steps.cached.outputs.cache-hit != 'true'
         with:
           name: image-screens
@@ -62,9 +62,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
@@ -74,7 +74,7 @@ jobs:
       - name: Get ready to run a VM
         run: tools/vm/prepare-runner.sh
 
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v6
         with:
           path: /mnt/hopvm/image
           key: ${{ needs.image.outputs.key }}
@@ -88,7 +88,7 @@ jobs:
           cp bin/Release/hop.exe /mnt/hopvm/files/hop.exe
           python3 tools/vm/hopvm.py run $SCENARIO
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: screens
