@@ -281,6 +281,14 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
     $hopPartitions = @(Get-HopPartitions | Where-Object { $_.Label -in $labels })
     # Before anything goes: with no state file, the neighbours say whose space it was.
     $owner = try { Get-SpaceOwner $state $hopPartitions } catch { Write-Log "Could not tell whose space it was: $($_.Exception.Message)"; $null }
+    # A crash can come after a shrink and before saying it happened. Only its real size says so, so
+    # a drive that never shrank still doesn't take free space that was already there.
+    if ($owner -and $state.SizeBeforeShrink -and $state.WindowsShrunk -eq $false) {
+        try {
+            $drive = if ($owner.Windows) { Get-WindowsPartition } else { Get-PartitionAt $owner.DiskNumber $owner.Offset }
+            if ($drive -and [int64]$drive.Size -lt [int64]$state.SizeBeforeShrink) { $state.WindowsShrunk = $true }
+        } catch { Write-Log "Could not tell whether the drive shrank: $($_.Exception.Message)" }
+    }
     # Also before anything goes: it's known by where it starts, next to the installer. With Linux
     # staying, it stays too, because Windows can't see whether that Linux is using it. Failing here
     # only leaves that partition behind, and the rest still has to happen.

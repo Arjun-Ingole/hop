@@ -86,6 +86,7 @@ function Get-Plan([int]$LinuxGB, [int]$InstallerGB, [string]$Target, [int]$LiveG
         LiveOffset      = [int64]($installerOffset + [int64]$InstallerGB * 1GB)
         LiveSize        = [int64]$LiveGB * 1GB
         TargetOffset    = [int64]$c.Offset
+        TargetSize      = [int64]$c.Size
         Kind            = if ($space.Kind) { $space.Kind } else { 'volume' }
         Letter          = $space.Letter
     }
@@ -122,11 +123,27 @@ function Remove-DriveLetter($Partition) {
     }
 }
 
+# Written down first, so a crash straight after making it can't leave one nothing knows about. It's
+# only ever acted on if a blank partition is really there: see Get-RecordedPartitions.
+function New-RecordedPartition($Plan, $State, [string]$Role, [int64]$Offset, [int64]$Size) {
+    $record = [pscustomobject]@{ Role = $Role; Offset = $Offset; Size = $Size }
+    $State.Partitions += $record
+    Save-State $State
+    $partition = New-Partition -DiskNumber $Plan.DiskNumber -Offset $Offset -Size $Size
+    $record.Offset = $partition.Offset
+    $record.Size = $partition.Size
+    Save-State $State
+    $partition
+}
+
 function New-LinuxSpace($Plan, [string]$Strategy, $State) {
     if ($Plan.Shrink) {
         $letter = if ($Plan.Letter) { $Plan.Letter } else { 'C' }
         $what = if ($letter -eq $env:SystemDrive.TrimEnd(':')) { 'Windows' } else { "drive $letter`:" }
         Set-Status ('Shrinking {0} to {1:N0} GB to make room (can take a few minutes)...' -f $what, ($Plan.NewWindowsSize / 1GB))
+        # The size it was, because a crash can come after the shrink and before saying it happened. See Invoke-Cleanup.
+        $State | Add-Member -NotePropertyName SizeBeforeShrink -NotePropertyValue $Plan.TargetSize -Force
+        Save-State $State
         try {
             Resize-Partition -DiskNumber $Plan.DiskNumber -PartitionNumber $Plan.PartitionNumber -Size $Plan.NewWindowsSize
         } catch {
@@ -141,15 +158,11 @@ function New-LinuxSpace($Plan, [string]$Strategy, $State) {
 
     if ($Strategy -eq 'prepared') {
         Set-Status 'Creating the Linux partitions...'
-        $boot = New-Partition -DiskNumber $Plan.DiskNumber -Offset $Plan.FreeStart -Size 1GB
-        $State.Partitions += [pscustomobject]@{ Role = 'boot'; Offset = $boot.Offset; Size = $boot.Size }
-        Save-State $State
+        $boot = New-RecordedPartition $Plan $State 'boot' $Plan.FreeStart 1GB
         Format-Volume -Partition $boot -FileSystem FAT32 -NewFileSystemLabel $BootLabel -Confirm:$false -Force | Out-Null
         Remove-DriveLetter $boot
 
-        $root = New-Partition -DiskNumber $Plan.DiskNumber -Offset ($Plan.FreeStart + 1GB) -Size ([int64]($Plan.LinuxGB - 1) * 1GB)
-        $State.Partitions += [pscustomobject]@{ Role = 'root'; Offset = $root.Offset; Size = $root.Size }
-        Save-State $State
+        $root = New-RecordedPartition $Plan $State 'root' ($Plan.FreeStart + 1GB) ([int64]($Plan.LinuxGB - 1) * 1GB)
         # A placeholder file system: it gives the partition a recognisable label in the
         # Linux installer and stops Windows offering to format a blank partition.
         # The installer replaces it with ext4.
@@ -159,16 +172,12 @@ function New-LinuxSpace($Plan, [string]$Strategy, $State) {
 
     if ($Plan.LiveSize) {
         Set-Status 'Creating the partition for the live system...'
-        $live = New-Partition -DiskNumber $Plan.DiskNumber -Offset $Plan.LiveOffset -Size $Plan.LiveSize
-        $State.Partitions += [pscustomobject]@{ Role = 'live'; Offset = $live.Offset; Size = $live.Size }
-        Save-State $State
+        $live = New-RecordedPartition $Plan $State 'live' $Plan.LiveOffset $Plan.LiveSize
         Format-Volume -Partition $live -FileSystem exFAT -NewFileSystemLabel $LiveLabel -Confirm:$false -Force | Out-Null
     }
 
     Set-Status 'Creating the installer partition...'
-    $installer = New-Partition -DiskNumber $Plan.DiskNumber -Offset $Plan.InstallerOffset -Size $Plan.InstallerSize
-    $State.Partitions += [pscustomobject]@{ Role = 'installer'; Offset = $installer.Offset; Size = $installer.Size }
-    Save-State $State
+    $installer = New-RecordedPartition $Plan $State 'installer' $Plan.InstallerOffset $Plan.InstallerSize
     Format-Volume -Partition $installer -FileSystem FAT32 -NewFileSystemLabel $InstallerLabel -Confirm:$false -Force | Out-Null
     $installer
 }
