@@ -105,8 +105,9 @@ real 4.0.6 ISO, by its checksum, and its real wizard on `tty1`: a script pressed
 | exFAT | `umount -l` | No | 8 GB | About 2 minutes | Login screen, `Reached target Graphical Interface` |
 | exFAT | `copytoram` | Yes, with the password typed at its prompt | 12 GB | About 2 minutes | Omarchy's desktop, which logs in by itself after that password |
 | NTFS | `copytoram` | No | 12 GB | About 2 minutes | Login screen, `Reached target Graphical Interface` |
+| exFAT, 7 GB, with a 4 GB `HOPINSTALL`, using the catalog's real entry | `umount -l` | Yes, with the password typed at its prompt | 8 GB | About 2.5 minutes | Omarchy's desktop, `Reached target Graphical Interface` |
 
-In all three, the NTFS, `HOPINSTALL` and `HOPLIVE` partitions came through byte for byte, after the install and after the restart, and
+In all four, the NTFS, `HOPINSTALL` and `HOPLIVE` partitions came through byte for byte, after the install and after the restart, and
 Windows' EFI files were unchanged. Each check is from the disk image or the installed system's journal, not the job's result.
 
 **What this doesn't show:** `HOPLIVE` was made by `mkfs.exfat`, not Windows. `tests/Probe-VirtualDisks.ps1` shows that Windows makes it and copies to it, but
