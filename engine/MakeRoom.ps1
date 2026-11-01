@@ -126,16 +126,16 @@ function Test-EnoughMemoryWithoutPaging {
 function Get-MakeRoomSteps([string]$Drive) {
     $room = Get-RoomDrive $Drive
     if ($room -eq $env:SystemDrive) {
-        $steps = @("Turns off **hibernation** and clears the **change journal** on drive $room.")
-        if (Test-EnoughMemoryWithoutPaging) { $steps += "Turns off the **paging file** on drive $room." }
+        $steps = @("On drive $room turns off **hibernation** and clears the **change journal**.")
+        if (Test-EnoughMemoryWithoutPaging) { $steps += "On drive $room turns off the **paging file**." }
         $steps += 'Restarts this PC, opens again, and moves what''s left out of the way.'
         $steps += 'Turns everything back on once Linux has its space, or when you close hop.'
         return [pscustomobject]@{ Steps = $steps; Restart = $true; Notes = @('Save your work first. Your files aren''t touched.') }
     }
-    $steps = @("Clears the **change journal** on drive $room.")
+    $steps = @("On drive $room clears the **change journal**.")
     $restart = (Test-PagingFileOn $room) -and (Test-EnoughMemoryWithoutPaging)
     if ($restart) {
-        $steps += "Turns off the **paging file** on drive $room."
+        $steps += "On drive $room turns off the **paging file**."
         $steps += 'Restarts this PC, opens again, and moves what''s left out of the way.'
     } else {
         $steps += 'Moves files out of the way, for up to 15 minutes.'

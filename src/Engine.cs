@@ -59,6 +59,9 @@ namespace Hop
         public string BlockerKind;      // hibernation, paging, restore, journal, ntfs, file or unknown
 
         public bool IsFreeSpace => Kind == "gap";
+
+        /// <summary>The title in the middle of a sentence: "drive C:", keeping the letter a capital.</summary>
+        public string InSentence => char.ToLowerInvariant(Title[0]) + Title.Substring(1);
         public bool IsWindows => Id == "";
 
         /// <summary>Keeps a drive's real figures, so that it isn't suggested again on its estimate.</summary>

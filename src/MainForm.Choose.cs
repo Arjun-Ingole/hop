@@ -127,7 +127,7 @@ namespace Hop
             return new[]
             {
                 Run.Gray("on"),
-                new Run { Text = target.Kind == "disk" ? target.Title : target.Title.ToLowerInvariant(), Color = Ink, Picker = picker, Underline = brand },
+                new Run { Text = target.Kind == "disk" ? target.Title : target.InSentence, Color = Ink, Picker = picker, Underline = brand },
                 Run.Gray("with"),
                 Run.Black(linuxGB + " GB"),
             };
@@ -157,7 +157,7 @@ namespace Hop
             else if (secondDiskStops)
                 noteText = $"hop's steps for {system.Name} are for the disk Windows is on, and it hasn't been tried on a second disk. Choose a drive on that disk, or another system.";
             else if (unmeasured)
-                noteText = $"hop couldn't work out how much room {target.Title.ToLowerInvariant()} can give up. {measureError} Choose another drive, or open hop again.";
+                noteText = $"hop couldn't work out how much room {target.InSentence} can give up. {measureError} Choose another drive, or open hop again.";
             else if (stuck)
                 noteText = StuckNote(better);
             else if (!enoughSpace && better != null)
@@ -191,7 +191,7 @@ namespace Hop
             bool needRoom = stuck && !RoomMadeHere && !systemStops;
             if (better != null && !systemStops)
             {
-                primaryText = $"Use {better.Title.ToLowerInvariant()}";
+                primaryText = $"Use {better.InSentence}";
                 primaryAction = () => _ = UseDriveAsync(better);
             }
             else if (needRoom)
@@ -207,7 +207,7 @@ namespace Hop
             else if (needRoom && better != null)
                 Footer("Make room", () => _ = ShowMakeRoomAsync(), primaryText, primaryAction);
             else if (target.TailFreeGB > 0 && !target.IsFreeSpace)
-                Footer($"Give the free {target.TailFreeGB} GB to {(target.IsWindows ? "Windows" : target.Title.ToLowerInvariant())}", () => _ = ExpandWindowsAsync(), primaryText, primaryAction);
+                Footer($"Give the free {target.TailFreeGB} GB to {(target.IsWindows ? "Windows" : target.InSentence)}", () => _ = ExpandWindowsAsync(), primaryText, primaryAction);
             else if (!stuck && target.StuckGB >= StuckWorthExplainingGB && !RoomMadeHere)
                 Footer("Make room", () => _ = ShowMakeRoomAsync(), primaryText, primaryAction);
             else if ((stuck || target.StuckGB >= StuckWorthExplainingGB) && target.BlockerKind == "restore")
@@ -222,9 +222,9 @@ namespace Hop
             if (!RoomMadeHere)
                 return better == null
                     ? $"{target.Title} has room, but Windows can't release it yet. hop can clear what's in the way."
-                    : $"{target.Title} has room, but Windows can't release it yet. Make room clears what's in the way, or use {better.Title.ToLowerInvariant()}, which has {(better.Estimated ? "about " : "")}{better.UsableGB} GB to spare.";
+                    : $"{target.Title} has room, but Windows can't release it yet. Make room clears what's in the way, or use {better.InSentence}, which has {(better.Estimated ? "about " : "")}{better.UsableGB} GB to spare.";
             if (target.BlockerKind == "restore")
-                return $"Windows can release {release} GB. Restore points on {target.Title.ToLowerInvariant()} are stopping it releasing more.";
+                return $"Windows can release {release} GB. Restore points on {target.InSentence} are stopping it releasing more.";
             return $"hop made what room it could, and Windows can release {release} GB. It can't move {target.ShrinkBlocker ?? "some system files"}, which limits the rest.";
         }
 
@@ -283,7 +283,7 @@ namespace Hop
                 ShowChoose();
                 return;
             }
-            BeginWork(new[] { new[] { Run.Gray("Checking"), Run.Black(choice.Title.ToLowerInvariant()) } }, "Asking Windows how much room it can give up. This can take a minute on a big drive.");
+            BeginWork(new[] { new[] { Run.Gray("Checking"), Run.Black(choice.InSentence) } }, "Asking Windows how much room it can give up. This can take a minute on a big drive.");
             try
             {
                 target = await engine.GetDriveSpaceAsync(choice.Id);
@@ -294,7 +294,7 @@ namespace Hop
             catch (Exception ex)
             {
                 EndWork();
-                Arrange(new[] { new[] { Run.Gray("Couldn't check"), Run.Black(choice.Title.ToLowerInvariant()) } }, Describe(ex), Danger, null, 0);
+                Arrange(new[] { new[] { Run.Gray("Couldn't check"), Run.Black(choice.InSentence) } }, Describe(ex), Danger, null, 0);
                 Footer("Back", ShowChoose, null, null);
             }
         }
@@ -305,7 +305,7 @@ namespace Hop
             try { plan = await engine.GetMakeRoomStepsAsync(target.Letter); }
             catch (Exception ex) { ShowBlocked(Describe(ex)); return; }
 
-            string title = target.Title.ToLowerInvariant();
+            string title = target.InSentence;
             ConfigureDrive(DriveMode.Stuck, Current);
             steps.Set(plan.Steps, null);
             Arrange(new[] { new[] { Run.Black($"{target.StuckGB} GB"), Run.Gray($"is stuck on {title}") } },
@@ -393,7 +393,7 @@ namespace Hop
         void ShowDeleteRestorePoints()
         {
             Arrange(new[] { new[] { Run.Gray("Delete"), Run.Black("restore points?") } },
-                $"They're stopping Windows releasing more of {target.Title.ToLowerInvariant()}. This deletes the ones on {target.Letter}: for good, and can't be undone. Your files aren't touched, and Windows makes new ones later.",
+                $"They're stopping Windows releasing more of {target.InSentence}. This deletes the ones on {target.Letter}: for good, and can't be undone. Your files aren't touched, and Windows makes new ones later.",
                 Secondary, null, 0);
             Footer("Back", ShowChoose, "Delete them", () => _ = DeleteRestorePointsAsync());
         }
@@ -506,7 +506,7 @@ namespace Hop
             if (plan.Blocker != null) { ShowCantReplaceWindows(plan.Blocker); return; }
             if (plan.Target.Blocker != null) { ShowCantReplaceWindows(plan.Target.Blocker); return; }
             int short_ = -MaxLinuxGBOn(plan.Target);
-            if (short_ > 0) { ShowCantReplaceWindows($"Windows can't release enough space from {plan.Target.Title.ToLowerInvariant()} for the installer. It needs {short_} GB more. Delete some files, or install next to Windows if you can make room."); return; }
+            if (short_ > 0) { ShowCantReplaceWindows($"Windows can't release enough space from {plan.Target.InSentence} for the installer. It needs {short_} GB more. Delete some files, or install next to Windows if you can make room."); return; }
             await CheckThenAsync(plan.Target.Id, () => ShowReplaceWarning(plan));
         }
 
@@ -571,7 +571,7 @@ namespace Hop
         {
             int installer = ExpectedInstallerGB;
             int shrink = Math.Max(0, linuxGB + installer - target.TailFreeGB);
-            string title = target.Title.ToLowerInvariant();
+            string title = target.InSentence;
             string keeps = target.IsFreeSpace ? "nothing on this drive shrinks" : target.IsWindows ? "Windows keeps its size" : $"{title} keeps its size";
             // Free space can't shrink anything, and the engine stops if it's too small. A download could still need more than this.
             string unless = isoPath == null && !target.IsFreeSpace ? $", unless the installer turns out bigger than {InstallerGB} GB" : "";

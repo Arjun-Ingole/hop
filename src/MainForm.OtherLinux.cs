@@ -68,7 +68,7 @@ namespace Hop
 
         async Task ExpandWindowsAsync()
         {
-            string owner = target.IsWindows ? "Windows" : target.Title.ToLowerInvariant();
+            string owner = target.IsWindows ? "Windows" : target.InSentence;
             BeginWork(new[] { new[] { Run.Gray("Giving the space to"), Run.Black(owner) } }, "Starting…");
             try
             {
