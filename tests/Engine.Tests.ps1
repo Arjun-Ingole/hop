@@ -1833,6 +1833,35 @@ Describe 'Firmware load option' {
     }
 }
 
+Describe 'Moving files' {
+    BeforeEach {
+        Mock Start-Sleep { }
+        Mock Get-Partition { [pscustomobject]@{ DiskNumber = 0; PartitionNumber = 3 } }
+        Mock Get-PartitionSupportedSize { }
+    }
+    It 'tries again when Windows gives up straight away' {
+        $script:codes = [Collections.Queue]::new(@(1223, 1223, 0))
+        Mock Start-DefragRun { $script:codes.Dequeue() }
+        Invoke-Defrag 'C:'
+        Should -Invoke Start-DefragRun -Times 3
+    }
+    It 'gives up trying in the end, and carries on' {
+        Mock Start-DefragRun { 1223 }
+        Invoke-Defrag 'C:'
+        Should -Invoke Start-DefragRun -Times $DefragTries
+    }
+    It 'runs once when it worked' {
+        Mock Start-DefragRun { 0 }
+        Invoke-Defrag 'C:'
+        Should -Invoke Start-DefragRun -Times 1
+    }
+    It 'does not run again after its time ran out, with no code' {
+        Mock Start-DefragRun { }
+        Invoke-Defrag 'C:'
+        Should -Invoke Start-DefragRun -Times 1
+    }
+}
+
 Describe 'Whether hibernation is on' {
     It 'is on when a new Windows only has the default' {
         Mock Get-ItemProperty { [pscustomobject]@{ HibernateEnabledDefault = 1 } } -ParameterFilter { $Path -like '*Control\Power' }

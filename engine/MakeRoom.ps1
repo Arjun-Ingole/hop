@@ -15,6 +15,9 @@ $RestoreArgument = '--restore-room'
 $PagingKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management'
 $MinMemoryWithoutPaging = 8GB
 $DefragLimitSeconds = 900
+$DefragTries = 4
+$DefragRetrySeconds = 30
+$DefragCancelled = 1223
 
 # Windows logs the file that limits a shrink whenever it works out the limit, so ask and read it.
 function Get-ShrinkBlocker($Partition) {
@@ -266,7 +269,11 @@ function Unregister-RunAfterRestart {
 # Only the folder hop made and wrote down, and never through a link someone has put there. Program.cs
 # deals with the one hop is running from, because a running file can't be deleted.
 function Remove-RestartCopy([string]$Folder) {
-    if (-not $Folder -or $Folder -eq [Hop.RestartCopy]::OwnFolder()) { return }
+    if (-not $Folder) { return }
+    if ($Folder -eq [Hop.RestartCopy]::OwnFolder()) {
+        try { [Hop.RestartCopy]::RemoveAtNextStart($Folder) } catch { Write-Log "Could not set $Folder to go at the next start: $($_.Exception.Message)" }
+        return
+    }
     if ((Split-Path $Folder -Parent) -ne $env:ProgramData -or -not (Split-Path $Folder -Leaf).StartsWith([Hop.RestartCopy]::FolderPrefix)) { return }
     if (-not (Test-Path -LiteralPath $Folder)) { return }
     try {
@@ -301,17 +308,27 @@ function Complete-MakeRoom {
     'done'
 }
 
-# It can run for a very long time. Whatever it moved before the limit still counts.
+# It can run for a very long time. Whatever it moved before the limit still counts. Says the code it finished with.
+function Start-DefragRun([string]$Room) {
+    $process = Start-Process defrag.exe -ArgumentList "$Room /X" -WindowStyle Hidden -PassThru
+    $null = $process.Handle   # keeps ExitCode readable after the process exits
+    try {
+        if ($process.WaitForExit($DefragLimitSeconds * 1000)) { return $process.ExitCode }
+        Write-Log "Stopped moving files after $DefragLimitSeconds seconds."
+    } finally {
+        if (-not $process.HasExited) { $process.Kill() }
+    }
+}
+
 function Invoke-Defrag([string]$Drive) {
     $room = Get-RoomDrive $Drive
     Set-Status 'This can take several minutes. Whatever hop moves still counts, even if it stops early.'
-    $process = Start-Process defrag.exe -ArgumentList "$room /X" -WindowStyle Hidden -PassThru
-    $null = $process.Handle   # keeps ExitCode readable after the process exits
-    try {
-        if ($process.WaitForExit($DefragLimitSeconds * 1000)) { Write-Log "Finished moving files (code $($process.ExitCode))." }
-        else { Write-Log "Stopped moving files after $DefragLimitSeconds seconds." }
-    } finally {
-        if (-not $process.HasExited) { $process.Kill() }
+    # Straight after signing in it can give up at once with 1223, having moved nothing, as seen on a real Windows.
+    for ($try = 1; $try -le $DefragTries; $try++) {
+        $code = Start-DefragRun $room
+        Write-Log "Finished moving files (code $code)."
+        if ($code -ne $DefragCancelled) { break }
+        if ($try -lt $DefragTries) { Start-Sleep -Seconds $DefragRetrySeconds }
     }
     # Windows can't work out the limit for a moment after that.
     $c = Get-Partition -DriveLetter $room.TrimEnd(':')

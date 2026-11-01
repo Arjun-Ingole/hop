@@ -108,6 +108,22 @@ namespace Hop
             catch (Exception) { }
         }
 
+        /// <summary>
+        /// For the copy hop is running from, once nothing needs it: Windows deletes it as it next starts. A restart
+        /// from this window, which is how Install ends, would otherwise leave it behind for good.
+        /// </summary>
+        public static void RemoveAtNextStart(string folder)
+        {
+            foreach (string file in Directory.GetFiles(folder))
+                if (!MoveFileEx(file, null, DelayUntilReboot)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (!MoveFileEx(folder, null, DelayUntilReboot)) throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        const int DelayUntilReboot = 4;
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "MoveFileExW")]
+        static extern bool MoveFileEx(string existing, string replacement, int flags);
+
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "QueryFullProcessImageNameW")]
         static extern bool QueryFullProcessImageName(IntPtr process, int flags, StringBuilder name, ref int size);
     }
