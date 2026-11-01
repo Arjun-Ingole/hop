@@ -1242,19 +1242,19 @@ Describe 'How much a drive can give up' {
         $partition = [pscustomobject]@{ Size = [int64]500GB }
     }
     It 'is the reserve that limits a drive with nothing in the way' {
-        Mock Get-Volume { [pscustomobject]@{ Size = [int64]500GB; SizeRemaining = [int64]100GB } }
+        Mock Get-VolumeOf { [pscustomobject]@{ Size = [int64]500GB; SizeRemaining = [int64]100GB } }
         Get-ShrinkableBytes $partition ([pscustomobject]@{ SizeMin = [int64]395GB }) ([int64]8GB) | Should -Be ([int64]92GB)
     }
     It 'does not take the reserve off a file stuck near the end, with plenty still free inside' {
-        Mock Get-Volume { [pscustomobject]@{ Size = [int64]500GB; SizeRemaining = [int64]300GB } }
+        Mock Get-VolumeOf { [pscustomobject]@{ Size = [int64]500GB; SizeRemaining = [int64]300GB } }
         Get-ShrinkableBytes $partition ([pscustomobject]@{ SizeMin = [int64]493GB }) ([int64]8GB) | Should -Be ([int64]6GB)
     }
     It 'is never less than nothing' {
-        Mock Get-Volume { [pscustomobject]@{ Size = [int64]500GB; SizeRemaining = [int64]3GB } }
+        Mock Get-VolumeOf { [pscustomobject]@{ Size = [int64]500GB; SizeRemaining = [int64]3GB } }
         Get-ShrinkableBytes $partition ([pscustomobject]@{ SizeMin = [int64]499GB }) ([int64]8GB) | Should -Be ([int64]0)
     }
     It 'keeps the reserve off the limit if the volume cannot be read' {
-        Mock Get-Volume { $null }
+        Mock Get-VolumeOf { $null }
         Get-ShrinkableBytes $partition ([pscustomobject]@{ SizeMin = [int64]100GB }) ([int64]8GB) | Should -Be ([int64]392GB)
     }
 }
