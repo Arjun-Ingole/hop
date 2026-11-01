@@ -247,6 +247,11 @@ function Assert-FirmwareAccess {
     }
 }
 
+# Find out before the disk changes, not at the restart. Anything that gets in the way of trying isn't a refusal.
+function Test-BootNextSticks {
+    try { [Hop.Firmware]::BootNextSticks() } catch { Write-Log "Could not test the startup menu: $($_.Exception.Message)"; $true }
+}
+
 function Set-BootOnce([int]$Number) {
     # Only the next restart goes to the installer; after that Windows is the default again.
     [Hop.Firmware]::SetBootNext($Number)

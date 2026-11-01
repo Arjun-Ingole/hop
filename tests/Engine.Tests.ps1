@@ -1332,6 +1332,73 @@ Describe 'A secure connection that fails' {
     }
 }
 
+Describe 'Spotting RAID controllers' {
+    It 'finds <name>' -ForEach @(
+        @{ name = 'Intel(R) Chipset SATA/PCIe RST Premium Controller' }, @{ name = 'Intel(R) RST VMD Controller 9A0B' }, @{ name = 'Intel Volume Management Device NVMe RAID Controller' }, @{ name = 'AMD-RAID Bottom Device' }, @{ name = 'LSI MegaRAID SAS 9361' }
+    ) { Test-RaidController @($name) | Should -BeTrue }
+    It 'leaves <name> alone' -ForEach @(
+        @{ name = 'Standard NVM Express Controller' }, @{ name = 'Microsoft Storage Spaces Controller' }, @{ name = 'Intel(R) 600 Series Chipset SATA AHCI Controller' }, @{ name = 'AMD SATA Controller' }
+    ) { Test-RaidController @($name) | Should -BeFalse }
+    It 'copes with none' { Test-RaidController @() | Should -BeFalse }
+}
+
+Describe 'Putting the installer first' {
+    BeforeEach {
+        $state = [pscustomobject]@{ BootNumber = 7; Distro = 'Ubuntu' }
+        Mock Read-State { $state }
+        Mock Save-State { }
+        Mock Set-InstallerForNextStart { }
+        Mock Invoke-InstallerRestart { }
+        Mock Get-BootMenuKey { 'F11' }
+        Mock Test-EntryDropped { $false }
+        Mock Test-BootNextIgnored { $true }
+        Mock Test-SecureBoot { $false }
+    }
+    It 'restarts once the firmware has kept it' {
+        Mock Move-InstallerInOrder { $true }
+        Restart-IntoInstallerFirst
+        Should -Invoke Move-InstallerInOrder -ParameterFilter { $First } -Times 1
+        Should -Invoke Invoke-InstallerRestart -Times 1
+        $state.InstallerFirst | Should -BeTrue
+    }
+    It 'does not restart if the firmware refuses' {
+        Mock Move-InstallerInOrder { $false }
+        { Restart-IntoInstallerFirst } | Should -Throw '*wouldn''t change its startup order*F11*'
+        Should -Invoke Invoke-InstallerRestart -Times 0
+    }
+    It 'is offered once, when the firmware ignored the one-time start' {
+        (Get-ReturnedHelp).CanPutFirst | Should -BeTrue
+        $state | Add-Member -NotePropertyName InstallerFirst -NotePropertyValue $true -Force
+        (Get-ReturnedHelp).CanPutFirst | Should -BeFalse
+    }
+    It 'is offered with no clue what happened' {
+        Mock Test-BootNextIgnored { $false }
+        (Get-ReturnedHelp).CanPutFirst | Should -BeTrue
+    }
+    It 'is not offered when Secure Boot is the likely cause, or the entry keeps being removed' {
+        Mock Test-BootNextIgnored { $false }
+        Mock Test-SecureBoot { $true }
+        (Get-ReturnedHelp).CanPutFirst | Should -BeFalse
+        Mock Test-EntryDropped { $true }
+        (Get-ReturnedHelp).CanPutFirst | Should -BeFalse
+    }
+    It 'tells them how to reach Windows meanwhile' {
+        (Get-ReturnedHelp).Steps -join ' ' | Should -BeLike '*F11*Windows Boot Manager*'
+    }
+}
+
+Describe 'Putting the startup order back' {
+    BeforeEach { Mock Move-InstallerInOrder { $true } }
+    It 'does nothing unless hop moved it' {
+        Restore-InstallerOrder ([pscustomobject]@{ BootNumber = 7 })
+        Should -Invoke Move-InstallerInOrder -Times 0
+    }
+    It 'does nothing with no state' {
+        { Restore-InstallerOrder $null } | Should -Not -Throw
+        Should -Invoke Move-InstallerInOrder -Times 0
+    }
+}
+
 Describe 'Checking a copy' {
     It 'passes when the files match' {
         Set-Content "$TestDrive\a" 'same'; Set-Content "$TestDrive\b" 'same'

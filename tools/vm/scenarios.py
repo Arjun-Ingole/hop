@@ -393,6 +393,8 @@ def make_room(vm, s):
         names = s.names()
         print(f'{minute}: {names}', flush=True)
         vm.shot(f'stuck-moving-{minute:02}')
+        if minute == 0:
+            print(vm.ps('powercfg /requests', timeout=60), flush=True)
         if any(n in ('Install', 'Close', 'Make room') or n.startswith('Use ') for n in names):
             break
         time.sleep(30)
@@ -621,6 +623,60 @@ def scenario_install(bench):
     undo_after_linux(vm, s, before)
 
 
+HOP_FIRMWARE = rf"[void][Reflection.Assembly]::LoadFrom('{HOP}')"
+
+STARTUP_ORDER = HOP_FIRMWARE + r'''
+$state = Get-Content C:\ProgramData\hop\state.json -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
+"BootCurrent {0:X4}, BootNext {1}, hop's entry {2:X4}, InstallerFirst {3}" -f [Hop.Firmware]::BootCurrent(), [Hop.Firmware]::BootNext(), [int]$state.BootNumber, $state.InstallerFirst
+"BootOrder: " + (([Hop.Firmware]::BootOrderNumbers() | ForEach-Object { '{0:X4}' -f $_ }) -join ' ')
+"BootNext sticks: " + [Hop.Firmware]::BootNextSticks() + ", and BootNext afterwards: " + [Hop.Firmware]::BootNext()
+'''
+
+
+def scenario_firstorder(bench):
+    """A firmware that won't follow the one-time start: Try another way, the installer, and the order put back.
+    Real firmware can't be made to ignore it, so the screen is reached by leaving BootNext set in Windows."""
+    vm, s = bench.fresh()
+    s.desktop()
+    s.get_hop()
+    s.open_as_a_person()
+    s.settle()
+    install(vm, s)
+    s.press('Later', limit=30)
+    time.sleep(10)
+    print(vm.ps(r'''
+$path = 'C:\ProgramData\hop\state.json'
+$state = Get-Content $path -Raw | ConvertFrom-Json
+$state | Add-Member -NotePropertyName RestartedAt -NotePropertyValue (Get-Date).ToString('s') -Force
+$state | ConvertTo-Json -Depth 8 | Set-Content $path
+"restarted at " + $state.RestartedAt
+''', timeout=60), flush=True)
+    restart_and_wait(vm)
+    print(vm.ps(HOP_FIRMWARE + r'''
+$state = Get-Content C:\ProgramData\hop\state.json -Raw | ConvertFrom-Json
+[Hop.Firmware]::SetBootNext([int]$state.BootNumber)
+''', timeout=60), flush=True)
+    print(vm.ps(STARTUP_ORDER, timeout=60), flush=True)
+    windows = vm.ps(HOP_FIRMWARE + "'{0:X4}' -f [Hop.Firmware]::BootCurrent()", timeout=60).strip()
+    s.open_as_a_person('first-elevation-prompt')
+    s.settle()
+    vm.shot('first-came-back')
+    print(s.controls(), flush=True)
+    before = vm.agent_boot.get('user')
+    s.press('Try another way', limit=30)
+    for second in range(0, 300, 15):
+        time.sleep(15)
+        vm.shot(f'first-linux-{second:03}s')
+    vm.key('ctrl', 'alt', 't')
+    time.sleep(5)
+    vm.type(LIVE_REPORT)
+    time.sleep(25)
+    vm.shot('first-linux-report')
+    # The order is what's being tested, so the way back is the one a person would take from the boot menu.
+    vm.type(f'sudo efibootmgr -n {windows} && sudo systemctl reboot -i\n')
+    undo_after_linux(vm, s, before)
+
+
 def undo_after_linux(vm, s, before):
     """Back in Windows from the live system: hop's Undo, and whether it all went back."""
     for second in range(0, 240, 20):
@@ -636,6 +692,7 @@ def undo_after_linux(vm, s, before):
     s.settle()
     vm.shot('undo-hop-opens')
     print(s.controls(), flush=True)
+    print(vm.ps(STARTUP_ORDER, timeout=60), flush=True)
     s.press('Undo changes', limit=30)
     time.sleep(2)
     vm.shot('undo-options')

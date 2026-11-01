@@ -18,7 +18,7 @@ and on: Windows is still there, because nothing has been erased, and **Undo chan
 **You came back to Windows without erasing.** Nothing has changed. hop treats it like any other install
 that came back: try again, or undo.
 
-If you need more help, open an issue and paste the report from **Copy a bug report**. Logs are in
+If you need more help, click **Report this on GitHub**. It copies a report, with no serial numbers or names, and opens a new issue to paste it into. Nothing is sent by itself. Logs are in
 `C:\ProgramData\hop\logs`.
 
 ## The PC went back to Windows after restarting
@@ -39,6 +39,16 @@ hop's request. In short:
 | Acer, Dell, Lenovo, Gigabyte, Toshiba, Razer | F12 |
 
 If the entry isn't listed, your firmware removed it, and clicking **Restart now** in hop adds it again.
+
+## A black screen when the installer or Linux starts
+
+It's usually the graphics driver, most often on NVIDIA laptops. Wait a couple of minutes first, because the first start can be slow. Windows hasn't been touched, so holding the power button is safe.
+
+1. Start the installer again, and hold **Shift** or tap **Esc** as it starts if no menu appears.
+2. Choose **Safe graphics** or **Compatibility mode** if the menu has it.
+3. Otherwise highlight the first entry and press **e**. On the line starting with `linux`, add `nomodeset` before the `---` or at the end, then press **Ctrl+X** or **F10**.
+
+If the installed Linux has the same problem, do the same in its boot menu, then install your graphics driver from inside Linux. To get to Windows meanwhile, use the PC's boot menu key and choose **Windows Boot Manager**.
 
 ## "Secure Boot doesn't trust this ISO's boot loader"
 

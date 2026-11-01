@@ -365,6 +365,18 @@ try {
     Check 'undo: layout is back' ((Get-Layout $a) -eq $beforeA) (Get-Layout $a)
     Check 'undo: data survived' ((Get-TestHash $dLetter) -eq $dHash) ''
 
+    Step 'A2b: partitions removed by hand, then Clean up'
+    Reset-Run
+    Invoke-Install 'elementary' $iso 6 $target ''
+    foreach ($left in @(Get-HopPartitions)) { Remove-PartitionAt $left.Partition.DiskNumber $left.Partition.Offset }
+    $handD = Storage\Get-Partition -DiskNumber $a | Where-Object { [int64]$_.Offset -eq [int64]$d.Offset }
+    Resize-Partition -DiskNumber $a -PartitionNumber $handD.PartitionNumber -Size ([int64]$d.Size)
+    Check 'hop calls it something to clean up' ((Get-InstallStatus) -eq 'leftover') (Get-InstallStatus)
+    Invoke-Cleanup
+    Check 'clean up finishes, and nothing is left' ((Get-InstallStatus) -eq 'none') (Get-InstallStatus)
+    Check 'and the layout is as it was' ((Get-Layout $a) -eq $beforeA) (Get-Layout $a)
+    Check 'data survived' ((Get-TestHash $dLetter) -eq $dHash) ''
+
     Step 'A3: Linux installed: installer goes, its space goes to D:, Linux stays'
     Reset-Run
     Invoke-Install 'elementary' $iso 6 $target ''
@@ -372,7 +384,8 @@ try {
     $root_ = @(Get-HopPartitions) | Where-Object Label -eq $RootLabel
     Invoke-Cleanup -InstallerOnly
     $after = Storage\Get-Partition -DiskNumber $a | Where-Object { [int64]$_.Offset -eq [int64]$d.Offset }
-    Check 'D: gets the installer''s space' ([int64]$after.Size -eq [int64]$shrunk.Size + 4GB) "$($after.Size) vs $($shrunk.Size)"
+    # Plus the boot partition next to it, which goes too when it's still empty.
+    Check 'D: gets the installer''s space' ([int64]$after.Size -ge [int64]$shrunk.Size + 4GB) "$($after.Size) vs $($shrunk.Size)"
     Check 'the Linux partition is still there' ($null -ne (Storage\Get-Partition -DiskNumber $a | Where-Object { [int64]$_.Offset -eq [int64]$root_.Partition.Offset })) ''
     foreach ($left in @(Get-HopPartitions)) { Remove-PartitionAt $left.Partition.DiskNumber $left.Partition.Offset }
     Resize-Partition -DiskNumber $a -PartitionNumber $after.PartitionNumber -Size ([int64]$d.Size)

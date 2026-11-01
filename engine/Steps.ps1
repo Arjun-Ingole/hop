@@ -18,6 +18,8 @@ function Get-ReturnedHelp {
     $state = Read-State
     $entry = "$($state.Distro) installer $EntryMarker"
     $key = Get-BootMenuKey
+    $tried = [bool]$state.InstallerFirst
+    $canPutFirst = $false
     if (Test-EntryDropped $state) {
         $steps = @(
             "This PC's firmware removed hop's startup entry, so it never tried the installer."
@@ -26,10 +28,14 @@ function Get-ReturnedHelp {
         )
         $notes = @("If it still comes back to Windows, restart and keep tapping **$key** as the PC powers on, then choose **$entry**.")
     } elseif (Test-BootNextIgnored $state) {
-        $steps = @(
+        $canPutFirst = -not $tried
+        $steps = if ($canPutFirst) { @(
+            "This PC ignored hop's request to start the installer. Click **Try another way**, which restarts with the installer first in the startup order."
+            "To go back to Windows before Linux is installed, keep tapping **$key** as the PC powers on and choose **Windows Boot Manager**. Open hop there and restarts go to Windows again."
+        ) } else { @(
             "This PC ignored hop's request to start the installer. Restart and keep tapping **$key** as the PC powers on, which opens its boot menu."
             "Choose **$entry**."
-        )
+        ) }
         $notes = @("If it isn't listed, this PC's firmware removed it. Click **Try again** and hop adds it back.")
     } elseif (Test-SecureBoot) {
         $steps = @(
@@ -39,13 +45,15 @@ function Get-ReturnedHelp {
         )
         $notes = @()
     } else {
+        $canPutFirst = -not $tried
         $steps = @(
             "Restart and keep tapping **$key** as the PC powers on, which opens its boot menu."
             "Choose **$entry**."
         )
+        if ($canPutFirst) { $steps += 'Or click **Try another way**, which puts the installer first in the startup order until you open hop again in Windows.' }
         $notes = @("If it isn't listed, this PC's firmware removed it. Click **Try again** and hop adds it back.")
     }
-    [pscustomobject]@{ Steps = $steps; Notes = $notes }
+    [pscustomobject]@{ Steps = $steps; Notes = $notes; CanPutFirst = $canPutFirst }
 }
 
 # A catalog entry's own Steps are written for the disk Windows is on: some say to use "the existing EFI

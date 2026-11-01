@@ -82,6 +82,47 @@ namespace Hop
             return number;
         }
 
+        /// <summary>Whether a change to BootNext sticks, tried with the entry already running and put back. True if it can't be tried.</summary>
+        public static bool BootNextSticks()
+        {
+            EnablePrivilege();
+            var current = TryRead("BootCurrent");
+            if (current == null || current.Length != 2) return true;
+            var original = TryRead("BootNext");
+            try
+            {
+                Write("BootNext", current);
+                var back = TryRead("BootNext");
+                return back != null && back.Length == 2 && back[0] == current[0] && back[1] == current[1];
+            }
+            catch (Win32Exception) { return false; }
+            finally
+            {
+                try { Write("BootNext", original); } catch (Win32Exception) { }
+            }
+        }
+
+        /// <summary>The order with the entry moved to the start or the end. Nothing else moves.</summary>
+        public static int[] Reordered(int[] order, int number, bool first)
+        {
+            var others = new List<int>(order);
+            others.RemoveAll(n => n == number);
+            if (first) others.Insert(0, number); else others.Add(number);
+            return others.ToArray();
+        }
+
+        /// <summary>Moves the entry in BootOrder, then says whether the firmware kept that.</summary>
+        public static bool MoveInBootOrder(int number, bool first)
+        {
+            EnablePrivilege();
+            var wanted = Reordered(BootOrderNumbers(), number, first);
+            var order = new List<ushort>();
+            foreach (int n in wanted) order.Add((ushort)n);
+            WriteBootOrder(order);
+            var saved = BootOrderNumbers();
+            return saved.Length == wanted.Length && (first ? saved[0] == number : saved[saved.Length - 1] == number);
+        }
+
         /// <summary>Starts the entry once, on the next restart only.</summary>
         public static void SetBootNext(int number)
         {

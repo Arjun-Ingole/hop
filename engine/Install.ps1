@@ -117,6 +117,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
 }
 
 function Get-StartupInfo {
+    Restore-InstallerOrder (Read-State)
     $status = Get-InstallStatus
     # Only for a new install: what stops an install must not stop someone undoing one.
     if ($status -eq 'none') { Test-System }
@@ -190,6 +191,37 @@ function Get-StateSteps {
 function Restart-IntoInstaller {
     Set-InstallerForNextStart
     Invoke-InstallerRestart '/r', '/t', '0'
+}
+
+# For a PC that won't follow the one-time start. This one lasts, so hop's entry stays first until
+# Windows and hop are back, or the Linux installer puts its own first. Refused by the firmware, nothing else changed.
+function Restart-IntoInstallerFirst {
+    Set-InstallerForNextStart
+    $state = Read-State
+    if (-not (Move-InstallerInOrder $state.BootNumber -First)) {
+        throw "This PC's firmware wouldn't change its startup order. Restart and keep tapping $(Get-BootMenuKey) as the PC powers on, then choose the installer. If its BIOS has a Boot Order Lock setting, turn that off first."
+    }
+    $state | Add-Member -NotePropertyName InstallerFirst -NotePropertyValue $true -Force
+    Save-State $state
+    Write-Log ('Boot{0:X4} now starts first, until hop opens again.' -f [int]$state.BootNumber)
+    Invoke-InstallerRestart '/r', '/t', '0'
+}
+
+function Move-InstallerInOrder([int]$Number, [switch]$First) {
+    [Hop.Firmware]::MoveInBootOrder($Number, [bool]$First)
+}
+
+# Back in Windows, restarts have to go to Windows again. Only hop's entry moves, and only if it's still first:
+# anything put first since, such as Linux's own entry, stays. The note stays too, so hop doesn't offer this again.
+function Restore-InstallerOrder($State) {
+    if (-not $State.InstallerFirst -or $null -eq $State.BootNumber) { return }
+    try {
+        $order = @([Hop.Firmware]::BootOrderNumbers())
+        if ($order.Count -gt 1 -and $order[0] -eq [int]$State.BootNumber) {
+            if (Move-InstallerInOrder $State.BootNumber) { Write-Log 'Windows starts first again.' }
+            else { Write-Log "The firmware didn't keep hop's entry out of first place." }
+        }
+    } catch { Write-Log "Could not put the startup order back: $($_.Exception.Message)" }
 }
 
 # The BIOS settings, for turning off Secure Boot. Leaving them starts the installer.

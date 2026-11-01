@@ -20,6 +20,7 @@ namespace Hop
             busy = working = true;
             reading = false;
             closeRefused = null;
+            Native.KeepAwake(true);
             engine?.ResetProgress();
             shownStatus = null;
             Arrange(lines, firstNote, Secondary, busyLine, 28);
@@ -31,6 +32,7 @@ namespace Hop
         {
             poll.Stop();
             busy = working = reading = false;
+            Native.KeepAwake(false);
         }
 
         /// <summary>The same for work that only reads the PC, which closing hop can simply stop.</summary>
@@ -170,8 +172,8 @@ namespace Hop
                 new[] { Run.Red("Something went wrong.") },
             }, message, Secondary, log, 40);
             // The engine undoes its own changes after a failure; if something is still left, offer to clean up.
-            if (changed) Footer("Copy a bug report", () => _ = CopyReportAsync(), "Clean up", ShowLeftover);
-            else Footer("Copy a bug report", () => _ = CopyReportAsync(), "Try again", ShowChoose);
+            if (changed) Footer(ReportLink, () => _ = CopyReportAsync(), "Clean up", ShowLeftover);
+            else Footer(ReportLink, () => _ = CopyReportAsync(), "Try again", ShowChoose);
         }
     }
 }

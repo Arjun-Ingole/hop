@@ -12,6 +12,17 @@ namespace Hop
         public const int CS_DROPSHADOW = 0x20000;
         public const int WS_MINIMIZEBOX = 0x20000, WS_SYSMENU = 0x80000;
 
+        /// <summary>Stops the PC sleeping on its own while hop works. Holds for the UI thread that asks. The screen can still turn off.</summary>
+        public static void KeepAwake(bool on)
+        {
+            try { SetThreadExecutionState(on ? EsContinuous | EsSystemRequired : EsContinuous); } catch { }
+        }
+
+        const uint EsContinuous = 0x80000000, EsSystemRequired = 0x1;
+
+        [DllImport("kernel32.dll")]
+        static extern uint SetThreadExecutionState(uint flags);
+
         /// <summary>Windows 11 rounded corners. Does nothing on Windows 10.</summary>
         public static void RoundCorners(IntPtr hwnd, bool small = false)
         {

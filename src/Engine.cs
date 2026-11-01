@@ -107,6 +107,7 @@ namespace Hop
         public string[] Notes;
         public bool Restart;            // Make room: the PC restarts
         public bool FullDisk;           // the installer is there to replace Windows
+        public bool CanPutFirst;        // the firmware may start the installer if it's first in the startup order
     }
 
     /// <summary>
@@ -390,6 +391,7 @@ namespace Hop
                 Notes = Get<string[]>(steps, "Notes"),
                 Restart = Get<bool>(steps, "Restart"),
                 FullDisk = Get<bool>(steps, "FullDisk"),
+                CanPutFirst = Get<bool>(steps, "CanPutFirst"),
             };
         }
 
@@ -399,6 +401,8 @@ namespace Hop
         public async Task<string> GetReportAsync() => (await InvokeAsync("Get-Report")).Single.ToString();
 
         public Task RestartIntoInstallerAsync() => InvokeAsync("Restart-IntoInstaller");
+
+        public Task RestartIntoInstallerFirstAsync() => InvokeAsync("Restart-IntoInstallerFirst");
 
         public Task RestartIntoFirmwareAsync() => InvokeAsync("Restart-IntoFirmware");
 

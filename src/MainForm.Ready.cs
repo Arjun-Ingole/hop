@@ -54,11 +54,18 @@ namespace Hop
             {
                 new[] { new Run { Text = prepared.Name, Color = Ink, Logo = Logo(prepared.Logo) }, Run.Gray("isn't installed yet.") },
             }, "The PC is back in Windows, and your setup is still here. If the installer opened and you left it, click Try again. If it didn't open:", Secondary, steps, 32);
-            Footer("Undo changes", () => ShowUndo(() => _ = ShowReadyAsync()), "Try again", () => _ = RestartIntoInstallerAsync(),
-                "Open BIOS", () => _ = RestartIntoBiosAsync(), Secondary);
+            if (help.CanPutFirst)
+                Footer("Undo changes", () => ShowUndo(() => _ = ShowReadyAsync()), "Try again", () => _ = RestartIntoInstallerAsync(),
+                    "Try another way", () => _ = RestartIntoInstallerFirstAsync(), Secondary);
+            else
+                Footer("Undo changes", () => ShowUndo(() => _ = ShowReadyAsync()), "Try again", () => _ = RestartIntoInstallerAsync(),
+                    "Open BIOS", () => _ = RestartIntoBiosAsync(), Secondary);
         }
 
         Task RestartIntoInstallerAsync() => RestartAsync(engine.RestartIntoInstallerAsync,
+            $"You can also restart yourself and tap {startup.BootKey} while the PC starts, then choose the installer.");
+
+        Task RestartIntoInstallerFirstAsync() => RestartAsync(engine.RestartIntoInstallerFirstAsync,
             $"You can also restart yourself and tap {startup.BootKey} while the PC starts, then choose the installer.");
 
         Task RestartIntoBiosAsync() => RestartAsync(engine.RestartIntoFirmwareAsync, "Restart yourself and tap Delete, F2 or F10 while the PC starts.");
@@ -145,11 +152,14 @@ namespace Hop
         void ShowBlocked(string message)
         {
             Arrange(new[] { new[] { Run.Black("hop can't continue.") } }, message, Secondary, null, 0);
-            if (engine != null) Footer("Copy a bug report", () => _ = CopyReportAsync(), "Close", Close);
+            if (engine != null) Footer(ReportLink, () => _ = CopyReportAsync(), "Close", Close);
             else Footer(null, null, "Close", Close);
         }
 
-        /// <summary>The PC, the disk layout, the startup menu and the log, ready to paste into an issue.</summary>
+        const string ReportLink = "Report this on GitHub";
+        const string NewIssueUrl = "https://github.com/Arjun-Ingole/hop/issues/new?template=bug_report.yml";
+
+        /// <summary>The PC, the disk layout, the startup menu and the log, ready to paste into an issue. Nothing is sent: the person pastes it, and can read it first.</summary>
         async Task CopyReportAsync()
         {
             int shown = screen;
@@ -161,12 +171,20 @@ namespace Hop
             try
             {
                 Clipboard.SetText(report);
-                if (shown == screen) footerLink.Set("Copied. Paste it into a GitHub issue.", false, Tertiary, false);
+                bool opened = OpenNewIssue();
+                if (shown == screen) footerLink.Set(opened ? "Copied. Paste it into the page that opened." : "Copied. Paste it into a GitHub issue.", false, Tertiary, false);
             }
             catch
             {
                 if (shown == screen) footerLink.Set("Couldn't reach the clipboard.", false, Tertiary, false);
             }
+        }
+
+        /// <summary>Through Explorer, so the browser doesn't run as administrator like hop.</summary>
+        static bool OpenNewIssue()
+        {
+            try { System.Diagnostics.Process.Start("explorer.exe", NewIssueUrl); return true; }
+            catch (Exception) { return false; }
         }
     }
 }

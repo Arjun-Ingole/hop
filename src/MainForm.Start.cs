@@ -87,7 +87,7 @@ namespace Hop
             {
                 EndWork();
                 Arrange(new[] { new[] { Run.Gray("Couldn't clean up"), Run.Black("everything") } }, Describe(ex), Danger, null, 0);
-                Footer("Copy a bug report", () => _ = CopyReportAsync(), "Try again", () => _ = CleanupAsync(installerOnly, afterwards));
+                Footer(ReportLink, () => _ = CopyReportAsync(), "Try again", () => _ = CleanupAsync(installerOnly, afterwards));
                 return;
             }
             // It's done now, so a problem from here on, such as what stops a new install, isn't one to retry.

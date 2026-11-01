@@ -816,3 +816,33 @@ Describe 'Assert-DriveUsable' {
         { Assert-DriveUsable '' } | Should -Not -Throw
     }
 }
+
+Describe 'Partitions someone removed by hand' {
+    BeforeEach {
+        $script:Gone = [pscustomobject]@{
+            Distro = 'Ubuntu'; DiskNumber = 0; DiskGuid = '{disk-0}'; Copied = $true; BootNumber = 7; WindowsShrunk = $true
+            Partitions = @([pscustomobject]@{ Role = 'installer'; Offset = [int64]100GB; Size = [int64]8GB })
+        }
+        Mock Read-State { $script:Gone }
+        Mock Get-WindowsPartition { New-TestPartition -Letter 'C' -Disk 0 }
+        Mock Get-HopPartitions { }
+        Mock Get-FirmwareEntries { @() }
+        Mock Get-BcdEntries { }
+        Mock Get-Partition { New-TestPartition -Letter 'C' -Disk 0 }
+        Mock Get-Disk { New-TestDisk -Number 0 }
+    }
+    It 'counts as something to clean up, not an install that is ready' {
+        Get-InstallStatus | Should -Be 'leftover'
+    }
+    It 'cleans up what is left without complaint and never removes anything else' {
+        Mock Use-Esp { }
+        Mock Remove-PartitionAt { }
+        Mock Unregister-RunAfterRestart { }
+        Mock Get-SpaceOwner { $null }
+        Mock Remove-Item { }
+        Mock Remove-CasperPartition { }
+        Mock Test-Path { $false }
+        { Invoke-Cleanup } | Should -Not -Throw
+        Should -Invoke Remove-PartitionAt -Times 0
+    }
+}

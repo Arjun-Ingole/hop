@@ -28,6 +28,15 @@ function Test-System {
     if (-not @(Get-DriveTargets | Where-Object { -not $_.Blocker -and $_.Kind -ne 'disk' }).Count) { throw $blockers[0] }
 }
 
+# A drive behind one of these can report itself as plain NVMe, so its bus type doesn't give it away.
+function Test-RaidController([string[]]$Names) {
+    @($Names | Where-Object { $_ -match 'Intel.*(RST|Rapid Storage|VMD|Volume Management|Optane|VROC|RAID)|AMD.*RAID|MegaRAID|Smart Array|PERC|Adaptec|Broadcom.*RAID|LSI.*RAID' }).Count -gt 0
+}
+
+function Get-StorageControllers {
+    try { @(Get-CimInstance Win32_SCSIController -ErrorAction SilentlyContinue) + @(Get-CimInstance Win32_IDEController -ErrorAction SilentlyContinue) | ForEach-Object { $_.Name } } catch { @() }
+}
+
 # Things hop can go ahead with, but that are worth checking first. ** marks emphasis.
 function Get-Warnings([string]$Target) {
     Get-RoomGaveUpWarning
@@ -35,7 +44,10 @@ function Get-Warnings([string]$Target) {
     if ($battery -and $battery.BatteryStatus -eq 1) {
         "**Plug in the charger.** This PC is on battery ($($battery.EstimatedChargeRemaining)%), and losing power while the disk is changing could stop Windows starting."
     }
-    if ((Get-Disk -Number (Get-WindowsPartition).DiskNumber).BusType -eq 'RAID') {
+    if (-not (Test-BootNextSticks)) {
+        "**This PC's firmware refused a test change to its startup menu.** hop can still set up the installer, but you may need to start it yourself with $(Get-BootMenuKey) as the PC powers on."
+    }
+    if ((Get-Disk -Number (Get-WindowsPartition).DiskNumber).BusType -eq 'RAID' -or (Test-RaidController @(Get-StorageControllers))) {
         '**The drive is in RAID or Intel RST mode.** Most Linux installers can''t see a drive set up this way. Windows also needs care to switch to AHCI in the BIOS, so look up the steps for this PC before continuing.'
     }
     foreach ($other in @(Get-OtherInstallers)) {
