@@ -564,7 +564,15 @@ def install(vm, s, tag='install', row=1):
     s.click_hop(236, LINE_ONE_Y)
     time.sleep(1.5)
     vm.shot(f'{tag}-system-picker')
-    s.click_hop(236, SYSTEM_ROW_Y + row * DRIVE_ROW_H)
+    if row < 8:
+        s.click_hop(236, SYSTEM_ROW_Y + row * DRIVE_ROW_H)
+    else:
+        # The list scrolls after the eighth, so this one's reached the way a keyboard would.
+        for _ in range(row):
+            vm.key('down')
+            time.sleep(0.4)
+        vm.shot(f'{tag}-system-picked')
+        vm.key('ret')
     time.sleep(3)
     vm.shot(f'{tag}-choose')
     s.press('Install', limit=30)
