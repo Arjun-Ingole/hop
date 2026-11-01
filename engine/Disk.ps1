@@ -19,8 +19,8 @@ function Get-TailFree($Partition) {
 function Get-ShrinkableBytes($Partition, $Supported, [int64]$Reserve) {
     $room = [int64]($Partition.Size - $Supported.SizeMin)
     $volume = try { $Partition | Get-Volume -ErrorAction SilentlyContinue } catch { $null }
-    $spare = if ($volume -and $volume.Size) { [math]::Min($room - $ShrinkMargin, [int64]($volume.SizeRemaining - $Reserve)) } else { $room - $Reserve }
-    [int64][math]::Max(0, $spare)
+    $spare = if ($volume -and $volume.Size) { [math]::Min([int64]($room - $ShrinkMargin), [int64]($volume.SizeRemaining - $Reserve)) } else { [int64]($room - $Reserve) }
+    [math]::Max([int64]0, [int64]$spare)
 }
 
 function Get-SpaceInfo([string]$Target) {
