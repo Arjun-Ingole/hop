@@ -85,7 +85,7 @@ function Get-OmarchyBoot {
 # IsoGB and Steps come from the entry.
 function Get-FullDiskBoot([string]$Family) {
     switch ($Family) {
-        'casper' { @{ Word = 'toram'; Configs = @('boot/grub/grub.cfg'); Edits = [ordered]@{ '(?m)^(\s*linux\s+/casper/\S+)' = '$1 toram' } } }
+        'casper' { @{ Word = 'toram'; Configs = @('boot/grub/grub.cfg'); Edits = [ordered]@{ '(?m)^(\s*linux\s+/casper[^/\s]*/\S+)' = '$1 toram' } } }
         'liveboot' { @{ Word = 'toram'; Configs = @('boot/grub/grub.cfg'); Edits = [ordered]@{ '(?m)^(\s*linux\s+/live/\S+)' = '$1 toram' } } }
         'dracut' { @{ Word = 'rd.live.ram=1'; Configs = @(); Edits = [ordered]@{ 'root=live:LABEL=(\S+)' = 'root=live:LABEL=$1 rd.live.ram=1' } } }
         'archiso' { @{ Word = 'copytoram'; Configs = @(); Edits = [ordered]@{ '(archisobasedir=\S+)' = '$1 copytoram' } } }
@@ -112,6 +112,17 @@ function Get-FullDiskBoot([string]$Family) {
 #   when memory's short. Steps is what to click, and {DISK} names the disk.
 # Kubuntu is missing on purpose: its ISO has a file over 4 GB, which FAT32 cannot hold.
 function Get-Catalog {
+    # The same installer as Ubuntu's, whose first choice ends in each flavour's own name.
+    $UbuntuErase = @(
+        'Pick your language and keyboard, then start the installer.'
+        'When asked how to install, choose the one that starts **Erase disk and install**.'
+        'Under **Select drive**, choose **{DISK}**. Leave any other drive alone.'
+        'On **Ready to install**, check that only **{DISK}** is listed under **Erased**, then click **Install**.')
+    $AnacondaErase = @(
+        'On the welcome screen, choose **Not Now**.'
+        'Open the install app from the dock, then pick your language.'
+        'Select **{DISK}** and choose **Use entire disk**. Leave any other drive alone.'
+        'On the last screen, check it names only **{DISK}**, then click **Erase data and install**.')
     $EspExtra = 'Also click the existing **EFI System Partition**, choose Edit, set the mount point to **/boot/efi** and keep it unformatted.'
     $CalamaresSteps = @(
         'When asked about partitions, choose **Manual partitioning**. If it lists several drives, pick the one with the {GB} GB of free space.'
@@ -126,7 +137,12 @@ function Get-Catalog {
         "Don't choose **Use entire disk**. The installer is running from this drive.")
     @(
         New-Entry 'elementary' 'elementary OS' 'Mac-like' 'elementary.io' '#3689E6' 'elementary' ((Get-CasperBoot) + @{
-            Kind = 'elementary'; Strategy = 'prepared'; Mode = 'Custom Install (Advanced)' })
+            Kind = 'elementary'; Strategy = 'prepared'; Mode = 'Custom Install (Advanced)'
+            FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 4; Steps = @(
+                'Pick your language and keyboard.'
+                'At **Try or Install**, choose **Erase Disk and Install**, then click **Next**.'
+                'At **Select a Drive**, choose **{DISK}**. Leave any other drive alone. Then click **Next**.'
+                "Choose **Don't Encrypt**, or **Enable Drive Encryption** and set a password. The install starts straight after that.") } })
         New-UbuntuFlavor 'ubuntu' 'Ubuntu' 'Most popular' '#E95420' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 6; Steps = @(
                 'Pick your language and keyboard, then start the installer.'
                 'When asked how to install, choose **Erase disk and install Ubuntu**.'
@@ -143,7 +159,8 @@ function Get-Catalog {
                 'If it lists more than one drive, choose **{DISK}**. Leave any other drive alone.'
                 'Click **Install Now**, check that only **{DISK}** is in the list of changes, then click **Continue**.') } })
         New-Entry 'fedora' 'Fedora Workstation' 'Up to date' 'fedoraproject.org' '#51A2DA' 'fedora' ((Get-DracutBoot 'boot/grub2') + @{
-            Kind = 'fedora'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps })
+            Kind = 'fedora'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps
+            FullDisk = (Get-FullDiskBoot 'dracut') + @{ IsoGB = 3; Steps = $AnacondaErase } })
         New-Entry 'debian' 'Debian' 'Rock solid' 'cdimage.debian.org' '#A80030' 'debian' @{
             Kind = 'debian'; Live = 'live/filesystem.squashfs'; Manual = 'Manual partitioning'; ManualExtra = $EspExtra
             FullDisk = (Get-FullDiskBoot 'liveboot') + @{ IsoGB = 3; Steps = @(
@@ -181,18 +198,26 @@ function Get-Catalog {
                 "Under **Select installation mode**, press Down to reach **Free space install (alongside existing data)**, then Return. **Don't choose Full disk install**, where the cursor starts: it erases Windows."
                 'It should say **Install Omarchy in the {GB} GB of free space**, or close to that. Choose **Yes, install**. To install without encryption, press **Ctrl+C** first.'
                 'When it has finished, choose **Reboot Now**.')
-            Notes = @("Afterwards this PC starts Omarchy, and its menu doesn't list Windows. To get to Windows, use your PC's boot menu, or run **limine-scan** in Omarchy to add it to the menu.") })
+            Notes = @("Afterwards this PC starts Omarchy, and its menu doesn't list Windows. To get to Windows, use your PC's boot menu, or run **limine-scan** in Omarchy to add it to the menu.")
+            FullDisk = (Get-FullDiskBoot 'archiso') + @{ IsoGB = 7; Steps = @(
+                'Press **Return** to start, then choose your keyboard.'
+                'Make your account. Your password also unlocks the disk if Omarchy encrypts it. Name, email and hostname can be left empty.'
+                'Under **Select install disk**, choose **{DISK}**. Leave any other drive alone.'
+                'Under **Select installation mode**, choose **Full disk install**, where the cursor starts.'
+                'At **Confirm overwriting**, choose **Yes, install**. To install without encryption, press **Ctrl+C** first.'
+                'When it has finished, choose **Reboot Now**.') } })
         New-Entry 'ultramarine' 'Ultramarine' 'Fedora made easy' 'images.fyralabs.com' '#00078F' 'ultramarine' ((Get-DracutBoot 'boot/grub') + @{
-            Kind = 'ultramarine'; Edition = 'gnome'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps })
-        New-UbuntuFlavor 'ubuntu-budgie' 'Ubuntu Budgie' 'Dock at the bottom' '#404552'
-        New-UbuntuFlavor 'xubuntu' 'Xubuntu' 'Lightweight' '#0044AA'
+            Kind = 'ultramarine'; Edition = 'gnome'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps
+            FullDisk = (Get-FullDiskBoot 'dracut') + @{ IsoGB = 4; Steps = $AnacondaErase } })
+        New-UbuntuFlavor 'ubuntu-budgie' 'Ubuntu Budgie' 'Dock at the bottom' '#404552' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 4; Steps = $UbuntuErase } }
+        New-UbuntuFlavor 'xubuntu' 'Xubuntu' 'Lightweight' '#0044AA' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 5; Steps = $UbuntuErase } }
         New-UbuntuFlavor 'lubuntu' 'Lubuntu' 'Lightest' '#0068C8' @{
             Alongside = $null; Manual = 'Manual partitioning'; ManualExtra = $EspExtra }
-        New-UbuntuFlavor 'ubuntucinnamon' 'Ubuntu Cinnamon' 'Windows-like layout' '#DD682A'
+        New-UbuntuFlavor 'ubuntucinnamon' 'Ubuntu Cinnamon' 'Windows-like layout' '#DD682A' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 6; Steps = $UbuntuErase } }
         New-UbuntuFlavor 'ubuntu-unity' 'Ubuntu Unity' 'Classic Ubuntu' '#5A06C3'
         New-MintEdition 'xfce' 'Linux Mint Xfce' 'Lighter Mint'
         New-MintEdition 'mate' 'Linux Mint MATE' 'Traditional'
-        New-UbuntuFlavor 'edubuntu' 'Edubuntu' 'For students' '#A30B00'
+        New-UbuntuFlavor 'edubuntu' 'Edubuntu' 'For students' '#A30B00' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 8; Steps = $UbuntuErase } }
         New-UbuntuFlavor 'ubuntustudio' 'Ubuntu Studio' 'For creators' '#009BF9'
     )
 }

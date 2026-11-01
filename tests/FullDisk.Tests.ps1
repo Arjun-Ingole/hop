@@ -26,7 +26,7 @@ BeforeAll {
 
 Describe 'Which systems are offered' {
     It 'only offers what was really seen erasing a disk and starting afterwards' {
-        @(Get-Catalog | Where-Object FullDisk).Id | Should -Be @('ubuntu', 'zorin', 'debian', 'arch')
+        @(Get-Catalog | Where-Object FullDisk).Id | Should -Be @('elementary', 'ubuntu', 'zorin', 'fedora', 'debian', 'arch', 'omarchy', 'ultramarine', 'ubuntu-budgie', 'xubuntu', 'ubuntucinnamon', 'edubuntu')
     }
     It 'has what the install needs for every system it offers' {
         foreach ($distro in Get-Catalog | Where-Object FullDisk) {
@@ -82,6 +82,21 @@ Describe 'Boot config for a full disk' {
         $distro = (Get-Catalog | Where-Object Id -eq 'fedora')
         $distro.FullDisk = Get-FullDiskBoot 'dracut'
         Get-EditedBootConfig $distro "linux /x root=live:CDLABEL=F44 rd.live.image" -FullDisk | Should -BeLike "linux /x root=live:LABEL=$InstallerLabel rd.live.ram=1 *umount* rd.live.image"
+    }
+    It 'finds Pop!_OS''s casper folder, whose name has its version in it' {
+        Edit-With 'casper' "`tlinux /casper_pop-os_24.04_amd64_generic_debug_681/vmlinuz.efi boot=casper ---" |
+            Should -Be "`tlinux /casper_pop-os_24.04_amd64_generic_debug_681/vmlinuz.efi toram boot=casper ---"
+    }
+    It 'keeps Fedora''s word for it when it lets go of the disk as it starts' {
+        $fedora = Get-Catalog | Where-Object Id -eq 'fedora'
+        $edited = Get-EditedBootConfig $fedora "linux /x root=live:CDLABEL=F44 rd.live.image" -FullDisk
+        $edited | Should -BeLike '*rd.live.ram=1*'
+        $edited | Should -BeLike '*umount -l /run/initramfs/live*'
+    }
+    It 'copies Omarchy to memory as well, and still lets go of the disk as it starts' {
+        $omarchy = Get-Catalog | Where-Object Id -eq 'omarchy'
+        $edited = Get-EditedBootConfig $omarchy 'chainloader /x archisobasedir=arch archisosearchuuid=2026-10-19 quiet' -FullDisk
+        $edited | Should -BeLike "*archisobasedir=arch copytoram archisolabel=$LiveLabel *umount -l /run/archiso/bootmnt*"
     }
     It 'adds copytoram to Arch''s' {
         Edit-With 'archiso' 'options  archisobasedir=arch archisolabel=HOPINSTALL' | Should -Be 'options  archisobasedir=arch copytoram archisolabel=HOPINSTALL'
