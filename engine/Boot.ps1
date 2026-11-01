@@ -229,6 +229,8 @@ function Register-Installer([string]$Name, $Distro) {
     $number
 }
 
+function Clear-BootOnce { [Hop.Firmware]::ClearBootNext() }
+
 function Test-FirmwareAccess { [Hop.Firmware]::CheckAccess() }
 
 # The startup entry is added after the disk has changed, so find out now if it can't be.

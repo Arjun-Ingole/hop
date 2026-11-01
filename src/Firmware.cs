@@ -87,6 +87,13 @@ namespace Hop
             Write("BootNext", BitConverter.GetBytes((ushort)number));
         }
 
+        /// <summary>Forgets the one-time start, for when the restart it was for didn't happen.</summary>
+        public static void ClearBootNext()
+        {
+            EnablePrivilege();
+            Write("BootNext", null);
+        }
+
         public static void DeleteBootEntry(int number)
         {
             EnablePrivilege();

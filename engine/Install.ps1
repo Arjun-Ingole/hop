@@ -188,13 +188,21 @@ function Get-StateSteps {
 
 function Restart-IntoInstaller {
     Set-InstallerForNextStart
-    Invoke-Shutdown '/r', '/t', '0'
+    Invoke-InstallerRestart '/r', '/t', '0'
 }
 
 # The BIOS settings, for turning off Secure Boot. Leaving them starts the installer.
 function Restart-IntoFirmware {
     Set-InstallerForNextStart
-    Invoke-Shutdown '/r', '/fw', '/t', '0'
+    Invoke-InstallerRestart '/r', '/fw', '/t', '0'
+}
+
+# With no restart, the one-time start would wait for whichever came next, however much later.
+function Invoke-InstallerRestart([string[]]$Arguments) {
+    try { Invoke-Shutdown $Arguments } catch {
+        try { Clear-BootOnce } catch { Write-Log "Could not forget the one-time start: $($_.Exception.Message)" }
+        throw
+    }
 }
 
 function Set-InstallerForNextStart {
