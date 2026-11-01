@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Management.Automation;
+using System.Management.Automation.Internal;
 using System.Management.Automation.Runspaces;
 using System.Text;
 using System.Threading.Tasks;
@@ -424,7 +425,8 @@ namespace Hop
         static T Get<T>(PSObject o, string name)
         {
             var value = o.Properties[name]?.Value;
-            return value == null ? default(T) : LanguagePrimitives.ConvertTo<T>(value);
+            // An if that produced nothing leaves PowerShell's own "nothing", which isn't null and can't convert.
+            return value == null || value == AutomationNull.Value ? default(T) : LanguagePrimitives.ConvertTo<T>(value);
         }
 
         public void Dispose() => runspace.Dispose();

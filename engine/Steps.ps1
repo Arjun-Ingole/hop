@@ -36,7 +36,7 @@ function Get-ReturnedHelp {
             "This PC ignored hop's request to start the installer. Restart and keep tapping **$key** as the PC powers on, which opens its boot menu."
             "Choose **$entry**."
         ) }
-        $notes = if ($canPutFirst) { @() } else { @("If it isn't listed, this PC's firmware removed it. Click **Try again** and hop adds it back.") }
+        $notes = @(if (-not $canPutFirst) { "If it isn't listed, this PC's firmware removed it. Click **Try again** and hop adds it back." })
     } elseif (Test-SecureBoot) {
         $steps = @(
             "Restart and keep tapping **$key** as the PC powers on, then choose **$entry**."

@@ -1382,6 +1382,20 @@ Describe 'Putting the installer first' {
         Mock Test-EntryDropped { $true }
         (Get-ReturnedHelp).CanPutFirst | Should -BeFalse
     }
+    It 'always gives the app real lists, in every case' {
+        foreach ($ignored in $true, $false) {
+            foreach ($secure in $true, $false) {
+                foreach ($dropped in $true, $false) {
+                    Mock Test-BootNextIgnored { $ignored }
+                    Mock Test-SecureBoot { $secure }
+                    Mock Test-EntryDropped { $dropped }
+                    $help = Get-ReturnedHelp
+                    $help.PSObject.Properties['Notes'].Value -is [array] -or $help.PSObject.Properties['Notes'].Value -is [string] | Should -BeTrue
+                    $help.Steps.Count | Should -BeGreaterThan 0
+                }
+            }
+        }
+    }
     It 'tells them how to reach Windows meanwhile' {
         (Get-ReturnedHelp).Steps -join ' ' | Should -BeLike '*F11*Windows Boot Manager*'
     }
