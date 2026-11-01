@@ -8,7 +8,9 @@ function Invoke-Bcdedit {
 
 # Opens Windows' EFI system partition for a moment.
 function Use-Esp([scriptblock]$Action) {
-    $letter = [char[]](90..68) | Where-Object { -not (Test-Path "$($_):\") } | Select-Object -First 1
+    # A drive with nothing in it, such as an empty card reader, has a letter even though its path isn't there.
+    $taken = @([IO.DriveInfo]::GetDrives() | ForEach-Object { $_.Name[0] })
+    $letter = [char[]](90..68) | Where-Object { $_ -notin $taken -and -not (Test-Path "$($_):\") } | Select-Object -First 1
     if (-not $letter) { throw 'Every drive letter is in use, so the EFI system partition cannot be opened. Remove a network drive or USB drive and try again.' }
     & mountvol.exe "$($letter):" /s | Out-Null
     if (-not (Test-Path "$($letter):\EFI")) {

@@ -120,8 +120,8 @@ function Get-DriveBlocker($Disk, $Partition, [switch]$Windows) {
 
     if ($Windows) {
         $volume = Get-Volume -DriveLetter $env:SystemDrive.TrimEnd(':')
-        if ($volume.FileSystemType -ne 'NTFS') { return "Drive C: uses $($volume.FileSystemType). Windows can only shrink NTFS drives." }
-        if ($volume.HealthStatus -in @('Warning', 'Unhealthy')) { return 'Windows reports a problem with drive C:. Run chkdsk C: /f in an administrator terminal, restart, and open hop again.' }
+        if ($volume.FileSystemType -ne 'NTFS') { return "Drive $env:SystemDrive uses $($volume.FileSystemType). Windows can only shrink NTFS drives." }
+        if ($volume.HealthStatus -in @('Warning', 'Unhealthy')) { return "Windows reports a problem with drive $env:SystemDrive. Run chkdsk $env:SystemDrive /f in an administrator terminal, restart, and open hop again." }
         return
     }
 

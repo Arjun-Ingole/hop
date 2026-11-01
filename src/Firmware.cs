@@ -66,12 +66,15 @@ namespace Hop
             string partitionGuid, string path)
         {
             EnablePrivilege();
-            int number = FreeNumber();
+            var order = new List<ushort>(BootOrder());
+            // A number left in BootOrder with no entry behind it would put hop's where that one sits,
+            // perhaps first, and every restart would then start the installer.
+            int number = FreeNumber(order);
             Write(EntryName(number), LoadOption(description, partitionNumber, startLba, sizeLba, new Guid(partitionGuid), path));
 
             // Listing it in BootOrder too makes it show up in the firmware's boot menu (F11 on MSI).
-            var order = new List<ushort>(BootOrder());
-            if (!order.Contains((ushort)number))
+            // With no BootOrder at all, starting one would make hop's the only thing the firmware tries.
+            if (order.Count > 0)
             {
                 order.Add((ushort)number);
                 WriteBootOrder(order);
@@ -154,10 +157,10 @@ namespace Hop
 
         static string EntryName(int number) => $"Boot{number:X4}";
 
-        static int FreeNumber()
+        static int FreeNumber(List<ushort> order)
         {
             for (int number = 0; number <= 0xFFFF; number++)
-                if (Read(EntryName(number)) == null) return number;
+                if (!order.Contains((ushort)number) && Read(EntryName(number)) == null) return number;
             throw new InvalidOperationException("The firmware has no free startup entries.");
         }
 

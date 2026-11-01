@@ -197,6 +197,11 @@ namespace Hop
                 primaryText = "Make room";
                 primaryAction = () => _ = ShowMakeRoomAsync();
             }
+            else if (MovingUnfinished && !enoughSpace && !systemStops)
+            {
+                primaryText = "Move files again";
+                primaryAction = () => _ = MoveFilesAgainAsync();
+            }
 
             if (startup.OtherGB > 0)
                 Footer($"Remove {startup.OtherName} ({startup.OtherGB} GB)", ShowRemoveOther, primaryText, primaryAction);
@@ -216,9 +221,16 @@ namespace Hop
                 Footer("Windows and your files stay.", null, primaryText, primaryAction);
         }
 
+        bool MovingUnfinished => RoomMadeHere && engine.RoomUnfinished;
+
+        Task MoveFilesAgainAsync() => WorkThenChooseAsync(new[] { new[] { Run.Black("Moving files"), Run.Gray("out of the way") } },
+            () => engine.CompleteMakeRoomAsync(), ex => ShowCouldntMakeRoom(ex));
+
         string StuckNote(DriveChoice better)
         {
             int release = Math.Max(0, target.UsableGB);
+            if (MovingUnfinished)
+                return $"Windows stopped before it finished moving files, so hop can use {release} GB for now. Moving them again may free more.";
             if (!RoomMadeHere)
                 return better == null
                     ? $"{target.Title} has room, but Windows can't release it yet. hop can clear what's in the way."
@@ -315,7 +327,7 @@ namespace Hop
 
             string title = target.InSentence;
             ConfigureDrive(DriveMode.Stuck, Current);
-            steps.Set(plan.Steps, null);
+            steps.Set(plan.Steps, plan.Notes.Skip(1).ToArray());
             Arrange(new[] { new[] { Run.Black($"{target.StuckGB} GB"), Run.Gray($"is stuck on {title}") } },
                 $"Windows can only shrink {title} as far as the last file it can't move. hop can clear the way.", Secondary, drive, 24);
             PlaceSteps(drive.Bottom + S(24));

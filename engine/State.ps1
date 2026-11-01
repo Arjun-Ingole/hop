@@ -18,6 +18,13 @@ function Test-LooksLikeHops($Volume) {
     $Volume.FileSystemLabel -in $InstallerLabels -and $entries -contains 'EFI'
 }
 
+# Not being able to look doesn't count as empty.
+function Test-EmptyPartition($Partition) {
+    $volume = Get-VolumeOf $Partition
+    if (-not $volume) { return $false }
+    try { @(Get-VolumeEntries $volume | Where-Object { $_ -notin @('System Volume Information', '$RECYCLE.BIN') }).Count -eq 0 } catch { $false }
+}
+
 # Looks on every disk hop could have used, because a crash can leave its state file behind or
 # out of date. Off the Windows disk, a label alone isn't enough: the format has to match too,
 # so someone's own drive named LINUXBOOT isn't mistaken for hop's.

@@ -300,7 +300,8 @@ namespace Hop
             if (e.CloseReason == CloseReason.WindowsShutDown && engine != null && engine.RoomRestarting) return;
             if (!busy)
             {
-                if (roomMade) try { engine.RestoreRoomSettings(); } catch { }
+                // Copying a bug report can be holding the engine, and this mustn't freeze the window.
+                RestoreRoomBeforeExit();
                 return;
             }
             if (reading || (installing && engine.TryCancel()))

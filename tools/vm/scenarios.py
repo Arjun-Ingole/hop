@@ -346,6 +346,20 @@ def scenario_screens(bench):
     s.hop_log()
 
 
+MOVE_BITMAP_TO_END = r'''
+[void][Reflection.Assembly]::LoadFrom('C:\Users\hop\Downloads\hop.exe')
+$before = (Get-PartitionSupportedSize -DriveLetter C).SizeMin
+$moved = [Hop.NtfsMove]::MoveToEnd('C', '$Mft::$BITMAP', 0.96)
+$after = (Get-PartitionSupportedSize -DriveLetter C).SizeMin
+"moved $moved clusters; can shrink to {0:N1} GB, then {1:N1} GB" -f ($before/1GB), ($after/1GB)
+'''
+
+CHECK_DISK = r'''
+"disk check: " + (Repair-Volume -DriveLetter C -Scan)
+"can shrink to {0:N1} GB of {1:N1} GB" -f ((Get-PartitionSupportedSize -DriveLetter C).SizeMin/1GB), ((Get-Partition -DriveLetter C).Size/1GB)
+'''
+
+
 def make_room(vm, s):
     """From a stuck C:, through the restart, until hop has moved the files and shows what's next."""
     s.open_as_a_person('stuck-elevation-prompt')
@@ -437,6 +451,18 @@ def scenario_stuck(bench):
     restart_and_wait(vm)
     vm.shot('stuck-restarted-again')
     s.facts('after one more restart: are hibernation, the paging file and the journal back?')
+    s.hop_log()
+
+
+def scenario_stuckmft(bench):
+    """$Mft::$BITMAP near the end of a real C:, with plenty free. defrag doesn't move it, so hop has to."""
+    vm, s = bench.fresh()
+    s.desktop()
+    s.get_hop()
+    print(vm.ps(MOVE_BITMAP_TO_END, timeout=300), flush=True)
+    s.facts('after moving the bitmap to the end')
+    make_room(vm, s)
+    print(vm.ps(CHECK_DISK, timeout=600), flush=True)
     s.hop_log()
 
 

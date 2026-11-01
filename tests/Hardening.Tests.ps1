@@ -247,7 +247,35 @@ Describe 'Which recorded partitions Clean up removes' {
     }
 }
 
+Describe 'Make room when nobody has signed in' {
+    BeforeEach {
+        $script:RoomPath = Join-Path $TestDrive 'room-wait.json'
+        Mock Restore-RoomSettings { }
+        Mock Remove-RoomTask { }
+        Mock Test-Path { $false } -ParameterFilter { $LiteralPath -eq $script:RoomPath }
+    }
+    It 'waits for them during the first day' {
+        Mock Read-RoomState { [pscustomobject]@{ Phase = 'restarting'; Saved = (Get-Date).AddHours(-2).ToString('s') } }
+        Mock Get-SignedInUser { $null }
+        Restore-RoomFromTask
+        Should -Invoke Restore-RoomSettings -Times 0
+    }
+    It 'stops waiting after that' {
+        Mock Read-RoomState { [pscustomobject]@{ Phase = 'restarting'; Saved = (Get-Date).AddHours(-25).ToString('s') } }
+        Mock Get-SignedInUser { $null }
+        Restore-RoomFromTask
+        Should -Invoke Restore-RoomSettings -Times 1
+    }
+    It 'does not wait when someone is signed in' {
+        Mock Read-RoomState { [pscustomobject]@{ Phase = 'restarting'; Saved = (Get-Date).ToString('s') } }
+        Mock Get-SignedInUser { 'PC\\someone' }
+        Restore-RoomFromTask
+        Should -Invoke Restore-RoomSettings -Times 1
+    }
+}
+
 Describe 'Putting Make room back' {
+    BeforeEach { Mock Get-SignedInUser { 'PC\\someone' } }
     BeforeAll { $RoomPath = Join-Path $TestDrive 'make-room.json' }
     BeforeEach {
         Remove-Item $RoomPath -ErrorAction SilentlyContinue
@@ -684,7 +712,16 @@ Describe 'The lock on running hop' {
 }
 
 Describe 'Make room''s steps' {
-    BeforeEach { Mock Test-PagingFileOn { $true } }
+    BeforeEach { Mock Test-PagingFileOn { $true }; Mock Test-OpensAgainByItself { $true } }
+    It 'says to open hop again when the task will not do it for them' {
+        Mock Test-EnoughMemoryWithoutPaging { $true }
+        Mock Test-OpensAgainByItself { $false }
+        (Get-MakeRoomSteps '').Steps -join ' ' | Should -BeLike '*Open hop again within 20 minutes*'
+    }
+    It 'warns when memory keeps the paging file on' {
+        Mock Test-EnoughMemoryWithoutPaging { $false }
+        (Get-MakeRoomSteps '').Notes -join ' ' | Should -BeLike '*too little memory*'
+    }
     It 'are the same words for C:' {
         Mock Test-EnoughMemoryWithoutPaging { $true }
         $steps = Get-MakeRoomSteps ''

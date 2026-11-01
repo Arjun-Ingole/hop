@@ -183,12 +183,13 @@ function Get-CurlMessage([int]$Code) {
     "The download stopped (curl error $Code). Check the internet connection and click Install again; it will pick up where it left off."
 }
 
-function Invoke-Curl([string]$Url, [string]$Part, [int64]$Total, [string]$Name) {
+function Invoke-Curl([string]$Url, [string]$Part, [int64]$Total, [string]$Name, [switch]$NoRevocationCheck) {
     # -C - resumes a half-finished download if Install is clicked again. The speed limit
     # ends a connection that has quietly died, which --retry then reopens.
     $curlArgs = @('-L', '--fail', '--silent', '--show-error', '--retry', '5', '--retry-delay', '5',
         '--connect-timeout', '30', '--speed-limit', '1024', '--speed-time', '120',
         '-C', '-', '-o', "`"$Part`"", "`"$Url`"")
+    if ($NoRevocationCheck) { $curlArgs = @('--ssl-no-revoke') + $curlArgs }
     $proxy = Get-CurlProxy $Url
     # An empty -U : means sign in to the proxy as the current Windows user.
     if ($proxy) { $curlArgs = @('--proxy', "`"$proxy`"", '--proxy-anyauth', '-U', ':') + $curlArgs }
@@ -246,6 +247,12 @@ function Invoke-Download($Download, [string]$Path) {
             Remove-Item -LiteralPath $part -Force
             $code = Invoke-Curl $Download.Url $part $total $Download.FileName
         }
+        # Antivirus and work networks that look inside HTTPS often leave a certificate whose revocation
+        # can't be checked. The certificate is still checked, and so is the checksum afterwards.
+        if ($code -eq 35) {
+            Write-Log 'The secure connection failed (curl error 35); trying once without the revocation check.'
+            $code = Invoke-Curl $Download.Url $part $total $Download.FileName -NoRevocationCheck
+        }
         if ($code -ne 0) { throw (Get-CurlMessage $code) }
     }
 
@@ -257,9 +264,20 @@ function Invoke-Download($Download, [string]$Path) {
     Move-Item -LiteralPath $part -Destination $Path -Force
 }
 
+# With no checksum to go on, this is what stops a web page saved as an ISO being used again and again.
+function Test-IsoFile([string]$Path) {
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        [void]$stream.Seek(32769, 'Begin')
+        $bytes = New-Object byte[] 5
+        $stream.Read($bytes, 0, 5) -eq 5 -and [Text.Encoding]::ASCII.GetString($bytes) -ceq 'CD001'
+    } finally { $stream.Dispose() }
+}
+
 function Get-Iso($Download, [string]$Path) {
     if (Test-Path -LiteralPath $Path) {
-        if (-not $Download.Sha256 -or (Test-Sha256 $Path $Download.Sha256)) {
+        $good = if ($Download.Sha256) { Test-Sha256 $Path $Download.Sha256 } else { Test-IsoFile $Path }
+        if ($good) {
             Write-Log "Using the copy already in $Path"
             return
         }
@@ -274,6 +292,10 @@ function Get-Iso($Download, [string]$Path) {
         }
         Write-Log 'Checksum matches the official one.'
     } else {
+        if (-not (Test-IsoFile $Path)) {
+            Remove-Item -LiteralPath $Path -Force
+            throw 'What downloaded isn''t an ISO. A network filter or a busy server may have sent a web page instead. Click Install to try again.'
+        }
         Write-Log 'This project does not publish a checksum. The file came over a secure HTTPS connection from its official server.'
     }
 }

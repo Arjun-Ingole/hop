@@ -206,6 +206,9 @@ namespace Hop
         public string SpaceNote => Sync["SpaceNote"] as string;   // why Undo left the space free, if it had to
         public bool RoomRestarting => Sync["RoomRestarting"] is bool restarting && restarting;
 
+        /// <summary>Windows stopped moving files before it finished, so there may be more room to make.</summary>
+        public bool RoomUnfinished => Sync["RoomUnfinished"] is bool unfinished && unfinished;
+
         Collection Invoke(string command, IDictionary parameters = null)
         {
             lock (gate)

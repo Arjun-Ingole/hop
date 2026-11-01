@@ -20,17 +20,21 @@ namespace Hop
         const int ErrorMoreData = 234, ErrorHandleEof = 38;
         const int MaxFailedMoves = 64;   // a cluster that looked free can be taken by the time it's asked for
 
-        /// <summary>Moves each part of the stream to the lowest free space before it. Says how many clusters moved.</summary>
-        public static long MoveDown(string letter, string stream) => Move(letter, stream, -1);
+        /// <summary>Moves each part of the stream past a fraction of the drive to the lowest free space before it. Says how many clusters moved.</summary>
+        public static long MoveDown(string letter, string stream, double aboveFraction)
+        {
+            using (var volume = OpenVolume(letter))
+                return Move(letter, stream, -1, (long)(TotalClusters(volume) * aboveFraction));
+        }
 
         /// <summary>Moves the stream into the last part of the drive, for testing MoveDown. Says how many clusters moved.</summary>
         public static long MoveToEnd(string letter, string stream, double fromFraction)
         {
             using (var volume = OpenVolume(letter))
-                return Move(letter, stream, (long)(TotalClusters(volume) * fromFraction));
+                return Move(letter, stream, (long)(TotalClusters(volume) * fromFraction), 0);
         }
 
-        static long Move(string letter, string stream, long low)
+        static long Move(string letter, string stream, long low, long above)
         {
             using (var volume = OpenVolume(letter))
             using (var file = OpenStream(letter, stream))
@@ -41,7 +45,7 @@ namespace Hop
                 extents.Sort((a, b) => b.Lcn.CompareTo(a.Lcn));
                 foreach (var extent in extents)
                 {
-                    if (low >= 0 && extent.Lcn >= low) continue;
+                    if (low >= 0 ? extent.Lcn >= low : extent.Lcn + extent.Clusters <= above) continue;
                     long vcn = extent.Vcn, left = extent.Clusters, from = Math.Max(low, 0), before = low >= 0 ? total : extent.Lcn;
                     while (left > 0 && failed < MaxFailedMoves)
                     {

@@ -280,6 +280,7 @@ Describe 'Get-StuckGB' {
 
 Describe 'Make room' {
     BeforeAll {
+        Mock Get-SignedInUser { 'PC\\someone' }
         $RoomPath = Join-Path $TestDrive 'make-room.json'
         $Logged = @'
 A volume shrink analysis was initiated on volume Windows (C:).
@@ -1260,6 +1261,11 @@ Describe 'How much a drive can give up' {
 }
 
 Describe 'Moving system files Windows left in the way' {
+    It 'stops at the time limit' {
+        Mock Get-VolumeOf { $null }
+        Mock Get-ShrinkBlocker { throw 'should not ask' }
+        Move-SystemFiles 'C:' ([pscustomobject]@{}) (Get-Date).AddMinutes(-1) | Should -BeFalse
+    }
     It 'knows the ones Microsoft lists as movable' -ForEach @(
         @{ file = '\$Mft::$BITMAP' }, @{ file = '\$MFT' }, @{ file = '\$Secure:$SDH:$INDEX_ALLOCATION' }, @{ file = '\$Extend\$Quota:$Q:$INDEX_ALLOCATION' }
     ) { Test-MovableSystemFile $file | Should -BeTrue }
@@ -1269,6 +1275,60 @@ Describe 'Moving system files Windows left in the way' {
     It 'carries on when Windows has nothing movable to name' {
         Mock Get-ShrinkBlocker { '\pagefile.sys' }
         Move-SystemFiles 'C:' ([pscustomobject]@{}) | Should -BeFalse
+    }
+}
+
+Describe 'A download with no checksum' {
+    BeforeEach {
+        $path = Join-Path $TestDrive 'a.iso'
+        Remove-Item $path -ErrorAction SilentlyContinue
+        $iso = New-Object byte[] 40000
+        [Text.Encoding]::ASCII.GetBytes('CD001').CopyTo($iso, 32769)
+        $page = [Text.Encoding]::ASCII.GetBytes('<html>blocked</html>')
+        $download = [pscustomobject]@{ Sha256 = $null }
+    }
+    It 'knows an ISO from a web page' {
+        [IO.File]::WriteAllBytes($path, $iso); Test-IsoFile $path | Should -BeTrue
+        [IO.File]::WriteAllBytes($path, $page); Test-IsoFile $path | Should -BeFalse
+    }
+    It 'uses a good copy again' {
+        Mock Invoke-Download { }
+        [IO.File]::WriteAllBytes($path, $iso)
+        Get-Iso $download $path
+        Should -Invoke Invoke-Download -Times 0
+    }
+    It 'replaces a saved web page rather than using it for ever' {
+        [IO.File]::WriteAllBytes($path, $page)
+        Mock Invoke-Download { [IO.File]::WriteAllBytes($Path, $iso) }
+        Get-Iso $download $path
+        Should -Invoke Invoke-Download -Times 1
+        Test-IsoFile $path | Should -BeTrue
+    }
+    It 'does not keep a web page it just downloaded' {
+        Mock Invoke-Download { [IO.File]::WriteAllBytes($Path, $page) }
+        { Get-Iso $download $path } | Should -Throw "*isn't an ISO*"
+        Test-Path $path | Should -BeFalse
+    }
+}
+
+Describe 'A secure connection that fails' {
+    BeforeEach {
+        $path = Join-Path $TestDrive 'b.iso'
+        Mock Set-Stage { }
+        Mock Assert-DownloadRoom { }
+        Mock Test-Path { $true } -ParameterFilter { $Path -like '*curl.exe' }
+    }
+    It 'tries once more without the revocation check' {
+        Mock Invoke-Curl { [IO.File]::WriteAllBytes("$path.part", (New-Object byte[] 1)); 0 } -ParameterFilter { $NoRevocationCheck }
+        Mock Invoke-Curl { 35 } -ParameterFilter { -not $NoRevocationCheck }
+        Invoke-Download ([pscustomobject]@{ Url = 'https://x/a.iso'; Size = [int64]1; FileName = 'a.iso' }) $path
+        Should -Invoke Invoke-Curl -ParameterFilter { $NoRevocationCheck } -Times 1
+        Test-Path $path | Should -BeTrue
+    }
+    It 'gives the usual advice if that fails too' {
+        Mock Invoke-Curl { 35 }
+        { Invoke-Download ([pscustomobject]@{ Url = 'https://x/a.iso'; Size = [int64]1; FileName = 'a.iso' }) $path } | Should -Throw '*date and time*'
+        Should -Invoke Invoke-Curl -Times 2
     }
 }
 
@@ -2029,6 +2089,7 @@ Describe 'Whether hibernation is on' {
 }
 
 Describe 'Make room''s tasks and copy' {
+    BeforeEach { Mock Get-SignedInUser { 'PC\\someone' } }
     BeforeAll { $RoomPath = Join-Path $TestDrive 'make-room.json' }
     BeforeEach {
         Remove-Item $RoomPath -ErrorAction SilentlyContinue

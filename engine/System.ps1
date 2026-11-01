@@ -46,7 +46,7 @@ function Get-Warnings([string]$Target) {
         '**Windows is waiting to restart for an update.** Restart and let it finish first. Otherwise it could be interrupted when the PC starts the installer.'
     }
     if (Test-BitLockerOn) {
-        '**Drive C: is encrypted with BitLocker.** hop pauses it for three restarts. Make sure you have the recovery key first, at account.microsoft.com/devices/recoverykey.'
+        "**Drive $env:SystemDrive is encrypted with BitLocker.** hop pauses it for three restarts. Make sure you have the recovery key first, at account.microsoft.com/devices/recoverykey."
     }
     if ($Target) {
         $place = Resolve-Target $Target

@@ -39,8 +39,11 @@ function Get-Report {
         $c = Get-WindowsPartition
         $disk = Get-Disk -Number $c.DiskNumber
         "$($disk.FriendlyName), $($disk.BusType), $($disk.PartitionStyle), $([math]::Round($disk.Size / 1GB)) GB, $($disk.LogicalSectorSize)-byte sectors"
-        $space = Get-SpaceInfo
-        "C: free $([math]::Floor((Get-Volume -DriveLetter $env:SystemDrive.TrimEnd(':')).SizeRemaining / 1GB)) GB, can shrink to $([math]::Ceiling($space.MinSize / 1GB)) GB, usable $($space.UsableGB) GB"
+        # On the PCs where this can't be worked out, the partitions below matter most.
+        try {
+            $space = Get-SpaceInfo
+            "C: free $([math]::Floor((Get-Volume -DriveLetter $env:SystemDrive.TrimEnd(':')).SizeRemaining / 1GB)) GB, can shrink to $([math]::Ceiling($space.MinSize / 1GB)) GB, usable $($space.UsableGB) GB"
+        } catch { "(could not measure C: $($_.Exception.Message))" }
         "Last file Windows can't move: $(Get-ShrinkBlocker). Make room: $(Get-RoomPhase)"
         foreach ($p in Get-Partition -DiskNumber $c.DiskNumber | Sort-Object Offset) {
             $volume = try { $p | Get-Volume -ErrorAction SilentlyContinue } catch { $null }

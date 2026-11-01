@@ -19,6 +19,7 @@ $DefragLimitSeconds = 900
 $DefragTries = 4
 $DefragRetrySeconds = 30
 $DefragCancelled = 1223
+$RoomWaitForSignInHours = 24
 $RoomRestoreTries = 8   # the task tries every 15 minutes, and each time hop opens or closes
 
 # Windows logs the file that limits a shrink whenever it works out the limit, so ask and read it.
@@ -94,6 +95,7 @@ function Test-HibernationOn {
 }
 
 function Set-Hibernation([bool]$On) {
+    $ErrorActionPreference = 'Continue'   # under 'Stop', its stderr would replace the check below
     & powercfg.exe /h $(if ($On) { 'on' } else { 'off' }) 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { Write-Log "Could not turn hibernation $(if ($On) { 'on' } else { 'off' })." }
 }
@@ -148,6 +150,17 @@ function Test-EnoughMemoryWithoutPaging {
     (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory -ge $MinMemoryWithoutPaging
 }
 
+# The task that opens hop waits for the account running it. Someone who gave an administrator's
+# password is signed in as themselves, so it never fires for them.
+function Test-OpensAgainByItself {
+    $signedIn = Get-SignedInUser
+    -not $signedIn -or $signedIn -eq [Security.Principal.WindowsIdentity]::GetCurrent().Name
+}
+
+function Get-SignedInUser {
+    try { (Get-CimInstance Win32_ComputerSystem).UserName } catch { $null }
+}
+
 function Get-MakeRoomSteps([string]$Drive) {
     $room = Get-RoomDrive $Drive
     $isWindows = $room -eq $env:SystemDrive
@@ -155,7 +168,8 @@ function Get-MakeRoomSteps([string]$Drive) {
     $restart = $isWindows -or $pagingOff
     $steps = @(if ($isWindows) { "On drive $room turns off **hibernation** and clears the **change journal**." } else { "On drive $room clears the **change journal**." })
     if ($pagingOff) { $steps += "On drive $room turns off the **paging file**." }
-    $steps += if ($restart) { 'Restarts this PC, opens again, and moves what''s left out of the way.' } else { 'Moves files out of the way, for up to 15 minutes.' }
+    $byItself = Test-OpensAgainByItself
+    $steps += if ($restart -and -not $byItself) { 'Restarts this PC. Open hop again within 20 minutes, and it moves what''s left out of the way.' } elseif ($restart) { 'Restarts this PC, opens again, and moves what''s left out of the way.' } else { 'Moves files out of the way, for up to 15 minutes.' }
     $steps += 'Turns everything back on once Linux has its space, or when you close hop.'
     $note = if ($restart) { 'Save your work first. Your files aren''t touched.' } else { 'Your files aren''t touched, and this PC doesn''t restart.' }
     $notes = @($note)
@@ -300,6 +314,13 @@ function Remove-RestartCopy([string]$Folder) {
 
 # What the second task runs, when hop isn't open. Afterwards there's nothing left for it to do.
 function Restore-RoomFromTask {
+    # Someone who walked away during the restart hasn't given up on it. Nothing can need these settings
+    # at the sign-in screen, so they get a day to come back before hop's work is undone.
+    $state = Read-RoomState
+    if ($state.Phase -eq 'restarting' -and -not (Get-SignedInUser)) {
+        $saved = [datetime]::MinValue
+        if ([datetime]::TryParse([string]$state.Saved, [ref]$saved) -and ((Get-Date) - $saved).TotalHours -lt $RoomWaitForSignInHours) { return }
+    }
     Write-Log 'Putting back what Make room changed, because hop did not.'
     Restore-RoomSettings
     # The file still being there means they aren't all back, so this has to run again.
@@ -347,6 +368,7 @@ function Invoke-Defrag([string]$Drive) {
     # All the tries share one limit: closing hop is refused meanwhile, and the safety net can't run.
     $deadline = (Get-Date).AddSeconds($DefragLimitSeconds)
     $cancelled = 0
+    $code = $null
     # Straight after signing in it can give up at once with 1223, having moved nothing, as seen on a real Windows.
     for ($try = 1; $try -le $DefragTries; $try++) {
         $left = [int][math]::Floor(($deadline - (Get-Date)).TotalSeconds)
@@ -358,11 +380,13 @@ function Invoke-Defrag([string]$Drive) {
         if ($try -lt $DefragTries) { Start-Sleep -Seconds ([math]::Min($DefragRetrySeconds, $left)) }
     }
     if ($cancelled -eq $DefragTries) { Write-Log "Windows cancelled moving files all $DefragTries times, so nothing moved." }
+    # What's left may well move, so this mustn't read as the most that could be done.
+    $Sync.RoomUnfinished = $null -eq $code -or $code -eq $DefragCancelled
     # Windows can't work out the limit for a moment after that.
     $c = Get-Partition -DriveLetter $room.TrimEnd(':')
     Wait-ShrinkLimit $c $deadline
     # With a system file out of the way, the next thing in the way may be something defrag can move.
-    if (Move-SystemFiles $room $c) {
+    if (Move-SystemFiles $room $c $deadline) {
         $left = [int][math]::Floor(($deadline - (Get-Date)).TotalSeconds)
         if ($left -gt 0) { Write-Log "Finished moving files (code $(Start-DefragRun $room $left))." }
         Wait-ShrinkLimit $c $deadline
@@ -386,13 +410,17 @@ function Test-MovableSystemFile([string]$File) {
 # defrag can leave one of these near the end of a drive, $Mft::$BITMAP most of all. Moves whichever
 # Windows names, until it names something else. Says whether any moved. A failure here costs nothing:
 # NTFS turns down a move it won't make, and hop carries on with the room it has.
-function Move-SystemFiles([string]$Room, $Partition) {
+function Move-SystemFiles([string]$Room, $Partition, [datetime]$Deadline = [datetime]::MaxValue) {
     $moved = @{}
+    $volume = Get-VolumeOf $Partition
+    # Only what's past where the drive could end up matters. A big file's other parts can stay.
+    $above = if ($volume -and $volume.Size) { [math]::Min(1, ($volume.Size - $volume.SizeRemaining + $WindowsReserve) / $volume.Size) } else { 0 }
     for ($i = 0; $i -lt 6; $i++) {
+        if ((Get-Date) -ge $Deadline) { break }
         $file = Get-ShrinkBlocker $Partition
         if (-not (Test-MovableSystemFile $file) -or $moved[$file]) { break }
         Set-Status 'Moving a Windows system file out of the way...'
-        try { $clusters = [Hop.NtfsMove]::MoveDown($Room, $file) } catch {
+        try { $clusters = [Hop.NtfsMove]::MoveDown($Room, $file, $above) } catch {
             Write-Log "Could not move $file`: $($_.Exception.Message)"
             break
         }
@@ -406,6 +434,7 @@ function Move-SystemFiles([string]$Room, $Partition) {
 function Clear-RestorePoints([string]$Drive) {
     $room = Get-RoomDrive $Drive
     Set-Status "Deleting restore points on drive $room..."
+    $ErrorActionPreference = 'Continue'   # under 'Stop', its stderr would replace the check below
     & vssadmin.exe delete shadows "/for=$room" /all /quiet 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Windows could not delete the restore points on drive $room." }
     Invoke-Defrag $room

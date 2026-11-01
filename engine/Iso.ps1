@@ -33,6 +33,9 @@ function Read-Iso([string]$Path, $Distro) {
     if (-not (Test-Path -LiteralPath (Join-Path $root 'EFI\BOOT\BOOTX64.EFI'))) {
         throw 'This ISO cannot start on a modern (UEFI) PC.'
     }
+    if ($Distro.EspShell -and -not (Test-Path -LiteralPath (Join-Path $root $Distro.EspShell))) {
+        throw "This version of $($Distro.Name) starts in a way hop doesn't know yet, so it couldn't start from the installer partition. Nothing has been changed. Try a different system."
+    }
     if ($Distro.Live) {
         if (-not (Test-Path -LiteralPath (Join-Path $root $Distro.Live))) { throw "This ISO doesn't look like $($Distro.Name): it has no $($Distro.Live). Check it's the right file." }
     } else {

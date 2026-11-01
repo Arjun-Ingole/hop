@@ -188,6 +188,12 @@ function Remove-OtherSystem([string]$Selection) {
     Set-Status "Removing $($other.Name)..."
     foreach ($name in @($other.Kept)) { if ($name) { Write-Log "Kept the startup entry for $name, which hop can't tie to this Linux." } }
 
+    # Partitions first: if one can't go, trying again still finds it all, and the startup entry still works.
+    foreach ($partition in $other.Partitions) {
+        Set-Status "Removing $($other.Name) ($([math]::Round($partition.Size / 1GB)) GB partition)..."
+        Remove-PartitionByGuid $partition.Guid $partition.DiskNumber
+    }
+
     foreach ($entry in $other.Entries) {
         [Hop.Firmware]::DeleteBootEntry($entry.Number)
         Write-Log ('Removed startup entry Boot{0:X4} ({1}).' -f $entry.Number, $entry.Description)
@@ -204,11 +210,6 @@ function Remove-OtherSystem([string]$Selection) {
                 if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force; Write-Log "Removed \EFI\$folder." }
             }
         }
-    }
-
-    foreach ($partition in $other.Partitions) {
-        Set-Status "Removing $($other.Name) ($([math]::Round($partition.Size / 1GB)) GB partition)..."
-        Remove-PartitionByGuid $partition.Guid $partition.DiskNumber
     }
     if (-not $other.OnWindowsDisk) { Set-LinuxDisks (@(Get-LinuxDisks) | Where-Object { $_ -ne $other.DiskGuid }) }
     Set-Status "$($other.Name) removed." 100

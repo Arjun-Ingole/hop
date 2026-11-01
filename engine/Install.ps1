@@ -143,7 +143,7 @@ function Get-StartupInfo {
     [pscustomobject]@{
         # C: on its own, for when the drives can't be listed.
         WindowsFallback = [pscustomobject]@{
-            Id = ''; Kind = 'volume'; Letter = 'C'; Title = 'Drive C:'; OnWindowsDisk = $true
+            Id = ''; Kind = 'volume'; Letter = $env:SystemDrive.TrimEnd(':'); Title = "Drive $env:SystemDrive"; OnWindowsDisk = $true
             DiskName  = Get-DiskLabel $disk
             SizeGB    = [int][math]::Floor($space.Partition.Size / 1GB)
             UsedGB    = [int][math]::Ceiling(($volume.Size - $volume.SizeRemaining) / 1GB)
@@ -289,7 +289,8 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
     } catch { Write-Log "Could not tidy the EFI system partition: $($_.Exception.Message)" }
 
     $labels = if ($InstallerOnly) { $InstallerLabels + $LiveLabel } else { $InstallerLabels + $LiveLabel, $RootLabel, $BootLabel }
-    $hopPartitions = @(Get-HopPartitions | Where-Object { $_.Label -in $labels })
+    # An installer may keep the boot partition, but one that left it empty never will use it.
+    $hopPartitions = @(Get-HopPartitions | Where-Object { $_.Label -in $labels -or ($InstallerOnly -and $_.Label -eq $BootLabel -and (Test-EmptyPartition $_.Partition)) })
     # Before anything goes: with no state file, the neighbours say whose space it was.
     $owner = try { Get-SpaceOwner $state $hopPartitions } catch { Write-Log "Could not tell whose space it was: $($_.Exception.Message)"; $null }
     # A crash can come after a shrink and before saying it happened. Only its real size says so, so
