@@ -13,6 +13,7 @@
   BitLocker fully off on its disk, because its installer refuses even a paused one. hop checks before the download and won't turn it off for you. A full install
   and restart worked in a virtual PC. Afterwards the PC starts Omarchy, and its menu doesn't list Windows until you add it. Later versions of Omarchy
   are refused until they've been tried.
+- Omarchy, Fedora, Ultramarine and Arch on a second disk. A full install and restart worked in a virtual PC for each. The first three make their own EFI partition there, and use the largest free space on that disk, which can be more than hop set aside. Arch uses Windows' EFI partition. Fedora, Ultramarine and Arch ran with an unattended config, so their screens are still unclicked.
 - Zorin OS, Debian, Fedora Workstation, Ultramarine, CachyOS and Arch Linux. CachyOS and Arch need Secure
   Boot off, as they say when picked, and Arch installs from a text prompt.
 - Fedora and Ultramarine no longer need a command typed in Terminal. Their installer can now use the drive
@@ -32,6 +33,7 @@
 
 ### Fixed
 
+- Removing Omarchy left its `Limine` startup entry and its EFI partition behind, because hop didn't count its boot loader as a Linux one.
 - **Ubuntu's live system could take the space set aside for Linux.** If nothing came after that space on the disk, its
   `casper` startup code made a partition called `writable` over all of it, and the installer then had nowhere to put
   Linux. This also affects released builds, and every system built on it: Ubuntu's flavours, Linux Mint, elementary OS,

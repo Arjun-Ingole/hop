@@ -9,7 +9,7 @@ function New-Entry([string]$Id, [string]$Name, [string]$Note, [string]$Source, [
         Id = $Id; Name = $Name; Version = $null; Note = $Note; Source = $Source; Color = $Color; Logo = $Logo
         Strategy = 'freespace'; SecureBootOff = $false; Kind = $null; Base = $null; Prefix = $null; Edition = $null
         Mode = $null; Alongside = $null; Manual = $null; ManualExtra = $null; Steps = $null
-        Live = $null; LiveFiles = $null; UntriedFile = $null; NoBitLocker = $false; MinGB = 0; Notes = $null; BootConfigs = $null; BootEdits = $null; GrubDir = $null; EspShell = $null; EspLinuxMB = 0; FullDisk = $null
+        Live = $null; LiveFiles = $null; UntriedFile = $null; NoBitLocker = $false; MinGB = 0; Notes = $null; BootConfigs = $null; BootEdits = $null; GrubDir = $null; EspShell = $null; EspLinuxMB = 0; FullDisk = $null; SecondDisk = $null
     }
     foreach ($key in $More.Keys) { $entry[$key] = $More[$key] }
     [pscustomobject]$entry
@@ -107,6 +107,9 @@ function Get-FullDiskBoot([string]$Family) {
 # EspShell: the ISO's EFI Shell, for a boot loader that can't leave its own partition. See Get-EspShellScript.
 # EspLinuxMB: what its installer adds to the EFI partition, if it doesn't notice running out. Anaconda uses 21 MB.
 # Steps: the words to show when the usual choices don't fit its installer. {GB} is the size hop set aside.
+# SecondDisk: its Steps and Notes for a disk Windows isn't on, which replace the usual ones. Only for a system really seen
+#   installing on a second disk and then starting from it: see docs/TESTING.md. {DISK} names the disk. Without this, a system
+#   with its own Steps is refused there.
 # FullDisk: offers replacing Windows. Only for a system really seen erasing the disk it started from and then
 #   starting from that disk: see docs/TESTING.md. IsoGB is its ISO's size, for refusing before the download
 #   when memory's short. Steps is what to click, and {DISK} names the disk.
@@ -135,6 +138,13 @@ function Get-Catalog {
         "Select the drive with the {GB} GB hop set aside and choose **Share disk with other operating systems**."
         'If it warns that **/boot/efi** is smaller than recommended, carry on: hop has checked there is room.'
         "Don't choose **Use entire disk**. The installer is running from this drive.")
+    # With only that drive chosen, Anaconda makes a new EFI partition and /boot there, and fills that drive's largest free space.
+    $AnacondaSecondDisk = @(
+        'On the welcome screen, choose **Not Now**.'
+        'Open the install app from the dock, then pick your language.'
+        "Select only **{DISK}**, not the disk Windows is on, and choose **Share disk with other operating systems**."
+        'It makes its own EFI partition on that drive and uses its largest free space, which can be more than the {GB} GB hop set aside.'
+        "Don't choose **Use entire disk**. The installer is running from this drive.")
     @(
         New-Entry 'elementary' 'elementary OS' 'Mac-like' 'elementary.io' '#3689E6' 'elementary' ((Get-CasperBoot) + @{
             Kind = 'elementary'; Strategy = 'prepared'; Mode = 'Custom Install (Advanced)'
@@ -160,7 +170,8 @@ function Get-Catalog {
                 'Click **Install Now**, check that only **{DISK}** is in the list of changes, then click **Continue**.') } })
         New-Entry 'fedora' 'Fedora Workstation' 'Up to date' 'fedoraproject.org' '#51A2DA' 'fedora' ((Get-DracutBoot 'boot/grub2') + @{
             Kind = 'fedora'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps
-            FullDisk = (Get-FullDiskBoot 'dracut') + @{ IsoGB = 3; Steps = $AnacondaErase } })
+            FullDisk = (Get-FullDiskBoot 'dracut') + @{ IsoGB = 3; Steps = $AnacondaErase }
+            SecondDisk = @{ Steps = $AnacondaSecondDisk; Notes = @("Afterwards this PC starts Fedora, from that disk. Its menu lists Windows too.") } })
         New-Entry 'debian' 'Debian' 'Rock solid' 'cdimage.debian.org' '#A80030' 'debian' @{
             Kind = 'debian'; Live = 'live/filesystem.squashfs'; Manual = 'Manual partitioning'; ManualExtra = $EspExtra
             FullDisk = (Get-FullDiskBoot 'liveboot') + @{ IsoGB = 3; Steps = @(
@@ -189,7 +200,20 @@ function Get-Catalog {
                 'Select the {GB} GB of free space and make an **ext4** partition with the mountpoint **/**.'
                 'Select the existing **fat32** EFI partition, choose **Assign mountpoint** and type **/boot/efi**. Keep it unformatted.'
                 'Under **Bootloader**, choose **Grub**. Set up the rest of the menu as you like, including a Profile if you want a desktop, then choose **Install**.'
-                "Don't change any other partition. The installer is running from this drive.") })
+                "Don't change any other partition. The installer is running from this drive.")
+            # GRUB goes on Windows' EFI partition, the one this firmware is known to start, so both disks are chosen.
+            SecondDisk = @{
+                Steps = @(
+                    "Arch has no graphical installer. It starts at a text prompt, and it needs the internet: plug in a network cable, or connect to Wi-Fi with **iwctl**."
+                    'Type **archinstall** and press Enter.'
+                    'Open **Disk configuration**, then **Partitioning**. Choose **Manual Partitioning**.'
+                    'Under **Select disks for the installation**, press Space on **{DISK}** and on the disk Windows is on, so both have an **X**, then press Enter.'
+                    'On **{DISK}**, select the {GB} GB of free space and make an **ext4** partition with the mountpoint **/**.'
+                    'On the disk Windows is on, select the existing **fat32** EFI partition, choose **Assign mountpoint** and type **/boot/efi**. Keep it unformatted.'
+                    'Under **Bootloader**, choose **Grub**. Set up the rest of the menu as you like, including a Profile if you want a desktop, then choose **Install**.'
+                    "Don't change any other partition. The installer is running from {DISK}, and Windows needs the rest of its disk.")
+                Notes = @("Afterwards this PC starts Arch's GRUB from Windows' EFI partition, and Arch itself from {DISK}. Windows stays in your PC's boot menu.")
+            } })
         New-Entry 'omarchy' 'Omarchy' 'Hyprland, ready to go' 'omarchy.org' '#9ECE6A' 'omarchy' ((Get-OmarchyBoot) + @{
             Kind = 'omarchy'; Manual = 'Free space install'; SecureBootOff = $true; NoBitLocker = $true; MinGB = 33; UntriedFile = 'arch\x86_64\omarchy-root.img.zst'; Steps = @(
                 'Press **Return** to start, then choose your keyboard.'
@@ -205,10 +229,22 @@ function Get-Catalog {
                 'Under **Select install disk**, choose **{DISK}**. Leave any other drive alone.'
                 'Under **Select installation mode**, choose **Full disk install**, where the cursor starts.'
                 'At **Confirm overwriting**, choose **Yes, install**. To install without encryption, press **Ctrl+C** first.'
-                'When it has finished, choose **Reboot Now**.') } })
+                'When it has finished, choose **Reboot Now**.') }
+            # It always makes its own EFI partition, in the largest free space on the disk it's given, which isn't always hop's.
+            SecondDisk = @{
+                Steps = @(
+                    'Press **Return** to start, then choose your keyboard.'
+                    'Make your account. Your password also unlocks the disk if Omarchy encrypts it. Name, email and hostname can be left empty.'
+                    'Under **Select install disk**, press Down to reach **{DISK}**, then Return. **Don''t choose the disk Windows is on.**'
+                    "Under **Select installation mode**, press Down to reach **Free space install (alongside existing data)**, then Return. **Don't choose Full disk install**, where the cursor starts: it erases that disk."
+                    'It should say **Install Omarchy in the** and at least {GB} GB **of free space**. It uses the largest free space on the disk, which can be more than hop set aside. Check it says **Confirm installing on** that disk, then choose **Yes, install**. To install without encryption, press **Ctrl+C** first.'
+                    'When it has finished, choose **Reboot Now**.')
+                Notes = @("Afterwards this PC starts Omarchy, from that disk. To get to Windows, use your PC's boot menu.")
+            } })
         New-Entry 'ultramarine' 'Ultramarine' 'Fedora made easy' 'images.fyralabs.com' '#00078F' 'ultramarine' ((Get-DracutBoot 'boot/grub') + @{
             Kind = 'ultramarine'; Edition = 'gnome'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps
-            FullDisk = (Get-FullDiskBoot 'dracut') + @{ IsoGB = 4; Steps = $AnacondaErase } })
+            FullDisk = (Get-FullDiskBoot 'dracut') + @{ IsoGB = 4; Steps = $AnacondaErase }
+            SecondDisk = @{ Steps = $AnacondaSecondDisk; Notes = @("Afterwards this PC starts Ultramarine, from that disk, and its first start opens its own setup, beginning with **Language**.") } })
         New-UbuntuFlavor 'ubuntu-budgie' 'Ubuntu Budgie' 'Dock at the bottom' '#404552' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 4; Steps = $UbuntuErase } }
         New-UbuntuFlavor 'xubuntu' 'Xubuntu' 'Lightweight' '#0044AA' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 5; Steps = $UbuntuErase } }
         New-UbuntuFlavor 'lubuntu' 'Lubuntu' 'Lightest' '#0068C8' @{

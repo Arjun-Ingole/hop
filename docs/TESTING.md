@@ -118,6 +118,33 @@ Windows' EFI files were unchanged. Each check is from the disk image or the inst
 no Linux has mounted one made by Windows. There's no real Windows, so `limine-scan` wasn't run, and neither was Windows started afterwards. BitLocker's refusal is
 only tested by unit tests, and Secure Boot wasn't turned on. hop's own screens and Undo after this install haven't been run either.
 
+## A second disk, in a virtual PC
+
+On a GitHub Actions runner, in QEMU with OVMF. The first NVMe disk is Windows': 40 GB, with an EFI partition of 100 MB, a reserved partition, an NTFS "C:" and a recovery
+partition. The second is an empty 200 GB GPT disk, which hop's real `Get-Plan` laid out with 60 GB for Linux, as it does: free space, `HOPINSTALL`, `HOPLIVE` if there is one, then the 60 GB.
+That leaves more free before the installer than after it, which matters below. The menu went through the engine's `Update-BootConfig` and `Copy-EspLoader`, and started through `Boot0042` and `BootNext` as hop writes them, on Windows' EFI partition, with a fake
+"Windows Boot Manager" first in `BootOrder`. Each result is from the serial log, the installer's screens or the disk images, not the job's result.
+
+| System | Driven by | Went where | EFI partition | Started from disk | Windows' EFI files, and the partitions |
+| --- | --- | --- | --- | --- | --- |
+| Omarchy 4.0.6 | Its real wizard on `tty1`, with keys pressed, as the steps say, without encryption | **The 129 GB before the installer**, the largest free space, not hop's 60 GB. Its screen said `Install Omarchy in the 129.0GB of free space` | Its own new 2 GB one, on the second disk | Yes: `Boot0009 "Limine"` from the second disk first in `BootOrder`, then the login screen in its journal and a screenshot | Unchanged. MSR, C:, recovery, `HOPINSTALL` and `HOPLIVE` byte for byte, after the install and the restart |
+| Fedora 44 | Anaconda's `--cmdline` mode with a kickstart: `ignoredisk --only-use=nvme1n1`, `clearpart --none`, `autopart`. Its graphical screens weren't seen | The 133 GB before the installer, not hop's 60 GB | Its own new 600 MB one, on the second disk, with a 2 GB `/boot` | Yes: `Boot000A "Fedora Linux"` from the second disk first in `BootOrder`, root on the second disk, and `Windows Boot Manager (on /dev/nvme0n1p1)` in its menu | Unchanged. MSR, C:, recovery and `HOPINSTALL` byte for byte, after both |
+| Ultramarine 44 | The same | The same, 133 GB | The same | Yes: `Boot000A "Ultramarine Linux"`, and a screenshot of its own setup at **Language**, which waits there, so the test's marker never ran. Its menu wasn't read | The same |
+| Arch 2026.10.01 | `archinstall --silent` with a `manual_partitioning` config that says what its screens would. Its real screens were read as far as **Select disks for the installation**, where Space marked both disks | hop's 60 GB, as ext4 | **Windows'**, unformatted, at `/boot/efi`. GRUB's files add about 18 MB there | Yes: `Boot000A "GRUB"` from Windows' EFI partition first in `BootOrder`, root on the second disk, `Windows Boot Manager` next | Unchanged. MSR, C: and recovery byte for byte. `HOPINSTALL` isn't: see below |
+
+**`HOPINSTALL` changes when Arch starts.** Its copied `systemd-boot` adds a 32-byte `loader/random-seed`. In three runs, on either disk, that was the only file that differed, and 86 bytes in six sectors of the partition. Nothing else writes to it, and nothing reads it after the install.
+
+**What this doesn't show:** no real PC, so nothing about how a real firmware treats a second disk, or Fast Boot. Windows was never started: its files are stand-ins that only show whether they changed.
+Nobody clicked anything, and hop's own screens and Undo weren't run.
+
+## Next to Windows, in free space, in a virtual PC
+
+The same, with one 130 GB disk: EFI partition, reserved partition, C:, `HOPINSTALL`, 60 GB free, recovery partition, as `Get-Plan` lays them out.
+
+| System | Driven by | Went where | Started from disk | Windows' EFI files, and the partitions |
+| --- | --- | --- | --- | --- |
+| Arch 2026.10.01 | The same config, as `archinstall --silent` | hop's 60 GB, as ext4, with `/boot/efi` on the existing EFI partition | Yes: `Boot0009 "GRUB"` first in `BootOrder`, root on the new partition, `Windows Boot Manager` next | Unchanged. MSR, C: and recovery byte for byte, and `HOPINSTALL` apart from `loader/random-seed` |
+
 ## Testing for real
 
 Use a virtual machine, not a PC you care about. It has to use UEFI:
@@ -177,7 +204,10 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] A Thunderbolt or USB4 NVMe enclosure: refused as something that can be unplugged. Nothing has checked this on real hardware
 - [ ] A second NVMe drive inside the PC: still offered
 - [ ] Undo with each: the space goes back to the right drive
-- [ ] Debian, CachyOS, Arch, Fedora or Ultramarine with a second disk chosen: refused before anything changes, with the reason
+- [ ] Debian or CachyOS with a second disk chosen: refused before anything changes, with the reason
+- [ ] Arch on a second disk: click through archinstall's partition screens with both disks chosen, which automated tests only saw as far as choosing them
+- [ ] Fedora or Ultramarine on a second disk: click through **Share disk with other operating systems**, which automated tests don't reach, with Windows' disk unselected
+- [ ] Omarchy on a second disk: installs, starts, and Windows starts from the firmware's boot menu. Then remove it from hop: its `Limine` entry and EFI partition go too
 - [ ] Make room on C:, then on D:: C:'s hibernation and paging file are back on before D: starts
 - [ ] Two Windows Boot Manager entries, each with its own EFI partition: `\EFI\hop` and the startup entry are on the same one, the one this Windows started from
 
