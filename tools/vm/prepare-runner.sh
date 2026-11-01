@@ -8,6 +8,7 @@ sudo apparmor_parser -R /etc/apparmor.d/usr.bin.swtpm 2>/dev/null || true
 sudo chmod 666 /dev/kvm
 sudo mkdir -p /mnt/hopvm/files /mnt/hopvm/out
 sudo chown -R "$(id -u):$(id -g)" /mnt/hopvm
+sudo chmod 755 /mnt
 cp "$(dirname "$0")/agent.ps1" "$(dirname "$0")/live-report.sh" /mnt/hopvm/files/
 ls -la /dev/kvm
 df -h / /mnt

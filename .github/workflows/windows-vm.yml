@@ -9,7 +9,7 @@ on:
         description: 'Scenarios from tools/vm/scenarios.py, separated by spaces'
         default: screens stuck
   push:
-    branches: ['probe/vm']
+    branches: ['probe/winvm']
 
 permissions:
   contents: write
@@ -37,7 +37,7 @@ jobs:
           Invoke-Pester -Configuration $config
 
   image:
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 170
     outputs:
       key: ${{ steps.key.outputs.key }}
@@ -67,7 +67,7 @@ jobs:
         timeout-minutes: 120
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          HOPVM_LIVE_BRANCH: probe/live
+          HOPVM_LIVE_BRANCH: probe/winvm-live
         run: python3 tools/vm/hopvm.py build-image --iso /mnt/hopvm/windows.iso --limit 110
 
       - uses: actions/cache/save@v4
@@ -85,7 +85,7 @@ jobs:
 
   run:
     needs: image
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
@@ -110,7 +110,7 @@ jobs:
         timeout-minutes: 320
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          HOPVM_LIVE_BRANCH: probe/live
+          HOPVM_LIVE_BRANCH: probe/winvm-live
           SCENARIO: ${{ inputs.scenario }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
