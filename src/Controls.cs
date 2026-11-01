@@ -286,6 +286,8 @@ namespace Hop
             foreach (var p in stepLayouts) h += p.Height + F(14);
             if (noteLayouts.Length > 0) h += F(10);
             foreach (var p in noteLayouts) h += p.Height + F(6);
+            // The gap after the last one is only room to spare, and mustn't make a list that fits scroll.
+            if (noteLayouts.Length == 0 && stepLayouts.Length > 0) h -= F(14);
             return h;
         }
 
