@@ -52,10 +52,11 @@ namespace Hop
                     moved.Add(MoveAside(folder, folder));
                     continue;
                 }
+                // Once it's protected nobody else can have put anything there, whoever owns what hop wrote.
+                if (Directory.GetAccessControl(folder, AccessControlSections.Access).AreAccessRulesProtected) return moved.ToArray();
                 // Before as well as after: setting the rights walks what's inside, which shouldn't go through a link.
                 Sweep(folder, folder, moved);
-                if (!Directory.GetAccessControl(folder, AccessControlSections.Access).AreAccessRulesProtected)
-                    Directory.SetAccessControl(folder, RestartCopy.ProtectedRights());
+                Directory.SetAccessControl(folder, RestartCopy.ProtectedRights());
                 Sweep(folder, folder, moved);
                 return moved.ToArray();
             }
@@ -64,8 +65,9 @@ namespace Hop
 
         /// <summary>
         /// Not a link, and owned by administrators or SYSTEM. An ordinary user can't give anything away to them,
-        /// so this says who made it. hop always runs elevated, so its own account counts as well, for what a
-        /// build before this made on a PC where an elevated process owns what it makes.
+        /// so this says who made it. The account hop runs as doesn't count: its programs that aren't elevated
+        /// own what they make in its name. With UAC off, a folder from an earlier build is owned by that account
+        /// and gets moved aside once, which costs the state file, and Clean up still finds hop's partitions by label.
         /// </summary>
         public static bool IsTrusted(string path)
         {
@@ -86,10 +88,7 @@ namespace Hop
 
         static bool IsTrustedOwner(SecurityIdentifier owner)
         {
-            if (owner == null) return false;
-            if (owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid) || owner.IsWellKnown(WellKnownSidType.LocalSystemSid)) return true;
-            using (var me = WindowsIdentity.GetCurrent())
-                return owner == me.User && new WindowsPrincipal(me).IsInRole(WindowsBuiltInRole.Administrator);
+            return owner != null && (owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid) || owner.IsWellKnown(WellKnownSidType.LocalSystemSid));
         }
 
         static void Sweep(string root, string folder, List<string> moved)

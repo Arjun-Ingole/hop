@@ -440,6 +440,44 @@ def scenario_stuck(bench):
     s.hop_log()
 
 
+def scenario_protect(bench):
+    """hop's folder as an earlier build left it, with files a program that isn't elevated planted, then hop opened."""
+    vm, s = bench.fresh()
+    s.desktop()
+    vm.wait_agent('system', limit=300)
+    print(vm.ps(r"""
+New-Item -ItemType Directory -Force C:\ProgramData\hop\logs | Out-Null
+Set-Content C:\ProgramData\hop\logs\earlier.log 'from an earlier build'
+Set-Content C:\ProgramData\hop\linux-disks.json '["{earlier}"]'
+""", who='system'), flush=True)
+    print(vm.ps(r"""
+$key = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management'
+"PagingFiles before: " + ((Get-ItemProperty $key).PagingFiles -join ' | ')
+Set-Content C:\ProgramData\hop\make-room.json '{"Phase":"ready","Saved":"2030-01-01T00:00:00","Hibernation":false,"PagingOff":true,"Paging":["C:\\planted.sys 1 1"],"Drive":"C:"}'
+Set-Content C:\ProgramData\hop\state.json.tmp 'planted'
+New-Item -ItemType Directory C:\ProgramData\LinuxHop | Out-Null
+Set-Content C:\ProgramData\LinuxHop\state.json '{"Distro":"planted","Partitions":[]}'
+Get-ChildItem C:\ProgramData\hop -Force | ForEach-Object { "$($_.Name) owner $((Get-Acl $_.FullName).Owner)" }
+"LinuxHop owner " + (Get-Acl C:\ProgramData\LinuxHop).Owner
+"""), flush=True)
+    s.get_hop()
+    s.open_as_a_person('protect-elevation-prompt')
+    s.settle()
+    vm.shot('protect-opened')
+    print(s.names(), flush=True)
+    print(vm.ps(r"""
+$key = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management'
+"PagingFiles after: " + ((Get-ItemProperty $key).PagingFiles -join ' | ')
+icacls C:\ProgramData\hop
+"owner " + (Get-Acl C:\ProgramData\hop).Owner
+Get-ChildItem C:\ProgramData -Force -Filter 'hop*' | ForEach-Object { $_.FullName }
+Get-ChildItem C:\ProgramData -Force -Filter 'LinuxHop*' | ForEach-Object { $_.FullName }
+Get-ChildItem C:\ProgramData\hop -Recurse -Force | ForEach-Object { "$($_.FullName) owner $((Get-Acl $_.FullName).Owner)" }
+try { Set-Content C:\ProgramData\hop\again.json 'planted'; 'not elevated: COULD write there' } catch { 'not elevated: refused' }
+"""), flush=True)
+    s.hop_log()
+
+
 def scenario_abandon(bench):
     """Make room, hop killed once it's back, and nobody opens it again. The settings still have to come back."""
     vm, s = bench.fresh()

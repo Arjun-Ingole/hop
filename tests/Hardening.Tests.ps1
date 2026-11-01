@@ -11,6 +11,7 @@ BeforeAll {
 
     # Windows lets an administrator hand something to the Users group, which stands in for an ordinary user.
     function Set-OwnedByUsers([string]$Path) { & icacls.exe $Path /setowner '*S-1-5-32-545' | Out-Null; if ($LASTEXITCODE) { throw "icacls said $LASTEXITCODE" } }
+    function Set-OwnedByAdmins([string]$Path) { & icacls.exe $Path /setowner '*S-1-5-32-544' /T | Out-Null; if ($LASTEXITCODE) { throw "icacls said $LASTEXITCODE" } }
     function New-Folder([string]$Path) { New-Item -ItemType Directory -Path $Path -Force | Out-Null; $Path }
     function Get-Writers([string]$Path) {
         $writing = [Security.AccessControl.FileSystemRights]'WriteData,AppendData,Delete,DeleteSubdirectoriesAndFiles,ChangePermissions,TakeOwnership'
@@ -36,6 +37,7 @@ Describe 'hop''s folder' {
         New-Folder "$folder\logs" | Out-Null
         Set-Content -LiteralPath "$folder\state.json" -Value '{"Distro":"Ubuntu"}'
         Set-Content -LiteralPath "$folder\logs\hop.log" -Value 'a line'
+        Set-OwnedByAdmins $folder
         (Get-Acl -LiteralPath $folder).AreAccessRulesProtected | Should -BeFalse
         [Hop.StateFolder]::Protect($folder, $true) | Should -BeNullOrEmpty
         Get-Content -LiteralPath "$folder\state.json" -Raw | Should -BeLike '*Ubuntu*'
@@ -47,6 +49,7 @@ Describe 'hop''s folder' {
         New-Folder $folder | Out-Null
         Set-Content -LiteralPath "$folder\make-room.json" -Value '{"Phase":"ready","PagingOff":true,"Paging":["evil"]}'
         Set-Content -LiteralPath "$folder\state.json" -Value 'kept'
+        Set-OwnedByAdmins $folder
         Set-OwnedByUsers "$folder\make-room.json"
         @([Hop.StateFolder]::Protect($folder, $true)).Count | Should -Be 1
         Test-Path -LiteralPath "$folder\make-room.json" | Should -BeFalse
@@ -56,6 +59,7 @@ Describe 'hop''s folder' {
     It 'moves aside a state.json.tmp an ordinary user planted' -Skip:(-not $elevated) {
         New-Folder $folder | Out-Null
         Set-Content -LiteralPath "$folder\state.json.tmp" -Value 'x'
+        Set-OwnedByAdmins $folder
         Set-OwnedByUsers "$folder\state.json.tmp"
         [void][Hop.StateFolder]::Protect($folder, $true)
         Test-Path -LiteralPath "$folder\state.json.tmp" | Should -BeFalse
@@ -83,6 +87,7 @@ Describe 'hop''s folder' {
         $target = New-Folder (Join-Path $TestDrive "target-$([guid]::NewGuid().ToString('N'))")
         Set-Content -LiteralPath "$target\keep.txt" -Value 'keep'
         $before = Get-Writers $target
+        Set-OwnedByAdmins $folder
         & cmd.exe /c mklink /J "$folder\logs" $target | Out-Null
         @([Hop.StateFolder]::Protect($folder, $true)).Count | Should -Be 1
         Test-Path -LiteralPath "$folder\logs" | Should -BeFalse
@@ -98,11 +103,25 @@ Describe 'hop''s folder' {
         [void][Hop.StateFolder]::Protect($folder, $true)
         [Hop.StateFolder]::Protect($folder, $true) | Should -BeNullOrEmpty
     }
+    It 'leaves hop''s own files alone once it is protected, with UAC off too, where they are the account''s' -Skip:(-not $elevated) {
+        [void][Hop.StateFolder]::Protect($folder, $true)
+        Set-Content -LiteralPath "$folder\state.json" -Value 'kept'
+        Set-OwnedByUsers "$folder\state.json"
+        [Hop.StateFolder]::Protect($folder, $true) | Should -BeNullOrEmpty
+        Test-Path -LiteralPath "$folder\state.json" | Should -BeTrue
+    }
+    It 'does not count the account hop runs as, whose programs need not be elevated' -Skip:(-not $elevated) {
+        $file = Join-Path $TestDrive "mine-$([guid]::NewGuid().ToString('N'))"
+        Set-Content -LiteralPath $file -Value 'x'
+        & icacls.exe $file /setowner ([Security.Principal.WindowsIdentity]::GetCurrent().Name) | Out-Null
+        [Hop.StateFolder]::IsTrusted($file) | Should -BeFalse
+    }
     It 'ignores the old state file when an ordinary user made it' -Skip:(-not $elevated) {
         New-Folder $folder | Out-Null
         $StatePath = "$folder\none.json"
         $LegacyStatePath = "$folder\state.json"
         Set-Content -LiteralPath $LegacyStatePath -Value '{"Distro":"planted"}'
+        Set-OwnedByAdmins $folder
         (Read-State).Distro | Should -Be 'planted'
         Set-OwnedByUsers $LegacyStatePath
         Read-State | Should -BeNullOrEmpty

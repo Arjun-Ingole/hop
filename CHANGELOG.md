@@ -47,6 +47,20 @@
 - The window could be taller than the screen, as at 1920×1080 with 200% scaling, which put its buttons out of reach.
 - Holding Enter on Install went straight through the confirmation and started.
 - A stuck drive said "Windows can release 0 GB" when Windows could release a little and hop's reserve took it. It now says what hop can use.
+- **hop's folder in `%ProgramData%` wasn't protected, though hop trusts what's in it.** Any user could leave files there that hop, running as administrator, would then act on, including settings it writes at startup and a partition for Clean up to delete. hop now makes the folder so that only administrators and SYSTEM can write there. It takes over the folder an older build left, keeps what's in it, and moves anything an ordinary user could have put there to a folder named `hop-moved-...`. With UAC turned off, the older folder itself is moved, so Undo goes by partition labels instead of the state file.
+- **Clean up could delete a Linux partition.** A recorded partition it couldn't read, or whose file system Windows didn't know, counted as unfinished. Now it has to be unformatted, with nothing written at its start, and not marked as Linux.
+- **Make room's safety net went before the settings were back.** A failed shrink, or hop being stopped part way, could leave hibernation and the paging file off with nothing to bring them back. The tasks and the file now go only once everything is back. What didn't go back is tried again by the task and when hop next opens, up to 8 times, and hop still opens.
+- A second Make room that restarted the PC, run from the copy the tasks use, set its tasks on a folder Windows deleted as it started.
+- A damaged Make room file made the safety net remove itself, and starting again lost the original settings. It's now kept, and hop says what to do.
+- One startup entry the firmware refused stopped Undo part way.
+- Restart now could say the EFI partition was too full, counting the copy of the boot loader it was about to replace.
+- A disk with no partitions could stop hop opening, or Undo finishing.
+- Moving files had 15 minutes for each try rather than for them all, and asking Windows how far a drive shrinks had no limit, while hop couldn't be closed. If Windows cancels every try, the log now says nothing moved.
+- A problem reading the copy's progress undid the install while the copy was still writing.
+- A crash just after shrinking the drive, or just after making a partition, left no record of it for Undo.
+- If Windows refused a restart, the one-time start stayed set for whichever restart came next.
+- Opening hop while the safety net was running could crash before hop could say anything. The safety net also now stops after 5 minutes, so it can't keep hop locked.
+- Removing another Linux's EFI partition no longer runs diskpart from a script in the temp folder.
 - Removing Omarchy left its `Limine` startup entry and its EFI partition behind, because hop didn't count its boot loader as a Linux one.
 - **Make room asked for permission at sign-in, with No already chosen.** hop came back through an elevation prompt after its
   restart, from an unknown publisher. Clicking No left hibernation and the paging file off until hop was next opened. hop now
