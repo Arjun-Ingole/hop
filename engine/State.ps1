@@ -147,18 +147,27 @@ function Remove-CasperPartition($State) {
     Remove-PartitionAt $partition.DiskNumber $partition.Offset
 }
 
-# Partitions hop recorded but may not have got as far as labelling, for example when
-# formatting failed. Anything holding a real file system by now isn't touched.
+function Read-PartitionHead($Partition) { [Hop.DiskProbe]::ReadHead($Partition.DiskNumber, [int64]$Partition.Offset) }
+
+# Partitions hop recorded but may not have got as far as labelling, for example when formatting
+# failed. It takes all of this to count: no file system Windows knows, a type that doesn't say Linux,
+# and nothing written at its start. Windows can't read ext4 either, and a Linux installer may have
+# been there since. Not being able to look means it stays.
 function Get-RecordedPartitions($State, [string[]]$Roles) {
     $recorded = @($State.Partitions | Where-Object { $_.Role -in $Roles })
     if (-not $recorded.Count) { return }
     $disk = Get-StateDisk $State
     if ($null -eq $disk) { return }
-    foreach ($partition in Get-Partition -DiskNumber $disk) {
+    foreach ($partition in @(Get-Partition -DiskNumber $disk -ErrorAction SilentlyContinue)) {
         $match = $recorded | Where-Object { [int64]$_.Offset -eq [int64]$partition.Offset -and [int64]$_.Size -eq [int64]$partition.Size }
-        if (-not $match -or $partition.IsSystem -or $partition.IsBoot -or (Test-LinuxSignature $partition)) { continue }
+        if (-not $match -or $partition.IsSystem -or $partition.IsBoot -or $partition.GptType -in $LinuxPartitionTypes) { continue }
         $volume = try { $partition | Get-Volume -ErrorAction SilentlyContinue } catch { $null }
-        if (-not $volume -or -not $volume.FileSystemType -or $volume.FileSystemType -eq 'Unknown') { $partition }
+        if ($volume -and $volume.FileSystemType -and $volume.FileSystemType -ne 'Unknown') { continue }
+        $head = try { Read-PartitionHead $partition } catch {
+            Write-Log "Could not read partition $($partition.PartitionNumber), so it stays: $($_.Exception.Message)"
+            continue
+        }
+        if ([Hop.DiskProbe]::IsBlank($head)) { $partition }
     }
 }
 
