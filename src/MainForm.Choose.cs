@@ -338,8 +338,7 @@ namespace Hop
             catch (Exception ex)
             {
                 EndWork();
-                Arrange(new[] { new[] { Run.Gray("Couldn't"), Run.Black("make room") } }, Describe(ex), Danger, null, 0);
-                Footer("Back", ShowChoose, null, null);
+                ShowCouldntMakeRoom(ex);
             }
         }
 
@@ -375,13 +374,21 @@ namespace Hop
             }
         }
 
-        async Task CancelRoomRestartAsync()
-        {
-            BeginWork(new[] { new[] { Run.Gray("Putting"), Run.Black("settings back") } }, "Starting…");
-            try
+        Task CancelRoomRestartAsync() => WorkThenChooseAsync(new[] { new[] { Run.Gray("Putting"), Run.Black("settings back") } },
+            async () =>
             {
                 await engine.RestoreRoomSettingsAsync();
                 roomLetter = null;
+            },
+            ex => ShowRoomRestartStopped(Describe(ex)));
+
+        /// <summary>Changes something on the PC, reads it again and goes back to choosing.</summary>
+        async Task WorkThenChooseAsync(Run[][] lines, Func<Task> work, Action<Exception> failed)
+        {
+            BeginWork(lines, "Starting…");
+            try
+            {
+                await work();
                 await ReloadAsync();
                 EndWork();
                 ShowChoose();
@@ -389,8 +396,14 @@ namespace Hop
             catch (Exception ex)
             {
                 EndWork();
-                ShowRoomRestartStopped(Describe(ex));
+                failed(ex);
             }
+        }
+
+        void ShowCouldntMakeRoom(Exception ex)
+        {
+            Arrange(new[] { new[] { Run.Gray("Couldn't"), Run.Black("make room") } }, Describe(ex), Danger, null, 0);
+            Footer("Back", ShowChoose, null, null);
         }
 
         void ShowDeleteRestorePoints()
@@ -401,23 +414,8 @@ namespace Hop
             Footer("Back", ShowChoose, "Delete them", () => _ = DeleteRestorePointsAsync());
         }
 
-        async Task DeleteRestorePointsAsync()
-        {
-            BeginWork(new[] { new[] { Run.Gray("Making"), Run.Black("room") } }, "Starting…");
-            try
-            {
-                await engine.ClearRestorePointsAsync(target.Letter);
-                await ReloadAsync();
-                EndWork();
-                ShowChoose();
-            }
-            catch (Exception ex)
-            {
-                EndWork();
-                Arrange(new[] { new[] { Run.Gray("Couldn't"), Run.Black("make room") } }, Describe(ex), Danger, null, 0);
-                Footer("Back", ShowChoose, null, null);
-            }
-        }
+        Task DeleteRestorePointsAsync() => WorkThenChooseAsync(new[] { new[] { Run.Gray("Making"), Run.Black("room") } },
+            () => engine.ClearRestorePointsAsync(target.Letter), ShowCouldntMakeRoom);
 
         void ConfigureDrive(DriveMode mode, Distro system)
         {
