@@ -155,7 +155,7 @@ namespace Hop
             else if (secureBootStops)
                 noteText = $"{system.Name} doesn't start with Secure Boot on. Pick another system, or turn off Secure Boot in the BIOS and open hop again.";
             else if (secondDiskStops)
-                noteText = $"hop's steps for {system.Name} are for the disk Windows is on, and it hasn't been tried on a second disk. Choose a drive on that disk, or another system.";
+                noteText = $"hop hasn't got {system.Name} to finish on a second disk yet. Choose a drive on the disk Windows is on, or another system.";
             else if (unmeasured)
                 noteText = $"hop couldn't work out how much room {target.Title.ToLowerInvariant()} can give up. {measureError} Choose another drive, or open hop again.";
             else if (!enoughSpace && better != null)

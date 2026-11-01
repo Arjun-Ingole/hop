@@ -19,6 +19,7 @@
 - Fedora and Ultramarine no longer need a command typed in Terminal. Their installer can now use the drive
   by itself, with Secure Boot on. Automated installs into free space finished and started again in a virtual
   PC, though the installer's graphical screens haven't been clicked through yet.
+- hop checks the EFI partition has about 20 MB more room for Arch, whose GRUB files go there, before changing the disk. Fedora and Ultramarine on a second disk no longer need it, as they make their own.
 - hop checks the EFI partition has about 25 MB more room for Fedora and Ultramarine before changing the disk.
   Without it, their installer says it finished but the PC can't start the new system.
 - hop now changes the copy of the boot menu for systems that look for their USB stick by name. It checks

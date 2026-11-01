@@ -55,7 +55,13 @@ function Get-ReturnedHelp {
 function Assert-SystemFitsDrive($Distro, [string]$Target) {
     if (-not $Distro.Steps -or $Distro.SecondDisk -or -not $Target) { return }
     if ((Resolve-Target $Target).Partition.DiskNumber -eq (Get-WindowsPartition).DiskNumber) { return }
-    throw "hop's steps for $($Distro.Name) are for the disk Windows is on, and it hasn't been tried on a second disk. Choose a drive on that disk, or another system."
+    throw "hop hasn't got $($Distro.Name) to finish on a second disk yet. Choose a drive on the disk Windows is on, or another system."
+}
+
+# What the Linux installer adds to Windows' EFI partition. On a second disk, some make their own instead.
+function Get-EspLinuxMB($Distro, [bool]$OnWindowsDisk) {
+    if (-not $OnWindowsDisk -and $Distro.SecondDisk -and $Distro.SecondDisk.ContainsKey('EspLinuxMB')) { return [int]$Distro.SecondDisk.EspLinuxMB }
+    [int]$Distro.EspLinuxMB
 }
 
 # The most an installer's refusal can cost is a restart, but it's cheaper here, before the download.
