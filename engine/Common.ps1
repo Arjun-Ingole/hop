@@ -19,11 +19,13 @@ $ErrorActionPreference = 'Stop'
 
 # This app used to be called LinuxHop. What those builds left on a PC is still
 # recognised, so it can be used or undone; only the new names are ever written.
-$StateDir = Join-Path $env:ProgramData 'hop'
+# Not $env:ProgramData, because the account's own settings can change that for an elevated process too.
+$ProgramData = [Environment]::GetFolderPath('CommonApplicationData')
+$StateDir = Join-Path $ProgramData 'hop'
 $StatePath = Join-Path $StateDir 'state.json'
 $LogDir = Join-Path $StateDir 'logs'
 $LogPath = Join-Path $LogDir ('hop-{0:yyyy-MM-dd}.log' -f (Get-Date))
-$LegacyStatePath = Join-Path $env:ProgramData 'LinuxHop\state.json'
+$LegacyStatePath = Join-Path $ProgramData 'LinuxHop\state.json'
 $InstallerLabel = 'HOPINSTALL'
 $InstallerLabels = @($InstallerLabel, 'LINUXHOP')
 $LiveLabel = 'HOPLIVE'     # the second partition, for a live image FAT32 can't hold
@@ -50,7 +52,11 @@ function Write-Log([string]$Message) {
     [void]$Sync.Log.Add($line)
     # The log outlives the app, for bug reports. Failing to write it must never stop an install.
     try {
-        if (-not (Test-Path -LiteralPath $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
+        if (-not (Test-Path -LiteralPath $LogDir)) {
+            # hop.exe made the folder as it started, so this is only if it's been deleted since.
+            if (-not (Test-Path -LiteralPath $StateDir)) { [void][Hop.StateFolder]::Protect($StateDir, $true) }
+            New-Item -ItemType Directory -Path $LogDir | Out-Null
+        }
         Add-Content -LiteralPath $LogPath -Value $line -Encoding UTF8
     } catch { }
 }

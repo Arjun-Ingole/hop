@@ -1,6 +1,8 @@
 using System;
 using System.Drawing;
 using System.IO;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -15,14 +17,33 @@ namespace Hop
             bool restoring = args.Length == 1 && args[0] == RestoreArgument;
             AppDomain.CurrentDomain.ProcessExit += (s, e) => RestartCopy.RemoveOwnAfterExit();
 
+            // From the very start, because nobody would see a problem otherwise. The safety net has no window
+            // and may have nobody there, and a message waiting for an answer would keep hop locked.
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += (s, e) => ReportCrash(e.Exception);
+            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+            {
+                if (restoring) LogCrash(e.ExceptionObject as Exception);
+                else ReportCrash(e.ExceptionObject as Exception);
+            };
+            TaskScheduler.UnobservedTaskException += (s, e) => { LogCrash(e.Exception); e.SetObserved(); };
+
             // Two copies changing the same disk would be a disaster.
-            using (var mutex = new Mutex(true, @"Global\hop-installer", out bool first))
+            using (var mutex = OpenInstanceLock(out bool first))
             {
                 if (!first)
                 {
                     // Make room's safety net, while hop is open and still needs the settings off. It tries again later.
                     if (restoring) return;
-                    MessageBox.Show("hop is already running.", "hop", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show("hop is already running. If you can't see its window, it's putting settings back, so try again in a few minutes.", "hop", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                try { StateFolder.ProtectAll(); }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is InvalidOperationException)
+                {
+                    if (!restoring)
+                        MessageBox.Show($"hop can't make its folder safe to use, so it hasn't changed anything.\n\nRestart this PC and open hop again.\n\n{ex.Message}", "hop", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
 
@@ -31,11 +52,6 @@ namespace Hop
                     RestoreRoom();
                     return;
                 }
-
-                Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
-                Application.ThreadException += (s, e) => ReportCrash(e.Exception);
-                AppDomain.CurrentDomain.UnhandledException += (s, e) => ReportCrash(e.ExceptionObject as Exception);
-                TaskScheduler.UnobservedTaskException += (s, e) => { LogCrash(e.Exception); e.SetObserved(); };
 
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
@@ -49,10 +65,37 @@ namespace Hop
         /// <summary>The argument Make room's safety-net task runs hop with. No window: nobody may be there to see it.</summary>
         const string RestoreArgument = "--restore-room";
 
+        const string InstanceLock = @"Global\hop-installer";
+
+        /// <summary>A stuck safety net can't be allowed to keep hop locked. Whatever it didn't finish, it tries again later.</summary>
+        static readonly TimeSpan RestoreLimit = TimeSpan.FromMinutes(5);
+
+        /// <summary>
+        /// A lock has the rights of the process that made it, and by default a SYSTEM process doesn't let
+        /// administrators open its. So hop's says they can. One made by an older build's task can still refuse,
+        /// which means it's in use.
+        /// </summary>
+        static Mutex OpenInstanceLock(out bool first)
+        {
+            var rights = new MutexSecurity();
+            foreach (var who in new[] { WellKnownSidType.BuiltinAdministratorsSid, WellKnownSidType.LocalSystemSid })
+                rights.AddAccessRule(new MutexAccessRule(new SecurityIdentifier(who, null), MutexRights.FullControl, AccessControlType.Allow));
+            try { return new Mutex(true, InstanceLock, out first, rights); }
+            catch (UnauthorizedAccessException)
+            {
+                first = false;
+                return null;
+            }
+        }
+
         static void RestoreRoom()
         {
-            try { new Engine().RestoreRoomFromTask(); }
-            catch (Exception ex) { LogCrash(ex); }
+            var restore = Task.Run(() => { using (var engine = new Engine()) engine.RestoreRoomFromTask(); });
+            try
+            {
+                if (!restore.Wait(RestoreLimit)) LogCrash(new TimeoutException($"Putting Make room's settings back took over {RestoreLimit.TotalMinutes} minutes."));
+            }
+            catch (AggregateException ex) { LogCrash(ex.GetBaseException()); }
         }
 
         static void ReportCrash(Exception ex)
@@ -65,6 +108,7 @@ namespace Hop
         {
             string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "hop", "logs");
             string path = Path.Combine(folder, "crash.log");
+            if (!StateFolder.Ready) return path;
             try
             {
                 Directory.CreateDirectory(folder);

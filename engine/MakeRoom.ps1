@@ -56,9 +56,7 @@ function Read-RoomState {
 }
 
 function Save-RoomState($State) {
-    $folder = Split-Path $RoomPath -Parent
-    if (-not (Test-Path -LiteralPath $folder)) { New-Item -ItemType Directory -Path $folder -Force | Out-Null }
-    $State | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $RoomPath -Encoding UTF8
+    Write-StateFile $RoomPath ($State | ConvertTo-Json -Depth 4)
 }
 
 # 'continue' after the restart, 'restore' if something stopped before finishing, or nothing.
@@ -230,7 +228,7 @@ function Register-RunAfterRestart {
 function Get-RestartCopy {
     $own = [Hop.RestartCopy]::OwnFolder()
     if ($own) { return Join-Path $own 'hop.exe' }
-    [Hop.RestartCopy]::Create($env:ProgramData)
+    [Hop.RestartCopy]::Create($ProgramData)
 }
 
 function Set-RoomTasks([string]$Exe) {
@@ -274,7 +272,7 @@ function Remove-RestartCopy([string]$Folder) {
         try { [Hop.RestartCopy]::RemoveAtNextStart($Folder) } catch { Write-Log "Could not set $Folder to go at the next start: $($_.Exception.Message)" }
         return
     }
-    if ((Split-Path $Folder -Parent) -ne $env:ProgramData -or -not (Split-Path $Folder -Leaf).StartsWith([Hop.RestartCopy]::FolderPrefix)) { return }
+    if ((Split-Path $Folder -Parent) -ne $ProgramData -or -not (Split-Path $Folder -Leaf).StartsWith([Hop.RestartCopy]::FolderPrefix)) { return }
     if (-not (Test-Path -LiteralPath $Folder)) { return }
     try {
         if ((Get-Item -LiteralPath $Folder -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { return }

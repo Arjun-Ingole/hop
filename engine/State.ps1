@@ -162,18 +162,40 @@ function Get-RecordedPartitions($State, [string[]]$Roles) {
     }
 }
 
+# Write then swap, so losing power mid-write can't leave half a file. The new file is on the disk before
+# it takes the old one's place, and its name can't be guessed, so nothing can be waiting there.
+function Write-StateFile([string]$Path, [string]$Text) {
+    $folder = Split-Path $Path -Parent
+    if (-not (Test-Path -LiteralPath $folder)) { [void][Hop.StateFolder]::Protect($folder, $true) }
+    $temporary = Join-Path $folder ([IO.Path]::GetRandomFileName())
+    $bytes = (New-Object Text.UTF8Encoding($true)).GetBytes($Text)
+    $preamble = (New-Object Text.UTF8Encoding($true)).GetPreamble()
+    try {
+        $stream = New-Object IO.FileStream($temporary, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        try {
+            $stream.Write($preamble, 0, $preamble.Length)
+            $stream.Write($bytes, 0, $bytes.Length)
+            $stream.Flush($true)
+        } finally { $stream.Dispose() }
+        if ([IO.File]::Exists($Path)) { [IO.File]::Replace($temporary, $Path, $null) } else { [IO.File]::Move($temporary, $Path) }
+    } catch {
+        [IO.File]::Delete($temporary)
+        throw
+    }
+}
+
 function Save-State($State) {
-    if (-not (Test-Path $StateDir)) { New-Item -ItemType Directory -Path $StateDir | Out-Null }
-    # Write then swap, so losing power mid-write can't leave half a file. Move-Item -Force
-    # replaces it in one step on the same drive.
-    $temporary = "$StatePath.tmp"
-    $State | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $temporary -Encoding UTF8
-    Move-Item -LiteralPath $temporary -Destination $StatePath -Force
+    Write-StateFile $StatePath ($State | ConvertTo-Json -Depth 5)
 }
 
 function Read-State {
     $path = @($StatePath, $LegacyStatePath) | Where-Object { Test-Path $_ } | Select-Object -First 1
     if (-not $path) { return }
+    # hop.exe checked this as it started, but anyone can make that folder at any time, and it has no state file of its own to be found first.
+    if ($path -eq $LegacyStatePath -and -not ([Hop.StateFolder]::IsTrusted((Split-Path $path -Parent)) -and [Hop.StateFolder]::IsTrusted($path))) {
+        Write-Log "Ignoring $path, because hop can't trust who made it."
+        return
+    }
     try { Get-Content -LiteralPath $path -Raw | ConvertFrom-Json }
     catch { Write-Log "Ignoring a damaged state file: $($_.Exception.Message)" }
 }

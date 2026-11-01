@@ -83,7 +83,27 @@ namespace Hop
         public static string OwnFolder()
         {
             string folder = Path.GetDirectoryName(RunningImage());
-            return Path.GetFileName(folder).StartsWith(FolderPrefix, StringComparison.OrdinalIgnoreCase) ? folder : null;
+            return IsCopyFolder(folder, StateFolder.ProgramData) ? folder : null;
+        }
+
+        /// <summary>
+        /// Whether a folder really is one of these copies. Anyone can name a folder this, anywhere they can
+        /// write, so it takes the right place and an owner no ordinary user could have given it.
+        /// </summary>
+        public static bool IsCopyFolder(string folder, string parent)
+        {
+            if (!string.Equals(Path.GetDirectoryName(folder), parent.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) return false;
+            if (!Path.GetFileName(folder).StartsWith(FolderPrefix, StringComparison.OrdinalIgnoreCase)) return false;
+            try
+            {
+                if ((File.GetAttributes(folder) & FileAttributes.ReparsePoint) != 0) return false;
+                var owner = Directory.GetAccessControl(folder, AccessControlSections.Owner).GetOwner(typeof(SecurityIdentifier)) as SecurityIdentifier;
+                return owner != null && owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid);
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is InvalidOperationException)
+            {
+                return false;
+            }
         }
 
         /// <summary>

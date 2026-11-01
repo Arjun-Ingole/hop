@@ -358,8 +358,7 @@ function Get-LinuxDisks {
 
 function Set-LinuxDisks([string[]]$Guids) {
     if (-not $Guids) { Remove-Item -LiteralPath $LinuxDisksPath -Force -ErrorAction SilentlyContinue; return }
-    if (-not (Test-Path $StateDir)) { New-Item -ItemType Directory -Path $StateDir | Out-Null }
-    ConvertTo-Json -InputObject @($Guids) | Set-Content -LiteralPath $LinuxDisksPath -Encoding UTF8
+    Write-StateFile $LinuxDisksPath (ConvertTo-Json -InputObject @($Guids))
 }
 
 function Add-LinuxDisk([string]$Guid) {
