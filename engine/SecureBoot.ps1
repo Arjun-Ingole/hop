@@ -1,6 +1,7 @@
 # --- Will Secure Boot let this system start? -----------------------------
 # Firmware that refuses a boot loader says nothing and starts Windows instead, so this is
-# worked out before the disk changes, from the ISO's own files and the PC's trusted list.
+# checked for common incompatibilities before the disk changes. Certificate names are
+# only a heuristic: firmware still verifies signatures, dbx revocations and its own policy.
 
 function Test-SecureBoot {
     try { [bool](Confirm-SecureBootUEFI) } catch { $false }
@@ -52,7 +53,8 @@ function Get-SecureBootAdvice {
     $advice
 }
 
-# Why Secure Boot would stop the ISO mounted at $Root, or nothing if it shouldn't.
+# A known Secure Boot incompatibility, or nothing detected. A null result is not
+# cryptographic verification and does not guarantee that firmware will start this ISO.
 function Get-SecureBootProblem([string]$Root) {
     if (-not (Test-SecureBoot)) { return }
     $signature = Get-EfiSignature (Join-Path $Root 'EFI\BOOT\BOOTX64.EFI')

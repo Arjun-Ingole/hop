@@ -5,6 +5,10 @@
 #   dotnet build -c Release
 #   Invoke-Pester tests
 
+BeforeDiscovery {
+    $elevated = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
 BeforeAll {
     . (Join-Path $PSScriptRoot 'Load-Engine.ps1') -WithHop
     Mock Write-Log { }
@@ -1184,7 +1188,7 @@ Describe 'Removing one Linux when another shares Windows'' EFI partition' {
         Set-Content "$esp\EFI\pond\grub.cfg" "search.fs_uuid 11111111-1111-1111-1111-111111111111 root hd0,gpt3"
         Set-Content "$esp\EFI\ubuntu\grub.cfg" "search.fs_uuid 22222222-2222-2222-2222-222222222222 root hd1,gpt1"
         $found = Find-OtherSystem 0
-        $found.Name | Should -Be 'Pond'
+        $found.Name | Should -Be 'all Linux partitions on this disk'
         @($found.Entries).Number | Should -Be @(3)
         $found.Kept | Should -Be 'Linux Mint'
         @($found.Partitions).Guid | Should -Be @('{pond}')
@@ -1193,7 +1197,7 @@ Describe 'Removing one Linux when another shares Windows'' EFI partition' {
         $found = Find-OtherSystem 0
         @($found.Entries).Count | Should -Be 0
         $found.Kept | Should -Be @('Linux Mint', 'Pond')
-        $found.Name | Should -Be 'the other Linux'
+        $found.Name | Should -Be 'all Linux partitions on this disk'
     }
     It 'keeps them too when the EFI partition cannot be read' {
         Mock Use-Esp { throw 'blocked' }
@@ -1203,7 +1207,7 @@ Describe 'Removing one Linux when another shares Windows'' EFI partition' {
         Mock Get-Disk { [pscustomobject]@{ Number = 0; Guid = '{disk-0}' } }
         Mock Get-BootEntries { New-PondEntry }
         $found = Find-OtherSystem 0
-        $found.Name | Should -Be 'Pond'
+        $found.Name | Should -Be 'all Linux partitions on this disk'
         @($found.Entries).Number | Should -Be @(3)
         Should -Invoke Use-Esp -Times 0
     }
@@ -1216,8 +1220,8 @@ Describe 'Removing one Linux when another shares Windows'' EFI partition' {
     It 'leaves kept loaders on the EFI partition and in the startup menu when removing' {
         Mock Remove-PartitionByGuid { }
         Mock Set-Status { }
-        Mock Get-OtherSystem { [pscustomobject]@{ Name = 'the other Linux'; Entries = @(); Kept = @('Linux Mint'); WindowsEsp = '{esp}'; OnWindowsDisk = $true; Partitions = @([pscustomobject]@{ Guid = '{pond}'; DiskNumber = 0; Size = [int64]40GB }) } }
-        Remove-OtherSystem
+        Mock Get-OtherSystem { [pscustomobject]@{ Name = 'all Linux partitions on this disk'; Selection = 'confirmed'; Entries = @(); Kept = @('Linux Mint'); WindowsEsp = '{esp}'; OnWindowsDisk = $true; Partitions = @([pscustomobject]@{ Guid = '{pond}'; DiskNumber = 0; Size = [int64]40GB }) } }
+        Remove-OtherSystem 'confirmed'
         Should -Invoke Use-Esp -Times 0
         Test-Path "$esp\EFI\ubuntu" | Should -BeTrue
         Should -Invoke Remove-PartitionByGuid -ParameterFilter { $Guid -eq '{pond}' -and $DiskNumber -eq 0 } -Times 1
@@ -1225,6 +1229,7 @@ Describe 'Removing one Linux when another shares Windows'' EFI partition' {
 }
 
 Describe 'Remove-PartitionByGuid' {
+    BeforeEach { Mock Get-WindowsEsp { [pscustomobject]@{ Guid = '{windows-esp}' } } }
     It 'removes it from the disk it was found on, not a clone with the same GUID' {
         Mock Get-Partition {
             if ($DiskNumber -contains 1) { [pscustomobject]@{ Guid = '{same}'; DiskNumber = 1; PartitionNumber = 5 } }
@@ -2035,7 +2040,7 @@ Describe 'Make room''s tasks and copy' {
 }
 
 Describe 'The copy the tasks run' {
-    It 'is in a new folder that only administrators and SYSTEM can write to' {
+    It 'is in a new folder that only administrators and SYSTEM can write to' -Skip:(-not $elevated) {
         $parent = Join-Path $TestDrive 'data'
         New-Item -ItemType Directory -Path $parent | Out-Null
         $copy = [Hop.RestartCopy]::Create($parent)
@@ -2054,7 +2059,7 @@ Describe 'The copy the tasks run' {
             [IO.Directory]::Delete((Split-Path $copy -Parent), $true)
         }
     }
-    It 'names a different folder each time, so nothing can be waiting in it' {
+    It 'names a different folder each time, so nothing can be waiting in it' -Skip:(-not $elevated) {
         $parent = Join-Path $TestDrive 'data2'
         New-Item -ItemType Directory -Path $parent | Out-Null
         $one = [Hop.RestartCopy]::Create($parent)

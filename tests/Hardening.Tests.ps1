@@ -532,6 +532,7 @@ Describe 'Limits on moving files' {
 
 Describe 'diskpart' {
     BeforeEach {
+        Mock Get-WindowsEsp { [pscustomobject]@{ Guid = '{windows-esp}' } }
         Mock Start-Sleep { }
         Mock Remove-Partition { throw 'protected' }
         $script:piped = @()
@@ -723,7 +724,7 @@ Describe 'Make room''s steps' {
 }
 
 Describe 'Saying when Make room gave up' {
-    BeforeEach { $script:RoomPath = Join-Path $TestDrive 'room.json' }
+    BeforeEach { $RoomPath = Join-Path $TestDrive 'room.json' }
 
     It 'says nothing when it did not' {
         Get-RoomGaveUpWarning | Should -BeNullOrEmpty
