@@ -63,6 +63,7 @@ namespace Hop
             busy = installing = true;
             closeRefused = null;
             cancelling = false;
+            installStarted = DateTime.Now;
             showingLog = false;
             drive.Progress = 0;
             UpdatePreparing();
@@ -71,6 +72,9 @@ namespace Hop
             {
                 var download = DownloadSpot;
                 await engine.InstallAsync(selected?.Id ?? "custom", isoPath, linuxGB, target.Id, download == null || download.IsDefault ? "" : download.Letter, fullDisk);
+                if (cancelling) throw new PipelineStoppedException();
+                // Its last line. Whatever ended it early and silently, this says it didn't get there.
+                bool finished = engine.Stage == LastStage;
                 // What hop knows is from before the install, and Undo has to say what it changed.
                 bool reread = false;
                 try
@@ -83,7 +87,7 @@ namespace Hop
                 poll.Stop();
                 busy = installing = false;
                 // The engine can end with nothing thrown, so only what's on the PC says it worked.
-                if (!reread || (startup.Status != "ready" && startup.Status != "installed"))
+                if (!finished || !reread || (startup.Status != "ready" && startup.Status != "installed"))
                 {
                     string what = !reread ? "hop can't tell whether it finished, so it won't say it's ready."
                         : startup.Status == "none" ? "Your disk wasn't changed."
@@ -129,11 +133,15 @@ namespace Hop
 
             SyncLog();
 
-            bool canCancel = stage <= 2 && !cancelling;
+            // Cancel appears where Start was, so a second click on Start mustn't land on it.
+            bool canCancel = stage <= 2 && !cancelling && (DateTime.Now - installStarted).TotalMilliseconds >= CancelAppearsAfterMilliseconds;
             Footer(showingLog ? "Hide details" : "Show details", ToggleLog, null, null,
                 canCancel ? "Cancel" : null, canCancel ? (Action)CancelInstall : null);
         }
 
+        const int LastStage = 6;   // the engine's Set-Stage after everything has worked
+        const int CancelAppearsAfterMilliseconds = 1500;
+        DateTime installStarted;
         int logShown;
 
         void SyncLog()
@@ -153,6 +161,7 @@ namespace Hop
         {
             // Too late if the disk is already changing, and the button goes on the next update.
             if (!engine.TryCancel()) return;
+            engine.Log.Add($"{DateTime.Now:HH:mm:ss}  Cancel clicked.");
             cancelling = true;
             StopDownload();
             engine.Stop();

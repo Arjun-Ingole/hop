@@ -492,7 +492,7 @@ Describe 'Get-InstallStatus' {
     It 'is installed when a new Linux boot loader appeared' {
         Mock Read-State { [pscustomobject]@{ Copied = $true } }
         Mock Get-HopPartitions { $installer }
-        Mock Test-LinuxInstalled { $true }
+        Mock Test-NewLinuxLoader { $true }
         Get-InstallStatus | Should -Be 'installed'
     }
     It 'is leftover when the copy never finished' {

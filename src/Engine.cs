@@ -225,6 +225,8 @@ namespace Hop
                     try
                     {
                         var items = new Collection(ps.Invoke());
+                        // A stopped command can come back with nothing and no exception, and nothing may read that as success.
+                        if (ps.InvocationStateInfo.State == PSInvocationState.Stopped) throw new PipelineStoppedException();
                         LogErrors(ps);
                         return items;
                     }
