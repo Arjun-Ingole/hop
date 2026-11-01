@@ -146,14 +146,18 @@ The same, with one 130 GB disk: EFI partition, reserved partition, C:, `HOPINSTA
 
 **So hop refuses Zorin OS and every Linux Mint next to Windows and on a second disk.** Started from the disk it's installing to, Ubiquity's `Installation type` goes straight to its manual screen, with no option to install alongside Windows, and says: `Your installation medium is on /dev/nvme0n1p5. You will not be able to create, delete, or resize partitions on this disk, but you may be able to install to existing partitions there.` hop's steps asked for that option, then **+**, which is greyed out on Linux Mint. `noninteractive` mode stopped at `No root file system is defined`. Replacing Windows with Zorin OS isn't affected: that run copies it to memory first.
 
-Two routes got further, and neither was run to the end, because the test's script clicked the wrong **Continue**:
+Two routes got further, and neither was run to the end. The test's script stopped each run, on a **Continue** it clicked wrongly or couldn't find:
 
 | Route | System | Seen | Not seen |
 | --- | --- | --- | --- |
-| Copying to memory (`toram`) | Zorin OS, Linux Mint Cinnamon | `/cdrom` on `/dev/shm`, the first screen back with `Install Zorin OS alongside Windows Boot Manager` and `Install Linux Mint alongside Windows Boot Manager`, then the question before writing, naming `partition #6 of /dev/nvme0n1 as ext4` | The install, or a restart. Nothing was written |
-| hop's own partition (`prepared`) | Linux Mint Cinnamon and Xfce | **Change...** on that partition, **Use as** `Ext4 journaling file system`, `Format the partition`, **Mount point** `/`, **Install Now**, then the question before writing, naming `partition #7 of /dev/nvme0n1 as ext4` | The install, or a restart. Nothing was written |
-| The same | Zorin OS, Linux Mint MATE | The same as far as **Change...**. The run was stopped there | The rest |
-| The same, on a second disk | Zorin OS, Linux Mint Cinnamon | The usual first screen, because Windows' disk is free, so its alongside option would use that disk. **Something else**, then as above, up to the question before writing | The install, or a restart. Nothing was written |
+| Copying to memory (`toram`) | Zorin OS, Linux Mint Cinnamon | `/cdrom` on `/dev/shm`, the first screen back with `Install Zorin OS alongside Windows Boot Manager` and `Install Linux Mint alongside Windows Boot Manager`, the question before writing naming `partition #6 of /dev/nvme0n1 as ext4`, then `Who are you?`. An ext4 partition was on the disk afterwards, with the NTFS, reserved, recovery and `HOPINSTALL` partitions byte for byte | The install finishing. The script couldn't find **Continue** on `Who are you?`, so it was stopped while copying, with no boot loader. The restart went to `Boot0042`, the installer, again |
+| hop's own partition (`prepared`) | Linux Mint Cinnamon | **Change...** on that partition, **Use as** `Ext4 journaling file system`, `Format the partition`, **Mount point** `/`, **Install Now**, the question before writing naming `partition #7 of /dev/nvme0n1 as ext4`, then `Who are you?`. That partition was ext4 afterwards, with the same four byte for byte | The same |
+| The same | Zorin OS, Linux Mint Xfce and MATE | As far as `Who are you?`, with an ext4 partition afterwards and the same four byte for byte | The same |
+| `toram` | Linux Mint Xfce and MATE, and Zorin OS and Linux Mint Cinnamon on a second disk | Nothing useful: they waited for the others, and were cancelled | Everything |
+| The same, on a second disk | Linux Mint Cinnamon | The usual first screen, because Windows' disk is free, so its alongside option would use that disk. **Something else**, then as above. After the question before writing, it said `/cdrom` `could not be unmounted`, and **Continue** there went on to `Who are you?`, filled in, where the script couldn't find **Continue** | The install, or a restart. `HOPINSTALL` and the rest unchanged, and no ext4 on the disk |
+| The same, on a second disk | Zorin OS | The same, except that **Continue** kept returning to `The installer needs to commit changes to partition tables, but cannot do so because` `/cdrom` `could not be unmounted`. It never got past that | The install, or a restart. Nothing was written |
+
+**So `prepared` may not be enough:** the partition table can't be written while `/cdrom` is on that disk, at least on Zorin OS. That's a finding from these screens, not from a finished install.
 
 The other results above are from runs whose partition checksums were read. Runs on a second kind of runner weren't counted: its loop devices didn't give hop's partitions, so they checked nothing.
 
