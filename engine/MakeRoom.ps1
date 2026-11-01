@@ -30,7 +30,8 @@ function Get-ShrinkBlocker($Partition) {
 
 # The message is translated, so this looks for the path rather than the words around it.
 function Get-BlockerFile([string]$Message) {
-    if ($Message -match ':\s*(\\(?!\\)[^\r\n]+)') { $Matches[1].Trim() }
+    # An ordinary file comes with its default stream's name, \pagefile.sys::$DATA, which means nothing to anyone.
+    if ($Message -match ':\s*(\\(?!\\)[^\r\n]+)') { $Matches[1].Trim() -replace '::\$DATA$', '' }
 }
 
 function Get-BlockerKind([string]$File) {

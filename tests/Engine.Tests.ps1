@@ -312,6 +312,9 @@ A volume shrink analysis was initiated on volume Windows (C:).
     It 'reads the file from the message Windows logs' {
         Get-BlockerFile $Logged | Should -Be '\$Extend\$UsnJrnl:$J:$DATA'
     }
+    It 'leaves off the name of the default stream, for showing to people' {
+        Get-BlockerFile "The last unmovable file appears to be: \pagefile.sys::`$DATA" | Should -Be '\pagefile.sys'
+    }
     It 'sorts blockers by what can be done about them' {
         Get-BlockerKind '\hiberfil.sys' | Should -Be 'hibernation'
         Get-BlockerKind '\pagefile.sys' | Should -Be 'paging'
