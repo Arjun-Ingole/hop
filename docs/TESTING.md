@@ -80,16 +80,18 @@ use_gap}` chose the 1 MiB left and failed with `No space left on device`.
 `HOPINSTALL`, reused the EFI partition, and the NTFS and `HOPINSTALL` partitions came through byte for byte, after the
 install and after the restart. The kernel's line had `nopersistent` in the live system, and not in the installed one.
 
-**It starts, but one restart is unexplained.** A later run put four installs side by side, each then given up to 16
-minutes: free space with Secure Boot on, the same with it off, the same on with a 1 GB EFI partition, and an erase with
-it on. All four reached the login screen in about 30 seconds, by screenshot and by the journal read from the disk
-image, and another console answered a key press. So Secure Boot, the 100 MB EFI partition and the free-space
-layout don't stop it on their own.
+**It starts.** With Secure Boot on and the 100 MB EFI partition, the installer finished its unattended upgrades and late
+commands and restarted itself. The firmware then started Ubuntu's `shimx64.efi`. A marker the installed system wrote to its
+own disk says `SecureBoot enabled`, root on the new partition, `/boot/efi` on Windows' EFI partition, and `gdm active` with
+the greeter's session open. A screenshot shows the login screen. Nobody logged in, so the desktop itself wasn't seen.
 
-Those four were stopped by the test's limit while the installer was still in its unattended upgrades, so its late
-commands and its own restart never ran. The first run did get through those, and then both consoles stopped at
-`Starting initrd-switch-root.service`, with no `Welcome to Ubuntu`, until its limit of 360 seconds. That
-has not been repeated or explained, and it is the path someone really takes.
+Four installs cut short during their unattended upgrades by the test's limit also got as far as `gdm`: free space with
+Secure Boot on, with it off, on with a 1 GB EFI partition, and an erase with it on.
+
+**One earlier run stalled and hasn't been explained.** It also finished the whole install, with Secure Boot on, and then both
+consoles stopped at `Starting initrd-switch-root.service`, with no `Welcome to Ubuntu`, until its limit of 360 seconds. It
+didn't happen again. That run started the installed system with `console=ttyS0,115200 console=tty0 splash`, and the run
+above without them, so that exact setup hasn't been repeated.
 
 ## Testing for real
 
