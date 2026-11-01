@@ -31,8 +31,8 @@ function Get-SpaceInfo([string]$Target) {
         MinSize   = [int64]$supported.SizeMin
         TailFree  = $tail
         Reserve   = [int64]$reserve
-        # GB Linux can get: free space after the drive, plus what it can give up while keeping its reserve.
-        UsableGB  = [int][math]::Floor(($tail + $c.Size - $supported.SizeMin - $reserve) / 1GB)
+        # The reserve limits shrinking, not space already outside the volume.
+        UsableGB  = [int][math]::Floor(($tail + [math]::Max([int64]0, [int64]($c.Size - $supported.SizeMin - $reserve))) / 1GB)
         Kind      = 'volume'
         Name      = "$letter`:"
         Letter    = $letter

@@ -225,6 +225,13 @@ Describe 'Get-DriveTargets' {
         $rows[0].UsableGB | Should -Be (100 - 8)
         $rows[1].UsableGB | Should -Be (100 - 2)
     }
+    It 'keeps all adjacent free space when the volume has less than its reserve' {
+        Mock Get-Volume { [pscustomobject]@{ FileSystemType = 'NTFS'; HealthStatus = 'Healthy'; Size = [int64]200GB; SizeRemaining = [int64]1GB } }
+        $rows = @(Get-DriveTargets)
+        $rows[0].UsableGB | Should -Be 0
+        $e = $rows | Where-Object Letter -eq 'E'
+        $e.UsableGB | Should -Be $e.TailFreeGB
+    }
     It 'gives a refused disk one row, with its reason' {
         $usb = @(Get-DriveTargets) | Where-Object Kind -eq 'disk'
         $usb.Blocker | Should -BeLike '*USB*'
@@ -265,6 +272,21 @@ Describe 'Resolve-Target and the plan' {
     }
     It 'keeps a smaller reserve on another volume' {
         (Get-SpaceInfo "volume:{disk-3}:$([int64]1GB)").UsableGB | Should -Be (200 - 2)
+    }
+    It 'never reports negative capacity when a volume cannot shrink' {
+        Mock Get-SupportedSize { [pscustomobject]@{ SizeMin = [int64]300GB } }
+        (Get-SpaceInfo "volume:{disk-3}:$([int64]1GB)").UsableGB | Should -Be 0
+    }
+    It 'uses all adjacent free space without shrinking a blocked volume' {
+        Mock Get-SupportedSize { [pscustomobject]@{ SizeMin = [int64]300GB } }
+        Mock Get-TailFree { [int64]33GB }
+        $target = "volume:{disk-3}:$([int64]1GB)"
+        (Get-SpaceInfo $target).UsableGB | Should -Be 33
+        $plan = Get-Plan 25 8 $target
+        $plan.Shrink | Should -BeFalse
+        $plan.NewWindowsSize | Should -Be ([int64]300GB)
+        $plan.InstallerOffset | Should -Be ([int64]301GB)
+        { Get-Plan 26 8 $target } | Should -Throw '*from E:*25 GB or less*'
     }
     It 'plans in free space with nothing to shrink, at its end' {
         $plan = Get-Plan 60 8 "gap:{disk-3}:$([int64]301GB)"
@@ -344,7 +366,7 @@ Describe 'Get-HopPartitions on any disk' {
     It 'trusts its own record of a partition, whatever is on it now' {
         Mock Get-Volume { [pscustomobject]@{ FileSystemLabel = 'HOPINSTALL'; FileSystemType = 'FAT32' } }
         Mock Get-VolumeEntries { 'half-copied' }
-        Mock Read-State { [pscustomobject]@{ Partitions = @([pscustomobject]@{ Role = 'installer'; Offset = [int64]200GB; Size = [int64]8GB }) } }
+        Mock Read-State { [pscustomobject]@{ DiskGuid = '{disk-1}'; Partitions = @([pscustomobject]@{ Role = 'installer'; Offset = [int64]200GB; Size = [int64]8GB }) } }
         @(Get-HopPartitions).Partition.DiskNumber | Should -Be @(1)
     }
     It 'finds hop''s partitions on a second disk' {
