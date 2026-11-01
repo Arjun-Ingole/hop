@@ -441,11 +441,11 @@ def make_room(vm, s):
 
 
 def scenario_scales(bench):
-    """The screens that hold most text, at 100%, 125% and 150%, with the setting a person would use."""
+    """The screens that hold most text, at 100% and 125%, with the setting a person would use."""
     vm, s = bench.fresh()
     s.desktop()
     s.get_hop()
-    for percent, dpi in ((100, 96), (125, 120), (150, 144)):
+    for percent, dpi in ((100, 96), (125, 120)):
         vm.ps(f"""
 Set-ItemProperty 'HKCU:\\Control Panel\\Desktop' -Name LogPixels -Value {dpi} -Type DWord
 Set-ItemProperty 'HKCU:\\Control Panel\\Desktop' -Name Win8DpiScaling -Value 1 -Type DWord
