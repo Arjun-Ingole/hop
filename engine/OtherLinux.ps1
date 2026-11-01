@@ -160,12 +160,14 @@ function Remove-PartitionByGuid([string]$Guid, [int]$DiskNumber) {
     } catch { }
     # Windows protects EFI partitions; diskpart can still delete one that isn't Windows' own.
     $ErrorActionPreference = 'Continue'
-    $script = [IO.Path]::GetTempFileName()
-    Set-Content -LiteralPath $script -Encoding ASCII -Value @(
-        "select disk $($partition.DiskNumber)", "select partition $($partition.PartitionNumber)", 'delete partition override')
-    $output = & diskpart.exe /s $script 2>&1 | Out-String
-    Remove-Item -LiteralPath $script -Force
-    if ($LASTEXITCODE -ne 0) { throw "Could not delete partition $($partition.PartitionNumber): $output" }
+    # On its input, because a script in the temp folder could be changed by anything this user runs.
+    $output = @("select disk $($partition.DiskNumber)", "select partition $($partition.PartitionNumber)", 'delete partition override', 'exit') | & diskpart.exe 2>&1 | Out-String
+    # This way diskpart doesn't report failure in its exit code, so what counts is whether it's gone. Windows can take a moment to notice.
+    for ($i = 0; $i -lt 5; $i++) {
+        if (-not (Get-Partition -DiskNumber $partition.DiskNumber -ErrorAction SilentlyContinue | Where-Object Guid -eq $Guid)) { return }
+        Start-Sleep -Seconds 1
+    }
+    throw "Could not delete partition $($partition.PartitionNumber): $output"
 }
 
 function Remove-OtherSystem {
