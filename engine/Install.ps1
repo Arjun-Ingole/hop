@@ -261,8 +261,11 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
         try { Invoke-Bcdedit /delete $id | Out-Null; Write-Log "Removed startup entry $id." } catch { Write-Log "Could not remove $id." }
     }
     foreach ($number in @(Get-FirmwareEntries)) {
-        [Hop.Firmware]::DeleteBootEntry($number)
-        Write-Log ('Removed startup entry Boot{0:X4}.' -f $number)
+        # One the firmware refuses must not stop the rest. It still has hop's name, so it can be found later.
+        try {
+            Remove-FirmwareEntry $number
+            Write-Log ('Removed startup entry Boot{0:X4}.' -f $number)
+        } catch { Write-Log ('Could not remove startup entry Boot{0:X4}: {1}' -f $number, $_.Exception.Message) }
     }
     try {
         Use-Esp {

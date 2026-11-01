@@ -21,6 +21,8 @@ function Use-Esp([scriptblock]$Action) {
 
 function Get-BootEntries { [Hop.Firmware]::ListEntries() }
 
+function Remove-FirmwareEntry([int]$Number) { [Hop.Firmware]::DeleteBootEntry($Number) }
+
 # Looks on every disk: Windows on a second drive often starts from the first drive's EFI partition.
 # The one this Windows started from comes first, which is the one Use-Esp opens, so the boot loader
 # and its startup entry can't end up on different partitions. A PC can have two Windows Boot Manager
