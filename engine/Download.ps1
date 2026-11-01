@@ -267,8 +267,10 @@ function Get-Iso($Download, [string]$Path) {
         # came from. Keep it until a fresh download succeeds and replaces it.
         Write-Log 'The existing file cannot be verified; downloading a fresh copy.'
         if ($Download.Sha256) { Remove-Item -LiteralPath $Path -Force }
-        elseif (Test-Path -LiteralPath "$Path.part") { Remove-Item -LiteralPath "$Path.part" -Force }
     }
+    # Without a checksum, a partial file cannot be tied to this release either,
+    # even when no complete ISO is present.
+    if (-not $Download.Sha256 -and (Test-Path -LiteralPath "$Path.part")) { Remove-Item -LiteralPath "$Path.part" -Force }
     Invoke-Download $Download $Path
     if ($Download.Sha256) {
         if (-not (Test-Sha256 $Path $Download.Sha256)) {

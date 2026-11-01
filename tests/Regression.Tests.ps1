@@ -135,6 +135,12 @@ Describe 'Cached ISO without an official checksum' {
         { Get-Iso $download $path } | Should -Throw 'offline'
         (Get-Content -LiteralPath $path -Raw).Trim() | Should -Be 'old copy'
     }
+    It 'discards an unverifiable partial even when there is no complete ISO' {
+        Remove-Item -LiteralPath $path
+        Get-Iso $download $path
+        Should -Invoke Invoke-Download -Times 1 -Exactly
+        Test-Path -LiteralPath "$path.part" | Should -BeFalse
+    }
     It 'still reuses a copy verified with an official checksum' {
         $download.Sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
         Get-Iso $download $path
