@@ -89,12 +89,14 @@ namespace Hop
 
         // --- Drawing -----------------------------------------------------------------
 
+        public const TextRenderingHint TextHint = TextRenderingHint.AntiAliasGridFit;
+
         public static void Prepare(Graphics g)
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            g.TextRenderingHint = TextHint;
         }
 
         public static GraphicsPath RoundedRect(RectangleF r, float radius)

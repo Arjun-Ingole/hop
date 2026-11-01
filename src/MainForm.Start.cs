@@ -25,6 +25,7 @@ namespace Hop
                 startup = await engine.GetStartupInfoAsync();
                 if (startup.RoomPhase == "continue")
                 {
+                    BeginWork(new[] { new[] { Run.Gray("Making"), Run.Black("room") } }, "Starting…");
                     if (await engine.CompleteMakeRoomAsync())
                         roomLetter = string.IsNullOrEmpty(startup.RoomLetter) ? WindowsLetter : startup.RoomLetter;
                     startup = await engine.GetStartupInfoAsync();
