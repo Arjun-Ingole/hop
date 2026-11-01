@@ -18,23 +18,27 @@ Describe 'Stopping a command' {
         Write-Host "PowerShell.Invoke when stopped: $what"
         $ps.InvocationStateInfo.State | Should -Be 'Stopped'
     }
-    # In a process of its own: what's being tested stops PowerShell commands, and this mustn't stop the tests.
+    # On a task, because PowerShell takes that exception as a stop of whatever script it reaches, this one included.
     It 'is never mistaken for success by the engine' {
-        $exe = Join-Path (Split-Path $PSScriptRoot -Parent) 'bin\Release\hop.exe'
-        $script = Join-Path $TestDrive 'stop.ps1'
-        Set-Content $script @"
-[void][Reflection.Assembly]::LoadFrom('$exe')
-`$engine = New-Object Hop.Engine
-`$stopper = [powershell]::Create().AddScript({ param(`$e) Start-Sleep 3; `$e.Stop() }).AddArgument(`$engine)
-[void]`$stopper.BeginInvoke()
-`$invoke = [Hop.Engine].GetMethod('Invoke', [Reflection.BindingFlags]'NonPublic,Instance')
-try {
-    `$invoke.Invoke(`$engine, [object[]]@('Start-Sleep', @{ Seconds = 30 })) | Out-Null
-    'came back as if it worked'
-} catch { 'threw ' + `$_.Exception.GetBaseException().GetType().Name }
-"@
-        $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script 2>&1 | Out-String
-        Write-Host "The engine when stopped: $output"
-        $output | Should -BeLike '*threw PipelineStoppedException*'
+        $engine = New-Object Hop.Engine
+        try {
+            $invoke = [Hop.Engine].GetMethod('InvokeAsync', [Reflection.BindingFlags]'NonPublic,Instance')
+            $task = $invoke.Invoke($engine, [object[]]@('Start-Sleep', @{ Seconds = 30 }))
+            Start-Sleep 3
+            $engine.Stop()
+            for ($i = 0; $i -lt 100 -and -not $task.IsCompleted; $i++) { Start-Sleep -Milliseconds 100 }
+            $task.IsCompleted | Should -BeTrue
+            $task.IsFaulted | Should -BeTrue
+            $task.Exception.GetBaseException().GetType().Name | Should -Be 'PipelineStoppedException'
+        } finally { $engine.Dispose() }
+    }
+    It 'leaves a command that finishes alone' {
+        $engine = New-Object Hop.Engine
+        try {
+            $invoke = [Hop.Engine].GetMethod('InvokeAsync', [Reflection.BindingFlags]'NonPublic,Instance')
+            $task = $invoke.Invoke($engine, [object[]]@('Start-Sleep', @{ Milliseconds = 10 }))
+            for ($i = 0; $i -lt 100 -and -not $task.IsCompleted; $i++) { Start-Sleep -Milliseconds 100 }
+            $task.IsFaulted | Should -BeFalse
+        } finally { $engine.Dispose() }
     }
 }
