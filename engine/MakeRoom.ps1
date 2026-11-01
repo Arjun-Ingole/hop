@@ -8,7 +8,10 @@
 # function takes a drive letter, and without one means C:.
 
 $RoomPath = Join-Path $StateDir 'make-room.json'
-$RunOnceKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce'
+$RunOnceKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce'   # builds before the tasks used this
+$ResumeTaskName = 'hop resume'
+$RestoreTaskName = 'hop restore settings'
+$RestoreArgument = '--restore-room'
 $PagingKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management'
 $MinMemoryWithoutPaging = 8GB
 $DefragLimitSeconds = 900
@@ -64,8 +67,11 @@ function Get-RoomPhase {
 
 function Get-LastBoot { (Get-CimInstance Win32_OperatingSystem).LastBootUpTime }
 
+# A new Windows only has the default, until something changes it.
 function Test-HibernationOn {
-    (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Power' -ErrorAction SilentlyContinue).HibernateEnabled -eq 1
+    $power = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Power' -ErrorAction SilentlyContinue
+    if ($null -ne $power.HibernateEnabled) { return $power.HibernateEnabled -eq 1 }
+    $power.HibernateEnabledDefault -eq 1
 }
 
 function Set-Hibernation([bool]$On) {
@@ -197,23 +203,90 @@ function Request-RoomRestart {
     }
 }
 
+# Two tasks, because a prompt at sign-in with No already chosen is a bad way to finish, and someone may
+# never come back to hop at all. One opens hop when this user signs in, elevated and without asking. The
+# other puts the settings back by itself if hop hasn't, from a while after Windows starts: see Program.cs.
+# Both run a copy no ordinary process can replace, with fixed arguments, or they'd be a way around UAC.
+# If they can't be made this throws, because restarting without them could strand the settings.
 function Register-RunAfterRestart {
-    try {
-        # Not every PC has this key until something needs it.
-        if (-not (Test-Path $RunOnceKey)) { New-Item -Path $RunOnceKey -Force | Out-Null }
-        Set-ItemProperty -Path $RunOnceKey -Name 'hop' -Value "`"$([Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)`""
-    } catch { Write-Log "Could not set hop to open after the restart: $($_.Exception.Message)" }
+    $exe = Get-RestartCopy
+    $state = Read-RoomState
+    if ($state) {
+        $state | Add-Member -NotePropertyName CopyFolder -NotePropertyValue (Split-Path $exe -Parent) -Force
+        Save-RoomState $state
+    }
+    Set-RoomTasks $exe
+    foreach ($name in @($ResumeTaskName, $RestoreTaskName)) {
+        if (-not (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue)) { throw "Windows didn't keep the task called $name." }
+    }
+    Remove-ItemProperty -Path $RunOnceKey -Name 'hop' -ErrorAction SilentlyContinue
+}
+
+# Running from one already, after an earlier restart, it's already safe and the tasks can use it again.
+function Get-RestartCopy {
+    $own = [Hop.RestartCopy]::OwnFolder()
+    if ($own) { return Join-Path $own 'hop.exe' }
+    [Hop.RestartCopy]::Create($env:ProgramData)
+}
+
+function Set-RoomTasks([string]$Exe) {
+    $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName $ResumeTaskName -Force -Settings $settings `
+        -Action (New-ScheduledTaskAction -Execute $Exe) `
+        -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $user) `
+        -Principal (New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest) | Out-Null
+    # While hop is open it leaves things alone, so it keeps trying until hop has gone.
+    $trigger = New-ScheduledTaskTrigger -AtStartup
+    $trigger.Delay = 'PT20M'
+    $trigger.Repetition = (New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 15)).Repetition
+    Register-ScheduledTask -TaskName $RestoreTaskName -Force -Settings $settings `
+        -Action (New-ScheduledTaskAction -Execute $Exe -Argument $RestoreArgument) `
+        -Trigger $trigger `
+        -Principal (New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest) | Out-Null
+}
+
+function Remove-RoomTask([string]$Name) {
+    try { Unregister-ScheduledTask -TaskName $Name -Confirm:$false -ErrorAction SilentlyContinue } catch { Write-Log "Could not remove the task $Name`: $($_.Exception.Message)" }
+}
+
+# Once hop has opened again. The other task stays until the settings are back.
+function Unregister-ResumeTask {
+    Remove-RoomTask $ResumeTaskName
+    Remove-ItemProperty -Path $RunOnceKey -Name 'hop' -ErrorAction SilentlyContinue
 }
 
 function Unregister-RunAfterRestart {
-    Remove-ItemProperty -Path $RunOnceKey -Name 'hop' -ErrorAction SilentlyContinue
+    Unregister-ResumeTask
+    Remove-RoomTask $RestoreTaskName
+    Remove-RestartCopy (Read-RoomState).CopyFolder
+}
+
+# Only the folder hop made and wrote down, and never through a link someone has put there. Program.cs
+# deals with the one hop is running from, because a running file can't be deleted.
+function Remove-RestartCopy([string]$Folder) {
+    if (-not $Folder -or $Folder -eq [Hop.RestartCopy]::OwnFolder()) { return }
+    if ((Split-Path $Folder -Parent) -ne $env:ProgramData -or -not (Split-Path $Folder -Leaf).StartsWith([Hop.RestartCopy]::FolderPrefix)) { return }
+    if (-not (Test-Path -LiteralPath $Folder)) { return }
+    try {
+        if ((Get-Item -LiteralPath $Folder -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { return }
+        [IO.Directory]::Delete($Folder, $true)
+    } catch { Write-Log "Could not remove $Folder`: $($_.Exception.Message)" }
+}
+
+# What the second task runs, when hop isn't open. Afterwards there's nothing left for it to do.
+function Restore-RoomFromTask {
+    Write-Log 'Putting back what Make room changed, because hop did not.'
+    Restore-RoomSettings
+    Remove-RoomTask $ResumeTaskName
+    Remove-RoomTask $RestoreTaskName
 }
 
 # After the restart: the paging file has gone, so move what can be moved. Says 'done', or 'failed'
 # when it couldn't, for example because that drive has been unplugged. That can't be allowed to stop
 # hop opening every time from now on, so the settings go back and hop carries on without the room.
 function Complete-MakeRoom {
-    Unregister-RunAfterRestart
+    Unregister-ResumeTask
     $state = Read-RoomState
     try { Invoke-Defrag $state.Drive } catch {
         Write-Log "Could not move files on drive $(Get-RoomDrive $state.Drive): $($_.Exception.Message)"

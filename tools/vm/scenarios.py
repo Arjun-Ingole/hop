@@ -48,9 +48,10 @@ $s = Get-PartitionSupportedSize -DriveLetter C
 "can shrink to {0:N1} GB, so {1:N1} GB can be released" -f ($s.SizeMin/1GB), (($c.Size-$s.SizeMin)/1GB)
 "hibernation: HibernateEnabled=" + (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Power).HibernateEnabled
 "HibernateEnabledDefault=" + (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Power).HibernateEnabledDefault
-"hiberfil.sys: " + $(if ($f = Get-Item C:\hiberfil.sys -Force -ErrorAction SilentlyContinue) { '{0:N2} GB' -f ($f.Length/1GB) } else { 'none' })
+"tasks: " + ((Get-ScheduledTask 'hop *' -ErrorAction SilentlyContinue | ForEach-Object { "$($_.TaskName) -> $($_.Actions.Execute) $($_.Actions.Arguments)" }) -join ' ; ')
+"copies: " + ((Get-ChildItem C:\ProgramData -Directory -Filter 'hop-restart-*' -Force -ErrorAction SilentlyContinue).FullName -join ' ; ')
+cmd /c dir /a C:\*.sys | Select-String '\.sys'
 "PagingFiles: " + ((Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management').PagingFiles -join ' | ')
-"pagefile.sys: " + $(if ($f = Get-Item C:\pagefile.sys -Force -ErrorAction SilentlyContinue) { '{0:N2} GB' -f ($f.Length/1GB) } else { 'none' })
 "journal: " + ((fsutil usn queryjournal C: 2>&1 | Select-String 'Usn Journal ID|Maximum Size|Allocation Delta|Error') -join ' ; ')
 "RunOnce: " + ((Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce -ErrorAction SilentlyContinue).hop)
 "make-room.json: " + $(if (Test-Path C:\ProgramData\hop\make-room.json) { Get-Content C:\ProgramData\hop\make-room.json -Raw } else { 'none' })
@@ -58,6 +59,15 @@ $s = Get-PartitionSupportedSize -DriveLetter C
 Get-Partition -DiskNumber $c.DiskNumber | Sort-Object Offset | ForEach-Object { "  part {0} {1,-12} offset {2:N2} GB size {3:N2} GB letter [{4}]" -f $_.PartitionNumber, $_.Type, ($_.Offset/1GB), ($_.Size/1GB), $_.DriveLetter }
 "hop running: " + ((Get-Process hop -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Id) '$($_.MainWindowTitle)'" }) -join ', ')
 Get-WinEvent -FilterHashtable @{ LogName='Application'; ProviderName='Microsoft-Windows-Defrag'; Id=259 } -MaxEvents 1 -ErrorAction SilentlyContinue | ForEach-Object { "last shrink blocker event, $($_.TimeCreated.ToString('s')): " + ($_.Message -replace '\s+',' ') }
+'''
+
+# Where hop is running from, and who could change that file.
+FROM_WHERE = r'''
+$p = Get-Process hop | Select-Object -First 1
+"hop running from: " + $p.Path
+icacls (Split-Path $p.Path -Parent)
+icacls $p.Path
+Get-ScheduledTask 'hop *' | ForEach-Object { "$($_.TaskName) [$($_.State)] -> $($_.Actions.Execute) $($_.Actions.Arguments) as $($_.Principal.UserId) $($_.Principal.RunLevel)" }
 '''
 
 LOGS_SCRIPT = r'''
@@ -347,7 +357,12 @@ def scenario_screens(bench):
     s.press('Back')
     time.sleep(2)
 
-    # Replacing Windows is the row after the drives. Nothing starts until the word's typed.
+    # Replacing Windows is the row after the drives, for a system that offers it. Nothing starts until the word's typed.
+    s.click_hop(236, LINE_ONE_Y)
+    time.sleep(1.5)
+    s.click_hop(236, SYSTEM_ROW_Y + DRIVE_ROW_H)
+    time.sleep(3)
+    vm.shot('choose-ubuntu')
     s.click_hop(150, LINE_TWO_Y)
     time.sleep(1.5)
     vm.shot('drive-picker-replace-row')
@@ -393,16 +408,17 @@ def make_room(vm, s):
     vm.wait_agent('user', limit=600, not_boot=before)
     vm.shot('stuck-signed-in-again')
     s.facts('just after signing in')
-    # Does hop come back by itself? It needs the elevation prompt answered, as a person would.
+    # Hop should come back by itself, with nothing asked. Nothing here answers a prompt, so one would show.
     for second in range(0, 180, 10):
         vm.shot(f'stuck-after-restart-{second:03}s')
         ui = s.ui()
         print(f'{second}s: hop window: {ui.get("found")}', flush=True)
         if ui.get('found'):
+            print(vm.ps(FROM_WHERE, timeout=60), flush=True)
             break
-        if second >= 30:
-            vm.key('alt', 'y')
         time.sleep(10)
+    else:
+        raise TimeoutError('hop did not come back by itself')
     vm.shot('stuck-hop-back')
     for minute in range(40):
         names = s.names()
@@ -435,6 +451,31 @@ def scenario_stuck(bench):
     restart_and_wait(vm)
     vm.shot('stuck-restarted-again')
     s.facts('after one more restart: are hibernation, the paging file and the journal back?')
+    s.hop_log()
+
+
+def scenario_abandon(bench):
+    """Make room, hop killed once it's back, and nobody opens it again. The settings still have to come back."""
+    vm, s = bench.fresh()
+    s.desktop()
+    make_space_stuck(vm)
+    s.facts('stuck')
+    s.get_hop()
+    make_room(vm, s)
+    print(vm.ps('Stop-Process -Name hop -Force; Start-Sleep 2; Get-Process hop -ErrorAction SilentlyContinue | Measure-Object | Select-Object Count', timeout=30), flush=True)
+    s.facts('hop killed, with the settings still off')
+    restart_and_wait(vm)
+    vm.shot('abandon-restarted')
+    s.facts('restarted: hop opens again from the task if the first task is still there')
+    time.sleep(20)
+    vm.ps('Stop-Process -Name hop -Force -ErrorAction SilentlyContinue', timeout=30)
+    # The task starts 20 minutes after Windows does.
+    for minute in range(0, 26, 3):
+        time.sleep(180)
+        vm.shot(f'abandon-{minute:02}m')
+        s.facts(f'{minute + 3} minutes on')
+    restart_and_wait(vm)
+    s.facts('one more restart: all back, and nothing left of hop?')
     s.hop_log()
 
 

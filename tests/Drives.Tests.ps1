@@ -684,6 +684,7 @@ Describe 'Make room on another drive' {
         Mock Restore-Paging { }
         Mock Register-RunAfterRestart { }
         Mock Unregister-RunAfterRestart { }
+        Mock Unregister-ResumeTask { }
         Mock Invoke-Shutdown { }
         Mock Invoke-Defrag { }
         Mock Get-LastBoot { [datetime]'2030-01-01' }
