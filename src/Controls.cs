@@ -34,6 +34,19 @@ namespace Hop
         protected override void OnLostFocus(EventArgs e) { base.OnLostFocus(e); Invalidate(); }
         protected override void OnEnabledChanged(EventArgs e) { base.OnEnabledChanged(e); Invalidate(); }
 
+        /// <summary>
+        /// Holding Enter mustn't click through to the next screen's button, as it did from Install to Start.
+        /// Windows says when a key was already down, including when it went down on another control.
+        /// </summary>
+        protected override void WndProc(ref Message m)
+        {
+            const int WM_KEYDOWN = 0x0100;
+            const long WasDown = 1L << 30;
+            bool activates = m.Msg == WM_KEYDOWN && ((int)m.WParam.ToInt64() == (int)Keys.Enter || (int)m.WParam.ToInt64() == (int)Keys.Space);
+            if (activates && (m.LParam.ToInt64() & WasDown) != 0) return;
+            base.WndProc(ref m);
+        }
+
         /// <summary>Makes a control act on Enter and Space like a button.</summary>
         protected void MakeClickable()
         {
