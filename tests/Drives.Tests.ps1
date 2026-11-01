@@ -492,7 +492,7 @@ Describe 'Invoke-Cleanup on another drive' {
         Mock Get-Disk { New-TestDisk -Number 4 }
         # Its number has shifted since the install: only the offset finds it.
         Mock Get-Partition { New-TestPartition -Letter 'E' -Disk 4 -Offset ([int64]1GB) -Size ([int64]200GB) | ForEach-Object { $_.PartitionNumber = 9; $_ } }
-        Mock Get-PartitionSupportedSize { [pscustomobject]@{ SizeMax = [int64]300GB } }
+        Mock Get-SupportedSize { [pscustomobject]@{ SizeMax = [int64]300GB } }
         Mock Resize-Partition { $script:resized += "$DiskNumber/$PartitionNumber/$Size" }
         Mock Test-LinuxInstalled { $false }
     }
@@ -505,7 +505,7 @@ Describe 'Invoke-Cleanup on another drive' {
     It 'leaves C: alone' {
         Mock Read-State { [pscustomobject]@{ Partitions = @(); WindowsShrunk = $true; DiskGuid = '{disk-4}'; TargetKind = 'volume'; TargetOffset = [int64]1GB; OnWindowsDisk = $false } }
         Invoke-Cleanup
-        Should -Invoke Get-PartitionSupportedSize -ParameterFilter { $DiskNumber -contains 0 } -Times 0
+        Should -Invoke Get-SupportedSize -ParameterFilter { $Partition.DiskNumber -eq 0 } -Times 0
     }
     It 'grows nothing when Linux only used free space' {
         Mock Read-State { [pscustomobject]@{ Partitions = @(); WindowsShrunk = $false; DiskGuid = '{disk-4}'; TargetKind = 'gap'; TargetOffset = [int64]300GB; OnWindowsDisk = $false } }
@@ -541,7 +541,7 @@ Describe 'Get-RecordedPartitions on another disk' {
     It 'looks on the disk the setup is on' {
         Mock Get-Disk { New-TestDisk -Number 2 }
         Mock Get-Partition { New-TestPartition -Disk 2 -Offset ([int64]500GB) -Size ([int64]8GB) } -ParameterFilter { $DiskNumber -contains 2 }
-        Mock Test-LinuxSignature { $false }
+        Mock Read-PartitionHead { New-Object byte[] 16 }
         Mock Get-Volume { $null }
         $state = [pscustomobject]@{ DiskGuid = '{disk-2}'; Partitions = @([pscustomobject]@{ Role = 'installer'; Offset = [int64]500GB; Size = [int64]8GB }) }
         @(Get-RecordedPartitions $state @('installer')).Count | Should -Be 1

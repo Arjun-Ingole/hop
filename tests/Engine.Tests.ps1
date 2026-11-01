@@ -947,7 +947,7 @@ Describe 'Get-RecordedPartitions' {
             [pscustomobject]@{ DiskNumber = 0; PartitionNumber = 4; Offset = [int64]500GB; Size = [int64]8GB; IsSystem = $false; IsBoot = $false }
             [pscustomobject]@{ DiskNumber = 0; PartitionNumber = 5; Offset = [int64]400GB; Size = [int64]60GB; IsSystem = $false; IsBoot = $false }
         }
-        Mock Test-LinuxSignature { $false }
+        Mock Read-PartitionHead { New-Object byte[] 16 }
         Mock Get-Volume { $null }
     }
     It 'finds a recorded partition that was never formatted' {
@@ -959,7 +959,7 @@ Describe 'Get-RecordedPartitions' {
         @(Get-RecordedPartitions $state @('installer')).Count | Should -Be 0
     }
     It 'leaves it alone once Linux has been installed there' {
-        Mock Test-LinuxSignature { $true }
+        Mock Read-PartitionHead { [byte[]](0, 1, 0) }
         $state = [pscustomobject]@{ Partitions = @([pscustomobject]@{ Role = 'root'; Offset = [int64]400GB; Size = [int64]60GB }) }
         @(Get-RecordedPartitions $state @('root')).Count | Should -Be 0
     }
@@ -1063,7 +1063,7 @@ Describe 'Invoke-Cleanup' {
             [pscustomobject]@{ Label = 'HOPINSTALL'; Partition = [pscustomobject]@{ DiskNumber = 0; Offset = [int64]160GB } }
         }
         Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0; PartitionNumber = 3; Size = [int64]100GB } }
-        Mock Get-PartitionSupportedSize { [pscustomobject]@{ SizeMax = [int64]100GB } }
+        Mock Get-SupportedSize { [pscustomobject]@{ SizeMax = [int64]100GB } }
     }
     It 'removes the second installer partition too, with Linux staying or not' {
         Mock Get-HopPartitions {
@@ -1081,7 +1081,7 @@ Describe 'Invoke-Cleanup' {
     }
     It 'gives space back to C: when hop shrank it' {
         Mock Test-LinuxInstalled { $false }
-        Mock Get-PartitionSupportedSize { [pscustomobject]@{ SizeMax = [int64]160GB } }
+        Mock Get-SupportedSize { [pscustomobject]@{ SizeMax = [int64]160GB } }
         Mock Resize-Partition { }
         Invoke-Cleanup
         Should -Invoke Resize-Partition -Times 1
@@ -1089,7 +1089,7 @@ Describe 'Invoke-Cleanup' {
     It 'leaves free space alone when hop never shrank C:' {
         Mock Test-LinuxInstalled { $false }
         Mock Read-State { [pscustomobject]@{ Partitions = @(); WindowsShrunk = $false } }
-        Mock Get-PartitionSupportedSize { [pscustomobject]@{ SizeMax = [int64]160GB } }
+        Mock Get-SupportedSize { [pscustomobject]@{ SizeMax = [int64]160GB } }
         Mock Resize-Partition { }
         Invoke-Cleanup
         Should -Invoke Resize-Partition -Times 0
@@ -1107,7 +1107,7 @@ Describe 'Invoke-Cleanup' {
             Mock Resume-BitLockerAfterUndo { }
             Mock Remove-Item { }
             Mock Test-Path { $true } -ParameterFilter { $Path -eq $StatePath }
-            Mock Get-PartitionSupportedSize { [pscustomobject]@{ SizeMax = [int64]160GB } }
+            Mock Get-SupportedSize { [pscustomobject]@{ SizeMax = [int64]160GB } }
         }
         It 'finishes the rest and reports it when the resize fails' {
             Mock Resize-Partition { throw 'Size Not Supported' }
@@ -1129,7 +1129,7 @@ Describe 'Invoke-Cleanup' {
             $Sync.SpaceNote | Should -BeLike '*stays free*'
         }
         It 'still forgets the setup when a setting cannot go back' {
-            Mock Get-PartitionSupportedSize { [pscustomobject]@{ SizeMax = [int64]100GB } }
+            Mock Get-SupportedSize { [pscustomobject]@{ SizeMax = [int64]100GB } }
             Mock Restore-FastStartup { throw 'no' }
             { Invoke-Cleanup } | Should -Not -Throw
             Should -Invoke Resume-BitLockerAfterUndo -Times 1
@@ -1872,7 +1872,7 @@ Describe 'Moving files' {
     BeforeEach {
         Mock Start-Sleep { }
         Mock Get-Partition { [pscustomobject]@{ DiskNumber = 0; PartitionNumber = 3 } }
-        Mock Get-PartitionSupportedSize { }
+        Mock Get-SupportedSize { }
     }
     It 'tries again when Windows gives up straight away' {
         $script:codes = [Collections.Queue]::new(@(1223, 1223, 0))

@@ -513,7 +513,7 @@ Describe 'Coming back to Windows without erasing' {
         Mock Get-RecordedPartitions { }
         Mock Get-PartitionAt { New-Part 'C' ([int64]1GB) ([int64]192GB) }
         Mock Get-WindowsPartition { New-Part 'C' ([int64]1GB) ([int64]192GB) }
-        Mock Get-PartitionSupportedSize { [pscustomobject]@{ SizeMax = [int64]200GB } }
+        Mock Get-SupportedSize { [pscustomobject]@{ SizeMax = [int64]200GB } }
         Mock Resize-Partition { }
         Mock Restore-FastStartup { }
         Mock Resume-BitLockerAfterUndo { }
