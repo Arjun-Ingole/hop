@@ -17,7 +17,7 @@ namespace Hop
 
         async Task StartAsync()
         {
-            BeginWork(new[] { new[] { Run.Gray("Checking"), Run.Black("this PC") } }, "Looking at the drive and the startup menu.");
+            BeginReading(new[] { new[] { Run.Gray("Checking"), Run.Black("this PC") } }, "Looking at the drive and the startup menu.");
             try
             {
                 engine = await Task.Run(() => new Engine());
@@ -33,8 +33,10 @@ namespace Hop
                 }
                 else if (startup.RoomPhase == "restore")
                 {
+                    reading = false;
                     await engine.RestoreRoomSettingsAsync();
                 }
+                reading = true;
                 await ChooseFirstTargetAsync();
             }
             catch (Exception ex)

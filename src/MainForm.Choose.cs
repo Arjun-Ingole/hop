@@ -283,7 +283,7 @@ namespace Hop
                 ShowChoose();
                 return;
             }
-            BeginWork(new[] { new[] { Run.Gray("Checking"), Run.Black(choice.InSentence) } }, "Asking Windows how much room it can give up. This can take a minute on a big drive.");
+            BeginReading(new[] { new[] { Run.Gray("Checking"), Run.Black(choice.InSentence) } }, "Asking Windows how much room it can give up. This can take a minute on a big drive.");
             try
             {
                 target = await engine.GetDriveSpaceAsync(choice.Id);
@@ -504,7 +504,7 @@ namespace Hop
         async Task ReplaceWindowsAsync()
         {
             var system = Current;
-            BeginWork(new[] { new[] { Run.Gray("Checking"), Run.Black("this PC") } }, "Seeing what replacing Windows would mean here.");
+            BeginReading(new[] { new[] { Run.Gray("Checking"), Run.Black("this PC") } }, "Seeing what replacing Windows would mean here.");
             FullDiskPlan plan;
             try { plan = await engine.GetFullDiskPlanAsync(system.Id, target.Id); }
             catch (Exception ex) { EndWork(); ShowCantReplaceWindows(Describe(ex)); return; }

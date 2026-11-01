@@ -58,6 +58,8 @@ namespace Hop
 
         Distro prepared;          // what the ready screen is about
         bool busy, installing, working, cancelling, showingLog;
+        bool reading;             // what's running only reads the PC, so closing can just stop it
+        string closeRefused;      // why hop wouldn't close, which stays on screen during the install
         int screen;               // goes up each time a screen is drawn, so that a late answer can tell it's been replaced
         bool fullDisk;            // set only by typing the word on the last screen of replacing Windows
         string shownStatus;
@@ -247,7 +249,7 @@ namespace Hop
         /// </summary>
         int HoldScreen()
         {
-            busy = true;
+            busy = reading = true;
             foreach (var c in new Control[] { sentence, drive, removeAll, removeInstaller, footerLink, secondary, primary }) c.Enabled = false;
             return screen;
         }
@@ -256,7 +258,7 @@ namespace Hop
         bool ReleaseScreen(int held)
         {
             if (held != screen) return false;
-            busy = false;
+            busy = reading = false;
             return true;
         }
 
@@ -297,14 +299,15 @@ namespace Hop
                 if (roomMade) try { engine.RestoreRoomSettings(); } catch { }
                 return;
             }
-            if (installing && engine.TryCancel())
+            if (reading || (installing && engine.TryCancel()))
             {
                 StopDownload();
                 RestoreRoomBeforeExit();
                 Environment.Exit(0);
             }
             e.Cancel = true;
-            note.Set("hop is changing the disk. Close it once it finishes.", Danger);
+            closeRefused = "hop is changing the disk. Close it once it finishes.";
+            note.Set(closeRefused, Danger);
         }
     }
 }

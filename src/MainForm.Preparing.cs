@@ -22,6 +22,8 @@ namespace Hop
         void BeginWork(Run[][] lines, string firstNote)
         {
             busy = working = true;
+            reading = false;
+            closeRefused = null;
             engine?.ResetProgress();
             shownStatus = null;
             Arrange(lines, firstNote, Secondary, busyLine, 28);
@@ -32,7 +34,14 @@ namespace Hop
         void EndWork()
         {
             poll.Stop();
-            busy = working = false;
+            busy = working = reading = false;
+        }
+
+        /// <summary>The same for work that only reads the PC, which closing hop can simply stop.</summary>
+        void BeginReading(Run[][] lines, string firstNote)
+        {
+            BeginWork(lines, firstNote);
+            reading = true;
         }
 
         void ShowWorkingStatus()
@@ -53,6 +62,7 @@ namespace Hop
             engine.ResetProgress();
             log.Clear();
             busy = installing = true;
+            closeRefused = null;
             cancelling = false;
             showingLog = false;
             drive.Progress = 0;
@@ -105,7 +115,7 @@ namespace Hop
                 counting
                     ? new[] { Run.Gray(StageVerbs[stage] + ","), Run.Black($"{bytes / 1e9:0.0} of {total / 1e9:0.0} GB") }
                     : new[] { Run.Gray(StageVerbs[stage]) },
-            }, $"Step {stage + 1} of {StageVerbs.Length}. You can keep using your PC while this runs.", Secondary, drive, 64);
+            }, closeRefused ?? $"Step {stage + 1} of {StageVerbs.Length}. You can keep using your PC while this runs.", closeRefused != null ? Danger : Secondary, drive, 64);
 
             SyncLog();
 
