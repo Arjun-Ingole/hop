@@ -60,9 +60,7 @@ namespace Hop
             {
                 prepared = catalog.FirstOrDefault(d => d.Id == startup.PreparedId) ?? new Distro
                 {
-                    Id = "custom",
                     Name = string.IsNullOrWhiteSpace(startup.PreparedDistro) ? "Linux" : startup.PreparedDistro,
-                    Color = Ink,
                 };
                 if (startup.Status == "installed") ShowInstalled();
                 else await ShowReadyAsync();

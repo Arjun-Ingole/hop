@@ -17,7 +17,6 @@ namespace Hop
         public string Version;
         public string Note;
         public string Source;
-        public string Strategy;
         public string Logo;
         public bool SecureBootOff;      // can't start with Secure Boot on
         public bool FullDisk;           // shown to work replacing Windows
@@ -46,12 +45,10 @@ namespace Hop
         public string Title;            // "Drive D:", "Free space"
         public string Blocker;          // why it can't be used, or null
         public string DiskName;
-        public int DiskGB;
         public bool OnWindowsDisk;
         public bool Estimated;          // only from its free space; Windows hasn't been asked how far it shrinks
         public int SizeGB;
         public int UsedGB;
-        public int FreeGB;
         public int TailFreeGB;          // unallocated space right after it
         public int UsableGB;            // how much it can give up while keeping its reserve
         public int StuckGB;             // free on it, but Windows can't release it
@@ -248,7 +245,6 @@ namespace Hop
                 Version = Get<string>(o, "Version"),
                 Note = Get<string>(o, "Note"),
                 Source = Get<string>(o, "Source"),
-                Strategy = Get<string>(o, "Strategy"),
                 Logo = Get<string>(o, "Logo"),
                 SecureBootOff = Get<bool>(o, "SecureBootOff"),
                 FullDisk = o.Properties["FullDisk"]?.Value != null,
@@ -300,12 +296,10 @@ namespace Hop
             Title = Get<string>(o, "Title"),
             Blocker = Get<string>(o, "Blocker") is string blocker && blocker.Length > 0 ? blocker : null,
             DiskName = Get<string>(o, "DiskName"),
-            DiskGB = Get<int>(o, "DiskGB"),
             OnWindowsDisk = Get<bool>(o, "OnWindowsDisk"),
             Estimated = Get<bool>(o, "Estimated"),
             SizeGB = Get<int>(o, "SizeGB"),
             UsedGB = Get<int>(o, "UsedGB"),
-            FreeGB = Get<int>(o, "FreeGB"),
             TailFreeGB = Get<int>(o, "TailFreeGB"),
             UsableGB = Get<int>(o, "UsableGB"),
             StuckGB = Get<int>(o, "StuckGB"),

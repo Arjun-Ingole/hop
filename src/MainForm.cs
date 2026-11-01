@@ -273,7 +273,7 @@ namespace Hop
 
         string NameFor(Distro d) => d != null ? d.Name : TextKit.Ellipsize(Path.GetFileNameWithoutExtension(isoPath ?? ""), Theme.Font(38, true), S(380));
 
-        Distro Current => selected ?? new Distro { Id = "custom", Name = NameFor(null), Color = Ink, Strategy = "freespace", Note = "" };
+        Distro Current => selected ?? new Distro { Id = "custom", Name = NameFor(null), Color = Ink };
 
         // --- Closing -------------------------------------------------------------------------
 
