@@ -18,6 +18,8 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         $strategy = 'freespace'
     } else {
         Assert-SystemFitsDrive $distro $Target
+        Assert-SystemFitsSpace $distro $LinuxGB
+        Assert-NoBitLocker $distro $Target
     }
     $diskChanged = $false
 
@@ -39,7 +41,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         Set-Stage 2
         $iso = Read-Iso $IsoPath $distro
         if ($FullDisk) { Assert-FullDiskIso $distro $iso }
-        $plan = Get-Plan $LinuxGB $iso.InstallerGB $Target
+        $plan = Get-Plan $LinuxGB $iso.InstallerGB $Target $iso.LiveGB
         Use-Esp {
             param($root)
             Assert-EspRoom $root "$($iso.Letter):\EFI\BOOT" $distro.EspLinuxMB
@@ -74,6 +76,11 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
 
         Set-Stage 4
         Copy-Installer $iso $letter
+        if ($plan.LiveSize) {
+            $live = Get-PartitionAt $plan.DiskNumber $plan.LiveOffset
+            Copy-LiveFiles $iso (Get-DriveLetter $live)
+            Remove-DriveLetter $live
+        }
         Update-BootConfig $distro "$letter`:\" -FullDisk:$FullDisk
         if ($FullDisk -and -not (Test-FullDiskConfig $distro "$letter`:\")) {
             throw "hop couldn't change $($distro.Name)'s startup menu to let go of the disk."
@@ -261,7 +268,7 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
         }
     } catch { Write-Log "Could not tidy the EFI system partition: $($_.Exception.Message)" }
 
-    $labels = if ($InstallerOnly) { $InstallerLabels } else { $InstallerLabels + $RootLabel, $BootLabel }
+    $labels = if ($InstallerOnly) { $InstallerLabels + $LiveLabel } else { $InstallerLabels + $LiveLabel, $RootLabel, $BootLabel }
     $hopPartitions = @(Get-HopPartitions | Where-Object { $_.Label -in $labels })
     # Before anything goes: with no state file, the neighbours say whose space it was.
     $owner = try { Get-SpaceOwner $state $hopPartitions } catch { Write-Log "Could not tell whose space it was: $($_.Exception.Message)"; $null }
@@ -275,7 +282,7 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
         Set-Status "Removing the $($found.Label) partition..."
         Remove-PartitionAt $found.Partition.DiskNumber $found.Partition.Offset
     }
-    $roles = if ($InstallerOnly) { @('installer') } else { @('installer', 'root', 'boot') }
+    $roles = if ($InstallerOnly) { @('installer', 'live') } else { @('installer', 'live', 'root', 'boot') }
     foreach ($partition in @(Get-RecordedPartitions $state $roles)) {
         Set-Status 'Removing an unfinished partition...'
         Remove-PartitionAt $partition.DiskNumber $partition.Offset

@@ -138,7 +138,10 @@ function New-FakeIso([string]$Path) {
     (New-Object Random 7).NextBytes($bytes)
     [IO.File]::WriteAllBytes("$tree\casper\filesystem.squashfs", $bytes)
     [IO.File]::WriteAllBytes("$tree\casper\vmlinuz", (New-Object byte[] 4096))
-    Set-Content "$tree\boot\grub\grub.cfg" @('menuentry "Try" {', '    linux  /casper/vmlinuz  --- quiet', '}')
+    Set-Content "$tree\boot\grub\grub.cfg" @('menuentry "Try" {', '    linux  /casper/vmlinuz  --- quiet', '}', 'menuentry "Arch" {', '    linux  /casper/vmlinuz archisobasedir=arch archisosearchuuid=2026', '}')
+    New-Item -ItemType Directory -Path "$tree\arch\x86_64" -Force | Out-Null
+    [IO.File]::WriteAllBytes("$tree\arch\x86_64\airootfs.sfs", $bytes)
+    Set-Content "$tree\arch\x86_64\airootfs.sha512" 'fake'
     Add-Type -TypeDefinition @'
 using System.IO;
 using System.Runtime.InteropServices.ComTypes;
@@ -292,6 +295,40 @@ try {
     Check 'undo: data on D: survived' ((Get-TestHash $dLetter) -eq $dHash) ''
     Check 'undo: data on the drive after it survived' ((Get-TestHash $eLetter) -eq $eHash) ''
     Check 'undo: status is none' ((Get-InstallStatus) -eq 'none') (Get-InstallStatus)
+
+    Step 'A0: Omarchy: a second partition for what FAT32 cannot hold, then undo'
+    Reset-Run
+    $beforeLive = Get-Layout $a
+    $omarchy = Get-Distro 'omarchy' ''
+    $target = "volume:$($vdiskA.Guid):$([int64]$d.Offset)"
+    $isoInfo = Read-Iso $iso $omarchy
+    Check 'its big file is kept off FAT32' ($isoInfo.LiveGB -eq 1 -and @($isoInfo.LiveFiles).Count -eq 2) $isoInfo.LiveGB
+    $plan = Get-Plan 6 $isoInfo.InstallerGB $target $isoInfo.LiveGB
+    $liveState = [pscustomobject]@{ Partitions = @(); DiskGuid = $vdiskA.Guid; DiskNumber = $plan.DiskNumber; WindowsShrunk = $false; TargetKind = $plan.Kind; TargetOffset = $plan.TargetOffset; TargetLetter = $plan.Letter; OnWindowsDisk = $true; InstallerNextToWindows = $true; FastStartupWasOn = $false; BitLockerPaused = $false }
+    Save-State $liveState
+    $installerPartition = New-LinuxSpace $plan 'freespace' $liveState | Select-Object -Last 1
+    $letter = Get-DriveLetter $installerPartition
+    Copy-Installer $isoInfo $letter
+    $live = Get-PartitionAt $plan.DiskNumber $plan.LiveOffset
+    $liveLetter = Get-DriveLetter $live
+    Copy-LiveFiles $isoInfo $liveLetter
+    Check 'the second partition is exFAT, with its label' ((Get-Volume -DriveLetter $liveLetter).FileSystemType -eq 'exFAT' -and (Get-Volume -DriveLetter $liveLetter).FileSystemLabel -eq $LiveLabel) ''
+    Check 'the big file is on it, whole' ((Get-FileHash "$liveLetter`:\arch\x86_64\airootfs.sfs").Hash -eq (Get-FileHash "$($isoInfo.Letter):\arch\x86_64\airootfs.sfs").Hash) ''
+    Check 'and not on the installer partition' (-not (Test-Path "$letter`:\arch\x86_64\airootfs.sfs")) ''
+    Check 'the rest is on the installer partition' (Test-Path "$letter`:\EFI\BOOT\BOOTX64.EFI") ''
+    Update-BootConfig $omarchy "$letter`:\"
+    Update-BootConfig $omarchy "$letter`:\"
+    $menu = Get-Content "$letter`:\boot\grub\grub.cfg" -Raw
+    Check 'the menu names the second partition, once' (([regex]::Matches($menu, "archisolabel=$LiveLabel ")).Count -eq 1 -and ([regex]::Matches($menu, 'systemd\.run=')).Count -eq 1) $menu
+    Remove-DriveLetter $live
+    Check 'hop can tell both are its own, with no letter on the second' (@(Get-HopPartitions | Where-Object { $_.Label -in $InstallerLabel, $LiveLabel }).Count -eq 2) ''
+    Remove-Item -LiteralPath $StatePath -Force
+    Check 'still, with no state file' (@(Get-HopPartitions | Where-Object { $_.Label -in $InstallerLabel, $LiveLabel }).Count -eq 2) ''
+    Save-State $liveState
+    Dismount-DiskImage -ImagePath $iso | Out-Null
+    Invoke-Cleanup
+    Check 'undo: the layout is back exactly' ((Get-Layout $a) -eq $beforeLive) "$(Get-Layout $a) vs $beforeLive"
+    Check 'undo: data on D: survived' ((Get-TestHash $dLetter) -eq $dHash) ''
 
     Step 'A1: replacing Windows: only the installer, a menu that asks for memory, undo'
     Reset-Run

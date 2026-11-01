@@ -20,7 +20,7 @@ Describe 'Catalog' {
     BeforeAll { $catalog = @(Get-Catalog) }
 
     It 'marks the systems that need Secure Boot off' {
-        @($catalog | Where-Object SecureBootOff).Id | Should -Be @('pop', 'cachyos', 'arch')
+        @($catalog | Where-Object SecureBootOff).Id | Should -Be @('pop', 'cachyos', 'arch', 'omarchy')
     }
     It 'has unique ids' {
         ($catalog.Id | Sort-Object -Unique).Count | Should -Be $catalog.Count
@@ -32,7 +32,7 @@ Describe 'Catalog' {
             $distro.Note | Should -Not -BeNullOrEmpty
             $distro.Color | Should -Match '^#[0-9A-Fa-f]{6}$'
             $distro.Strategy | Should -BeIn @('freespace', 'prepared')
-            $distro.Kind | Should -BeIn @('ubuntu', 'mint', 'pop', 'elementary', 'zorin', 'debian', 'fedora', 'ultramarine', 'cachyos', 'arch')
+            $distro.Kind | Should -BeIn @('ubuntu', 'mint', 'pop', 'elementary', 'zorin', 'debian', 'fedora', 'ultramarine', 'cachyos', 'arch', 'omarchy')
         }
     }
     It 'has a logo file for every system' {
@@ -49,14 +49,20 @@ Describe 'Catalog' {
     It 'makes an entry for a custom ISO from its file name' {
         (Get-Distro 'custom' 'C:\isos\zorin-17.iso').Name | Should -Be 'zorin-17'
     }
-    It 'leaves out the systems whose ISO has a file FAT32 cannot hold' {
+    It 'leaves out the systems whose ISO has a file FAT32 cannot hold, without a second partition' {
         $catalog.Id | Should -Not -Contain 'kubuntu'
-        $catalog.Id | Should -Not -Contain 'omarchy'
+    }
+    It 'only gives Omarchy a second partition' {
+        @($catalog | Where-Object LiveFiles).Id | Should -Be @('omarchy')
+    }
+    It 'does not offer replacing Windows with Omarchy, which nothing has shown working' {
+        ($catalog | Where-Object Id -eq 'omarchy').FullDisk | Should -BeNullOrEmpty
     }
     It 'edits the boot files of the systems that need it, with the edit they cannot start without first' {
         foreach ($distro in $catalog | Where-Object BootEdits) {
             $distro.BootConfigs | Should -Not -BeNullOrEmpty
-            if ($distro.Live) { @($distro.BootEdits.Values)[0] | Should -Match "=$InstallerLabel(\s|$)" }
+            $label = if ($distro.LiveFiles) { $LiveLabel } else { $InstallerLabel }
+            if ($distro.Live) { @($distro.BootEdits.Values)[0] | Should -Match "=$label(\s|$)" }
         }
     }
     It 'stops casper making a partition for everything that starts with it, including a chosen ISO' {
@@ -69,7 +75,7 @@ Describe 'Catalog' {
         }
     }
     It 'leaves live-boot and the others alone, which make no partition' {
-        foreach ($distro in $catalog | Where-Object Kind -in @('debian', 'fedora', 'ultramarine', 'arch', 'cachyos')) {
+        foreach ($distro in $catalog | Where-Object Kind -in @('debian', 'fedora', 'ultramarine', 'arch', 'cachyos', 'omarchy')) {
             ($distro.BootEdits.Values -join ' ') | Should -Not -BeLike '*nopersistent*'
         }
     }
@@ -147,6 +153,17 @@ Describe 'Resolve-Download' {
         $download.Url | Should -Be 'https://cdn77.cachyos.org/ISO/desktop/260809/cachyos-desktop-linux-260809.iso'
         $download.Sha256 | Should -Be $hash
     }
+    It 'takes Omarchy 4.0 from its site, with its checksum' {
+        Mock Get-WebText { '<a href="https://iso.omarchy.org/omarchy-4.0.6.iso">ISO</a> <a href="https://iso.omarchy.org/omarchy-4.0.6.iso.sha256">sum</a>' } -ParameterFilter { $Url -eq 'https://omarchy.org/' }
+        Mock Get-WebText { "$hash  omarchy-4.0.6.iso`n" } -ParameterFilter { $Url -like '*.sha256' }
+        $download = Resolve-Download (Get-Catalog | Where-Object Id -eq 'omarchy')
+        $download.Url | Should -Be 'https://iso.omarchy.org/omarchy-4.0.6.iso'
+        $download.Sha256 | Should -Be $hash
+    }
+    It 'refuses a later Omarchy, which installs in a way hop has not tried' {
+        Mock Get-WebText { '<a href="https://iso.omarchy.org/omarchy-4.5.0.iso">ISO</a>' }
+        { Resolve-Download (Get-Catalog | Where-Object Id -eq 'omarchy') } | Should -Throw '*4.5.0*only tried 4.0*'
+    }
     It 'takes the dated Arch ISO, whose name is the same on every mirror' {
         Mock Get-WebText { "$hash  archlinux-2026.10.01-x86_64.iso`n$hash  archlinux-x86_64.iso`n$('1' * 64)  archlinux-bootstrap-2026.10.01-x86_64.tar.zst`n" }
         $download = Resolve-Download (Get-Catalog | Where-Object Id -eq 'arch')
@@ -194,6 +211,20 @@ Describe 'Get-Plan' {
                 TailFree = $TailFree; UsableGB = $UsableGB
             }
         }
+    }
+    It 'puts a second partition straight after the installer, and takes its room from what Linux can have' {
+        Mock Get-SpaceInfo { New-Space ([int64]100GB) 150 }
+        $plan = Get-Plan 60 4 '' 7
+        $plan.Shrink | Should -BeFalse
+        $plan.LiveOffset | Should -Be ($plan.InstallerOffset + 4GB)
+        $plan.LiveSize | Should -Be ([int64]7GB)
+        $plan.LiveOffset + $plan.LiveSize | Should -Be $plan.FreeStart
+        { Get-Plan 140 4 '' 7 } | Should -Throw
+        { Get-Plan 139 4 '' 7 } | Should -Not -Throw
+    }
+    It 'has no second partition unless asked' {
+        Mock Get-SpaceInfo { New-Space ([int64]100GB) 150 }
+        (Get-Plan 60 8).LiveSize | Should -Be 0
     }
     It 'leaves C: alone when the free space after it is enough' {
         Mock Get-SpaceInfo { New-Space ([int64]100GB) 150 }
@@ -662,6 +693,12 @@ Describe 'Boot config' {
             }
         }
     }
+    It 'points Omarchy at its second partition and frees its disk, the same however often it runs' {
+        $omarchy = Get-CatalogEntry 'omarchy'
+        $text = Get-EditedBootConfig $omarchy 'linux /arch/boot/x86_64/vmlinuz-linux-t2 archisobasedir=arch archisosearchuuid=2026-10-19-22-18-53-00 quiet splash'
+        $text | Should -BeLike "linux /arch/boot/x86_64/vmlinuz-linux-t2 archisobasedir=arch archisolabel=$LiveLabel `"systemd.run=umount -l /run/archiso/bootmnt`" *systemd.unit=multi-user.target* quiet splash"
+        Get-EditedBootConfig $omarchy $text | Should -BeExactly $text
+    }
     It 'points CachyOS and Arch at the installer partition, and keeps their other settings' {
         Get-Edited 'cachyos' 'linux /arch/boot/x86_64/vmlinuz-linux-cachyos archisobasedir=arch archisosearchuuid=2026-08-09-15-47-03-00 cow_spacesize=10G' |
             Should -Be "linux /arch/boot/x86_64/vmlinuz-linux-cachyos archisobasedir=arch archisolabel=$InstallerLabel cow_spacesize=10G"
@@ -802,6 +839,31 @@ Describe 'Read-Iso' {
     It 'refuses the wrong file for the system picked' {
         New-IsoFiles @{ 'EFI\BOOT\BOOTX64.EFI' = 'x'; 'boot\grub2\grub.cfg' = 'root=live:CDLABEL=a' }
         { Read-Iso 'a.iso' (Get-Catalog | Where-Object Id -eq 'fedora') } | Should -Throw "*doesn't look like Fedora*"
+    }
+    Context 'Omarchy' {
+        BeforeEach {
+            $omarchy = Get-Catalog | Where-Object Id -eq 'omarchy'
+            $menu = 'linux /arch/boot/x86_64/vmlinuz-linux-t2 archisobasedir=arch archisosearchuuid=2026-10-19-22-18-53-00 quiet'
+        }
+        It 'keeps its live image apart from what goes on FAT32' {
+            New-IsoFiles @{ 'EFI\BOOT\BOOTX64.EFI' = 'x'; 'arch\x86_64\airootfs.sfs' = 'x' * 1000; 'arch\x86_64\airootfs.sha512' = 'x'; 'arch\boot\x86_64\vmlinuz-linux-t2' = 'x'; 'boot\grub\grub.cfg' = $menu }
+            $iso = Read-Iso 'a.iso' $omarchy
+            @($iso.LiveFiles.Name | Sort-Object) | Should -Be @('airootfs.sfs', 'airootfs.sha512')
+            $iso.LiveBytes | Should -BeGreaterThan 1000
+            $iso.Bytes | Should -BeLessThan 1000
+            $iso.LiveGB | Should -Be 1
+            $iso.InstallerGB | Should -Be 4
+        }
+        It 'refuses an ISO with the separate image later versions install from, before the disk changes' {
+            New-IsoFiles @{ 'EFI\BOOT\BOOTX64.EFI' = 'x'; 'arch\x86_64\airootfs.sfs' = 'x'; 'arch\x86_64\omarchy-root.img.zst' = 'x'; 'boot\grub\grub.cfg' = $menu }
+            { Read-Iso 'a.iso' $omarchy } | Should -Throw "*hasn't tried*Nothing has been changed*"
+        }
+    }
+    It 'has no second partition for anything else' {
+        New-IsoFiles @{ 'EFI\BOOT\BOOTX64.EFI' = 'x'; 'arch\x86_64\airootfs.sfs' = 'x'; 'k' = 'x'; 'boot\grub\grub.cfg' = 'linux /k archisobasedir=arch archisosearchuuid=2026' }
+        $iso = Read-Iso 'a.iso' (Get-Catalog | Where-Object Id -eq 'cachyos')
+        $iso.LiveGB | Should -Be 0
+        $iso.Bytes | Should -BeGreaterThan 0
     }
     It 'refuses a release that starts in a way hop cannot edit, before the disk changes' {
         New-IsoFiles @{ 'EFI\BOOT\BOOTX64.EFI' = 'x'; 'arch\x86_64\airootfs.sfs' = 'x'; 'boot\grub\grub.cfg' = 'linux /k archisodevice=/dev/x' }
@@ -995,6 +1057,15 @@ Describe 'Invoke-Cleanup' {
         }
         Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0; PartitionNumber = 3; Size = [int64]100GB } }
         Mock Get-PartitionSupportedSize { [pscustomobject]@{ SizeMax = [int64]100GB } }
+    }
+    It 'removes the second installer partition too, with Linux staying or not' {
+        Mock Get-HopPartitions {
+            [pscustomobject]@{ Label = 'HOPINSTALL'; Partition = [pscustomobject]@{ DiskNumber = 0; Offset = [int64]160GB } }
+            [pscustomobject]@{ Label = $LiveLabel; Partition = [pscustomobject]@{ DiskNumber = 0; Offset = [int64]164GB } }
+        }
+        Mock Test-LinuxInstalled { $true }
+        Invoke-Cleanup
+        $script:removed | Should -Be @([int64]160GB, [int64]164GB)
     }
     It 'removes every partition hop made when Linux is not installed' {
         Mock Test-LinuxInstalled { $false }
@@ -1521,13 +1592,67 @@ Describe 'Get-Steps' {
     }
 }
 
+Describe 'Assert-NoBitLocker' {
+    BeforeAll {
+        $omarchy = Get-Catalog | Where-Object Id -eq 'omarchy'
+        function New-Head([string]$Id) { [byte[]](@(0xEB, 0x58, 0x90) + [Text.Encoding]::ASCII.GetBytes($Id) + (New-Object byte[] 501)) }
+    }
+    BeforeEach {
+        Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } }
+        Mock Get-Partition { @([pscustomobject]@{ DiskNumber = 0; Offset = [int64]1MB }, [pscustomobject]@{ DiskNumber = 0; Offset = [int64]2GB }) }
+        Mock Get-LetterOf { 'C' }
+    }
+    It 'knows BitLocker by its mark, and nothing else by it' {
+        Test-BitLockerHead (New-Head '-FVE-FS-') | Should -BeTrue
+        Test-BitLockerHead (New-Head 'NTFS    ') | Should -BeFalse
+        Test-BitLockerHead (New-Object byte[] 4) | Should -BeFalse
+    }
+    It 'lets a disk through with BitLocker fully off' {
+        Mock Read-PartitionHead { New-Head 'NTFS    ' }
+        { Assert-NoBitLocker $omarchy '' } | Should -Not -Throw
+    }
+    It 'refuses BitLocker that is on or only paused, naming the drive, and says it won''t turn it off' {
+        Mock Read-PartitionHead { New-Head '-FVE-FS-' } -ParameterFilter { [int64]$Partition.Offset -eq [int64]2GB }
+        Mock Read-PartitionHead { New-Head 'NTFS    ' }
+        { Assert-NoBitLocker $omarchy '' } | Should -Throw "Drive C:*Pausing it isn't enough*finished decrypting*won't do this for you*"
+    }
+    It 'refuses when it can''t look' {
+        Mock Read-PartitionHead { throw 'no' }
+        { Assert-NoBitLocker $omarchy '' } | Should -Throw "*couldn't check*"
+    }
+    It 'doesn''t look for other systems, for which hop pauses it' {
+        Mock Read-PartitionHead { New-Head '-FVE-FS-' }
+        { Assert-NoBitLocker (Get-Catalog | Where-Object Id -eq 'arch') '' } | Should -Not -Throw
+        Should -Invoke Read-PartitionHead -Times 0
+    }
+}
+
+Describe 'Assert-SystemFitsSpace' {
+    It 'asks for what Omarchy''s installer needs, with room for its rounding' {
+        $omarchy = Get-Catalog | Where-Object Id -eq 'omarchy'
+        { Assert-SystemFitsSpace $omarchy 32 } | Should -Throw '*at least 33 GB*'
+        { Assert-SystemFitsSpace $omarchy 33 } | Should -Not -Throw
+    }
+    It 'leaves the others to the usual limit' {
+        { Assert-SystemFitsSpace (Get-Catalog | Where-Object Id -eq 'arch') 25 } | Should -Not -Throw
+    }
+}
+
+Describe 'Omarchy''s steps' {
+    It 'warns off the option that erases Windows, and says how to get back to it' {
+        $steps = Get-Steps (Get-Catalog | Where-Object Id -eq 'omarchy') 60 ([pscustomobject]@{ OnWindowsDisk = $true })
+        ($steps.Steps -join ' ') | Should -BeLike '*Free space install*Full disk install*erases Windows*60 GB*Reboot Now*'
+        ($steps.Notes -join ' ') | Should -BeLike '*limine-scan*'
+    }
+}
+
 Describe 'Assert-SystemFitsDrive' {
     BeforeEach {
         Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } }
         Mock Resolve-Target { [pscustomobject]@{ Partition = [pscustomobject]@{ DiskNumber = 1 } } }
     }
     It 'refuses <id> on a second disk, with the reason, and claims nothing it has not seen' -ForEach @(
-        @{ id = 'debian' }, @{ id = 'cachyos' }, @{ id = 'arch' }, @{ id = 'fedora' }, @{ id = 'ultramarine' }
+        @{ id = 'debian' }, @{ id = 'cachyos' }, @{ id = 'arch' }, @{ id = 'omarchy' }, @{ id = 'fedora' }, @{ id = 'ultramarine' }
     ) {
         { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Throw "*for the disk Windows is on*hasn't been tried on a second disk*"
     }
@@ -1545,7 +1670,7 @@ Describe 'Assert-SystemFitsDrive' {
     It 'tells the window which systems this is' {
         $engine = New-Object Hop.Engine
         try {
-            @($engine.GetCatalog() | Where-Object WindowsDiskOnly | ForEach-Object { $_.Id } | Sort-Object) | Should -Be @('arch', 'cachyos', 'debian', 'fedora', 'ultramarine')
+            @($engine.GetCatalog() | Where-Object WindowsDiskOnly | ForEach-Object { $_.Id } | Sort-Object) | Should -Be @('arch', 'cachyos', 'debian', 'fedora', 'omarchy', 'ultramarine')
         } finally { $engine.Dispose() }
     }
 }

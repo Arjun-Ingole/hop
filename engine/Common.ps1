@@ -26,6 +26,7 @@ $LogPath = Join-Path $LogDir ('hop-{0:yyyy-MM-dd}.log' -f (Get-Date))
 $LegacyStatePath = Join-Path $env:ProgramData 'LinuxHop\state.json'
 $InstallerLabel = 'HOPINSTALL'
 $InstallerLabels = @($InstallerLabel, 'LINUXHOP')
+$LiveLabel = 'HOPLIVE'     # the second partition, for a live image FAT32 can't hold
 $BootLabel = 'LINUXBOOT'
 $RootLabel = 'LINUXROOT'
 $EspFolder = 'EFI\hop'   # on Windows' EFI partition

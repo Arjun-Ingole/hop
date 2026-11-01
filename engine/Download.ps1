@@ -125,6 +125,15 @@ function Resolve-Download($Distro) {
             }
             throw "Could not find the CachyOS ISO on CachyOS's download servers."
         }
+        'omarchy' {
+            $m = [regex]::Match((Get-WebText 'https://omarchy.org/'), 'https://iso\.omarchy\.org/omarchy-((\d+\.\d+)\.\d+)\.iso')
+            if (-not $m.Success) { throw 'Could not find the Omarchy ISO on omarchy.org.' }
+            # Later versions install from a separate image on the medium, which is gone by the time this one's installer looks.
+            if ($m.Groups[2].Value -ne '4.0') { throw "omarchy.org now offers version $($m.Groups[1].Value), and hop has only tried 4.0." }
+            $sum = [regex]::Match((Get-WebText "$($m.Value).sha256"), '^[0-9a-f]{64}')
+            if (-not $sum.Success) { throw 'Could not find the checksum for the Omarchy ISO.' }
+            return New-Download $m.Value $sum.Value 0
+        }
         'arch' {
             $base = 'https://geo.mirror.pkgbuild.com/iso/latest/'
             $m = [regex]::Match((Get-WebText ($base + 'sha256sums.txt')), '(?m)^([0-9a-f]{64}) \*?\s*(archlinux-\d{4}\.\d{2}\.\d{2}-x86_64\.iso)\s*$')
