@@ -25,6 +25,10 @@ function Read-Iso([string]$Path, $Distro) {
     $letter = Mount-Iso $Path
     $root = "$letter`:\"
     $files = @(Get-ChildItem -LiteralPath $root -Recurse -Force -File)
+    # What's too big for FAT32 gets its own partition. Everything else goes on the installer partition, as ever.
+    $base = (Get-Item -LiteralPath $root).FullName
+    $liveFiles = @(if ($Distro.LiveFiles) { $files | Where-Object { $_.FullName.Substring($base.Length).TrimStart('\') -like $Distro.LiveFiles } })
+    if ($liveFiles.Count) { $files = @($files | Where-Object { $_.FullName -notin $liveFiles.FullName }) }
 
     if (-not (Test-Path -LiteralPath (Join-Path $root 'EFI\BOOT\BOOTX64.EFI'))) {
         throw 'This ISO cannot start on a modern (UEFI) PC.'
@@ -42,6 +46,9 @@ function Read-Iso([string]$Path, $Distro) {
         if (-not $live) {
             throw 'This ISO is not an Ubuntu-style live system. hop only supports Ubuntu-based systems (Ubuntu, Mint, elementary, Pop!_OS, Zorin...).'
         }
+    }
+    if ($Distro.UntriedFile -and (Test-Path -LiteralPath (Join-Path $root $Distro.UntriedFile))) {
+        throw "This version of $($Distro.Name) installs in a way hop hasn't tried, so hop can't say it would work. Nothing has been changed. Try a different system."
     }
     if (-not (Test-BootConfigKnown $Distro $root)) {
         throw "This version of $($Distro.Name) starts in a way hop doesn't know yet, so it couldn't start from the installer partition. Nothing has been changed. Try a different system."
@@ -61,6 +68,7 @@ function Read-Iso([string]$Path, $Distro) {
     if ($stopped) { throw $stopped }
 
     $bytes = ($files | Measure-Object -Property Length -Sum).Sum
+    $liveBytes = [int64]($liveFiles | Measure-Object -Property Length -Sum).Sum
     $installerGB = [int][math]::Max([double]4, [math]::Ceiling(($bytes + 512MB) / 1GB))
     # Windows can't format a FAT32 partition larger than 32 GB.
     if ($installerGB -gt 32) { throw "This ISO is too big: its $installerGB GB won't fit on a FAT32 installer partition." }
@@ -68,5 +76,8 @@ function Read-Iso([string]$Path, $Distro) {
         Letter      = $letter
         Bytes       = [int64]$bytes
         InstallerGB = $installerGB
+        LiveFiles   = $liveFiles
+        LiveBytes   = $liveBytes
+        LiveGB      = if ($liveBytes) { [int][math]::Ceiling(($liveBytes + 512MB) / 1GB) } else { 0 }
     }
 }

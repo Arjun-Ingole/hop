@@ -49,10 +49,11 @@ function Get-StuckGB([int64]$FreeBytes, $Space, [int64]$Reserve = $WindowsReserv
 
 $ShrinkAdvice = "open hop again and click Make room, which clears what's in the way."
 
-function Get-Plan([int]$LinuxGB, [int]$InstallerGB, [string]$Target) {
+# $LiveGB is the second partition, straight after the installer, for a system whose live image FAT32 can't hold.
+function Get-Plan([int]$LinuxGB, [int]$InstallerGB, [string]$Target, [int]$LiveGB = 0) {
     $space = Get-SpaceInfo $Target
     $drive = if ($space.Name) { $space.Name } else { 'C:' }
-    $maxLinux = $space.UsableGB - $InstallerGB
+    $maxLinux = $space.UsableGB - $InstallerGB - $LiveGB
     # Replacing Windows only needs the installer: Linux gets the disk once it's been erased.
     if ($LinuxGB -eq 0 -and $maxLinux -lt 0) {
         if ($space.Kind -eq 'gap') { throw "That free space is too small for the installer. It needs $(-$maxLinux) GB more. Choose another drive." }
@@ -71,7 +72,7 @@ function Get-Plan([int]$LinuxGB, [int]$InstallerGB, [string]$Target) {
     $windowsEnd = [int64]($c.Offset + $c.Size)
     $regionEnd = [int64]([math]::Floor(($windowsEnd + $space.TailFree) / 1MB) * 1MB)
     $linuxStart = [int64]($regionEnd - [int64]$LinuxGB * 1GB)
-    $installerOffset = [int64]($linuxStart - [int64]$InstallerGB * 1GB)
+    $installerOffset = [int64]($linuxStart - [int64]($InstallerGB + $LiveGB) * 1GB)
     $shrink = $installerOffset -lt $windowsEnd
     [pscustomobject]@{
         DiskNumber      = $c.DiskNumber
@@ -82,6 +83,8 @@ function Get-Plan([int]$LinuxGB, [int]$InstallerGB, [string]$Target) {
         LinuxGB         = $LinuxGB
         InstallerOffset = $installerOffset
         InstallerSize   = [int64]$InstallerGB * 1GB
+        LiveOffset      = [int64]($installerOffset + [int64]$InstallerGB * 1GB)
+        LiveSize        = [int64]$LiveGB * 1GB
         TargetOffset    = [int64]$c.Offset
         Kind            = if ($space.Kind) { $space.Kind } else { 'volume' }
         Letter          = $space.Letter
@@ -154,6 +157,14 @@ function New-LinuxSpace($Plan, [string]$Strategy, $State) {
         Remove-DriveLetter $root
     }
 
+    if ($Plan.LiveSize) {
+        Set-Status 'Creating the partition for the live system...'
+        $live = New-Partition -DiskNumber $Plan.DiskNumber -Offset $Plan.LiveOffset -Size $Plan.LiveSize
+        $State.Partitions += [pscustomobject]@{ Role = 'live'; Offset = $live.Offset; Size = $live.Size }
+        Save-State $State
+        Format-Volume -Partition $live -FileSystem exFAT -NewFileSystemLabel $LiveLabel -Confirm:$false -Force | Out-Null
+    }
+
     Set-Status 'Creating the installer partition...'
     $installer = New-Partition -DiskNumber $Plan.DiskNumber -Offset $Plan.InstallerOffset -Size $Plan.InstallerSize
     $State.Partitions += [pscustomobject]@{ Role = 'installer'; Offset = $installer.Offset; Size = $installer.Size }
@@ -162,20 +173,40 @@ function New-LinuxSpace($Plan, [string]$Strategy, $State) {
     $installer
 }
 
-function Copy-Installer($Iso, [string]$Target) {
-    $volume = Get-Volume -DriveLetter $Target
-    $startFree = $volume.SizeRemaining
-    # robocopy instead of Copy-Item: it keeps hidden folders like .disk that the live system needs.
-    $proc = Start-Process -FilePath robocopy.exe -PassThru -WindowStyle Hidden -ArgumentList @(
-        "$($Iso.Letter):\", "$Target`:\", '/E', '/R:2', '/W:2', '/NP', '/NFL', '/NDL', '/NJH', '/NJS')
+# Runs robocopy, showing how far it's got from how much room is left on the drive it's filling.
+function Invoke-CopyWatched([string[]]$Arguments, [string]$Target, [int64]$Total, [string]$What) {
+    $startFree = (Get-Volume -DriveLetter $Target).SizeRemaining
+    $proc = Start-Process -FilePath robocopy.exe -PassThru -WindowStyle Hidden -ArgumentList $Arguments
     $null = $proc.Handle
     while (-not $proc.HasExited) {
         $copied = $startFree - (Get-Volume -DriveLetter $Target).SizeRemaining
-        $Sync.Status = 'Copying the installer... {0:N1} of {1:N1} GB' -f ($copied / 1GB), ($Iso.Bytes / 1GB)
-        Set-ByteProgress ([math]::Max([int64]0, [int64]$copied)) $Iso.Bytes
+        $Sync.Status = 'Copying {0}... {1:N1} of {2:N1} GB' -f $What, ($copied / 1GB), ($Total / 1GB)
+        Set-ByteProgress ([math]::Max([int64]0, [int64]$copied)) $Total
         Start-Sleep -Milliseconds 700
     }
-    if ($proc.ExitCode -ge 8) { throw "Copying the installer files failed (robocopy code $($proc.ExitCode))." }
+    if ($proc.ExitCode -ge 8) { throw "Copying $What failed (robocopy code $($proc.ExitCode))." }
+}
+
+# The files that went on the second partition instead of the installer's, where the ISO has them.
+function Copy-LiveFiles($Iso, [string]$Target) {
+    $sourceRoot = "$($Iso.Letter):\"
+    $targetRoot = "$Target`:\"
+    $folder = Split-Path $Iso.LiveFiles[0].FullName.Substring($sourceRoot.Length) -Parent
+    $names = @($Iso.LiveFiles | ForEach-Object { $_.Name })
+    Invoke-CopyWatched (@((Join-Path $sourceRoot $folder), (Join-Path $targetRoot $folder)) + $names + @('/R:2', '/W:2', '/NP', '/NFL', '/NDL', '/NJH', '/NJS')) $Target $Iso.LiveBytes 'the live system'
+    foreach ($file in $Iso.LiveFiles) {
+        $copy = Get-Item -LiteralPath (Join-Path $targetRoot $file.FullName.Substring($sourceRoot.Length)) -Force -ErrorAction SilentlyContinue
+        if (-not $copy -or $copy.Length -ne $file.Length) { throw "$($file.Name) did not copy to the second installer partition." }
+    }
+    Write-Log 'Live system copied and checked.'
+}
+
+function Copy-Installer($Iso, [string]$Target) {
+    # robocopy instead of Copy-Item: it keeps hidden folders like .disk that the live system needs.
+    $arguments = @("$($Iso.Letter):\", "$Target`:\", '/E', '/R:2', '/W:2', '/NP', '/NFL', '/NDL', '/NJH', '/NJS')
+    $live = @($Iso.LiveFiles | Where-Object { $_ } | ForEach-Object { $_.FullName })
+    if ($live.Count) { $arguments += @('/XF') + $live }
+    Invoke-CopyWatched $arguments $Target $Iso.Bytes 'the installer'
 
     # Check file by file. Comparing totals doesn't work: Windows adds its own
     # "System Volume Information" folder to every drive with a letter.
@@ -183,6 +214,7 @@ function Copy-Installer($Iso, [string]$Target) {
     $targetRoot = "$Target`:\"
     $missing = New-Object System.Collections.Generic.List[string]
     foreach ($file in Get-ChildItem -LiteralPath $sourceRoot -Recurse -Force -File) {
+        if ($file.FullName -in $live) { continue }
         $relative = $file.FullName.Substring($sourceRoot.Length)
         $copy = Get-Item -LiteralPath (Join-Path $targetRoot $relative) -Force -ErrorAction SilentlyContinue
         if (-not $copy -or $copy.Length -ne $file.Length) { $missing.Add($relative) }

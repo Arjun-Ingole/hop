@@ -14,6 +14,7 @@ function Test-LooksLikeHops($Volume) {
     $entries = try { @(Get-VolumeEntries $Volume) } catch { Write-Log "Could not look inside $($Volume.FileSystemLabel): $($_.Exception.Message)"; return $false }
     $entries = @($entries | Where-Object { $_ -notin @('System Volume Information', '$RECYCLE.BIN') })
     if (-not $entries.Count) { return $true }
+    if ($Volume.FileSystemLabel -eq $LiveLabel) { return $entries -contains 'arch' }
     $Volume.FileSystemLabel -in $InstallerLabels -and $entries -contains 'EFI'
 }
 
@@ -26,9 +27,9 @@ function Get-HopPartitions {
     foreach ($disk in @(Get-HopDisks)) {
         foreach ($partition in @(Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue)) {
             $volume = try { $partition | Get-Volume -ErrorAction SilentlyContinue } catch { $null }
-            if (-not $volume -or $volume.FileSystemLabel -notin ($InstallerLabels + $BootLabel, $RootLabel)) { continue }
+            if (-not $volume -or $volume.FileSystemLabel -notin ($InstallerLabels + $BootLabel, $RootLabel, $LiveLabel)) { continue }
             if ($disk.Number -ne $windowsDisk) {
-                $format = if ($volume.FileSystemLabel -eq $RootLabel) { 'exFAT' } else { 'FAT32' }
+                $format = if ($volume.FileSystemLabel -in $RootLabel, $LiveLabel) { 'exFAT' } else { 'FAT32' }
                 if ($volume.FileSystemType -ne $format) { continue }
             }
             $isRecorded = @($recorded | Where-Object { [int64]$_.Offset -eq [int64]$partition.Offset -and [int64]$_.Size -eq [int64]$partition.Size }).Count -gt 0
@@ -47,7 +48,7 @@ function Get-LeftoverList {
         "**$Name**, $([int][math]::Round([int64]$Partition.Size / 1GB)) GB$(if ($letter) { ", drive $letter`:" }), on $disk"
     }
     foreach ($found in @(Get-HopPartitions)) { & $describe $found.Partition $found.Label }
-    foreach ($partition in @(Get-RecordedPartitions (Read-State) @('installer', 'root', 'boot'))) { & $describe $partition 'An unfinished partition' }
+    foreach ($partition in @(Get-RecordedPartitions (Read-State) @('installer', 'live', 'root', 'boot'))) { & $describe $partition 'An unfinished partition' }
     foreach ($id in @(Get-FirmwareEntries) + @(Get-BcdEntries)) { if ($null -ne $id) { "hop's entry in the startup menu" } }
 }
 
