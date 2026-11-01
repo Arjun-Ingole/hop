@@ -1912,7 +1912,8 @@ Describe 'Whether hibernation is on' {
     }
 }
 
-Describe 'Reopening after Make room' {
+Describe 'Make room''s tasks and copy' {
+    BeforeAll { $RoomPath = Join-Path $TestDrive 'make-room.json' }
     BeforeEach {
         Remove-Item $RoomPath -ErrorAction SilentlyContinue
         Mock Test-HibernationOn { $true }
