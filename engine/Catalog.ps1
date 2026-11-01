@@ -217,7 +217,7 @@ function Get-Catalog {
         New-UbuntuFlavor 'ubuntu-unity' 'Ubuntu Unity' 'Classic Ubuntu' '#5A06C3'
         New-MintEdition 'xfce' 'Linux Mint Xfce' 'Lighter Mint'
         New-MintEdition 'mate' 'Linux Mint MATE' 'Traditional'
-        New-UbuntuFlavor 'edubuntu' 'Edubuntu' 'For students' '#A30B00'
+        New-UbuntuFlavor 'edubuntu' 'Edubuntu' 'For students' '#A30B00' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 8; Steps = $UbuntuErase } }
         New-UbuntuFlavor 'ubuntustudio' 'Ubuntu Studio' 'For creators' '#009BF9'
     )
 }
