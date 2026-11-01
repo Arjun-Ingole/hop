@@ -124,9 +124,10 @@ That leaves more free before the installer than after it, which matters below. T
 | System | Driven by | Went where | EFI partition | Started from disk | Windows' EFI files, and the partitions |
 | --- | --- | --- | --- | --- | --- |
 | Omarchy 4.0.6 | Its real wizard on `tty1`, with keys pressed, as the steps say, without encryption | **The 129 GB before the installer**, the largest free space, not hop's 60 GB. Its screen said `Install Omarchy in the 129.0GB of free space` | Its own new 2 GB one, on the second disk | Yes: `Boot0009 "Limine"` from the second disk first in `BootOrder`, then the login screen in its journal and a screenshot | Unchanged. MSR, C:, recovery, `HOPINSTALL` and `HOPLIVE` byte for byte, after the install and the restart |
-| Fedora 44 | Anaconda's `--cmdline` mode with a kickstart: `ignoredisk --only-use=nvme1n1`, `clearpart --none`, `autopart`. Its graphical screens weren't seen | The 133 GB before the installer, not hop's 60 GB | Its own new 600 MB one, on the second disk, with a 2 GB `/boot` | Yes: `Boot000A "Fedora Linux"` from the second disk first in `BootOrder`, root on the second disk, and `Windows Boot Manager (on /dev/nvme0n1p1)` in its menu | Unchanged. MSR, C:, recovery and `HOPINSTALL` byte for byte, after both |
+| Fedora 44 | Anaconda's `--cmdline` mode with a kickstart: `ignoredisk --only-use=nvme1n1`, `clearpart --none`, `autopart`. Its graphical screens weren't seen | The 133 GB before the installer, not hop's 60 GB | Its own new 600 MB one, on the second disk, with a 2 GB `/boot` | Yes: `Boot000A "Fedora Linux"` from the second disk first in `BootOrder`, root on the second disk, and `Windows Boot Manager (on /dev/nvme0n1p1)` in its menu. The kickstart left it at `multi-user.target`, so it stopped at a text login and its desktop wasn't seen | Unchanged. MSR, C:, recovery and `HOPINSTALL` byte for byte, after both |
 | Ultramarine 44 | The same | The same, 133 GB | The same | Yes: `Boot000A "Ultramarine Linux"`, and a screenshot of its own setup at **Language**, which waits there, so the test's marker never ran. Its menu wasn't read | The same |
 | Arch 2026.10.01 | `archinstall --silent` with a `manual_partitioning` config that says what its screens would. Its real screens were read as far as **Select disks for the installation**, where Space marked both disks | hop's 60 GB, as ext4 | **Windows'**, unformatted, at `/boot/efi`. GRUB's files add about 18 MB there | Yes: `Boot000A "GRUB"` from Windows' EFI partition first in `BootOrder`, root on the second disk, `Windows Boot Manager` next | Unchanged. MSR, C: and recovery byte for byte. `HOPINSTALL` isn't: see below |
+| Debian 13.7, CachyOS | Not finished. A script read their real Calamares screens and clicked, but it chose the wrong disk or field, and nothing was installed | | | No | Still refused on a second disk |
 
 **`HOPINSTALL` changes when Arch starts.** Its copied `systemd-boot` adds a 32-byte `loader/random-seed`. In three runs, on either disk, that was the only file that differed, and 86 bytes in six sectors of the partition. Nothing else writes to it, and nothing reads it after the install.
 
@@ -140,6 +141,12 @@ The same, with one 130 GB disk: EFI partition, reserved partition, C:, `HOPINSTA
 | System | Driven by | Went where | Started from disk | Windows' EFI files, and the partitions |
 | --- | --- | --- | --- | --- |
 | Arch 2026.10.01 | The same config, as `archinstall --silent` | hop's 60 GB, as ext4, with `/boot/efi` on the existing EFI partition | Yes: `Boot0009 "GRUB"` first in `BootOrder`, root on the new partition, `Windows Boot Manager` next | Unchanged. MSR, C: and recovery byte for byte, and `HOPINSTALL` apart from `loader/random-seed` |
+| Zorin OS 18.1 | Ubiquity's real screens under a small X server, then its `noninteractive` mode | **Nothing installed, either way.** See below | No | Unchanged, but nothing tried to change them |
+| Debian 13.7, CachyOS | Their real Calamares screens, as above | Nothing installed: the script didn't finish the partition screen | No | Unchanged, but nothing tried to change them |
+
+**Zorin OS's steps don't match its installer, when it starts from the disk it's installing to.** `Installation type` went straight to its manual screen, titled `Something else`, with no option to install alongside Windows. It said: `Your installation medium is on /dev/nvme0n1p5. You will not be able to create, delete, or resize partitions on this disk, but you may be able to install to existing partitions there.` hop's steps ask for the alongside option, then for **+** on that screen. `noninteractive` mode stopped at `No root file system is defined`. The erase in the first table worked because that copy to memory lets go of the disk. Using it next to Windows wasn't tested to the end. Linux Mint has the same installer, and its run didn't reach this screen, so it isn't known either way.
+
+The other results above are from runs whose partition checksums were read. Runs on a second kind of runner weren't counted: its loop devices didn't give hop's partitions, so they checked nothing.
 
 ## Testing for real
 
@@ -185,7 +192,7 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] Open a second copy of hop: refused
 - [ ] Click **Later**, then restart Windows yourself: Windows starts, not the installer
 - [ ] Turn on Controlled Folder Access: making partitions still works, or the error explains why
-- [ ] Linux Mint's installer works when run from the installer partition
+- [ ] Linux Mint's installer works when run from the installer partition. Zorin OS's said it couldn't create partitions on that disk: see above
 - [ ] Plug in a USB stick with an Ubuntu ISO written to it: warned before starting, refused at restart
 - [ ] Click Cancel as "Making room" begins: either it cancels with the disk untouched, or the install carries on
 
