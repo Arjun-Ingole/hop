@@ -140,9 +140,9 @@ class Vm:
         os.makedirs(os.path.join(OUT, 'lapse'), exist_ok=True)
         Agents.vm = self
         socketserver.ThreadingTCPServer.allow_reuse_address = True
-        server = socketserver.ThreadingTCPServer(('127.0.0.1', PORT), Agents)
-        server.daemon_threads = True
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.server = socketserver.ThreadingTCPServer(('127.0.0.1', PORT), Agents)
+        self.server.daemon_threads = True
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
     # --- Starting and stopping ---------------------------------------------------------
 
@@ -359,8 +359,8 @@ def build_image(args):
     vm = Vm(memory_gb=8)
     attach_live(vm)
     vm.start(disk, vars_fd, tpm, cds=[args.iso, unattend], boot_from_cd=True)
-    # "Press any key to boot from CD or DVD", once.
-    for second in range(60):
+    # "Press any key to boot from CD or DVD", once. Not for long: Setup's Cancel button comes next.
+    for second in range(20):
         vm.key('spc')
         time.sleep(1)
     vm.shot('setup-started')
