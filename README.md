@@ -34,9 +34,10 @@ first.
   hop has seen it erase a disk and start again afterwards.
 
 **Systems:** elementary OS, Ubuntu and its flavours (Budgie, Xubuntu, Lubuntu, Cinnamon, Unity, Edubuntu,
-Studio), Linux Mint, Pop!_OS, Zorin OS, Debian, Fedora Workstation, Ultramarine, CachyOS and Arch Linux.
-Other Ubuntu-based ISOs should work too, if you choose the file yourself. Kubuntu and Omarchy aren't
-supported, because their ISOs have a file too big for FAT32. CachyOS, Arch and Pop!_OS need Secure Boot off.
+Studio), Linux Mint, Pop!_OS, Zorin OS, Debian, Fedora Workstation, Ultramarine, CachyOS, Arch Linux and Omarchy.
+Other Ubuntu-based ISOs should work too, if you choose the file yourself. Kubuntu isn't
+supported, because its ISO has a file too big for FAT32. CachyOS, Arch, Omarchy and Pop!_OS need Secure Boot off.
+Omarchy also needs BitLocker fully off on its disk, not paused, and hop refuses until it is. hop won't turn it off for you.
 
 **Needs:** Windows 10 (1803 or newer) or 11, on a UEFI PC with a GPT disk, which is nearly every PC sold with
 them. Linux has to go on a disk inside the PC, not a USB drive.

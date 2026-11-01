@@ -9,6 +9,10 @@
   its size and every drive on it that would go, then asks you to type ERASE. hop itself still only makes the
   installer: the Linux installer does the erasing, when you tell it to. Undo works until then.
   It needs enough memory to hold the ISO with 4 GB left over, and says so if there isn't.
+- Omarchy 4.0, next to Windows. Its 6 GB file doesn't fit on the installer partition, so hop makes a second one for it. It needs Secure Boot off, and
+  BitLocker fully off on its disk, because its installer refuses even a paused one. hop checks before the download and won't turn it off for you. A full install
+  and restart worked in a virtual PC. Afterwards the PC starts Omarchy, and its menu doesn't list Windows until you add it. Later versions of Omarchy
+  are refused until they've been tried.
 - Zorin OS, Debian, Fedora Workstation, Ultramarine, CachyOS and Arch Linux. CachyOS and Arch need Secure
   Boot off, as they say when picked, and Arch installs from a text prompt.
 - Fedora and Ultramarine no longer need a command typed in Terminal. Their installer can now use the drive

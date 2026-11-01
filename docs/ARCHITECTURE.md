@@ -17,9 +17,8 @@ The same layout works next to any drive, or at the end of free space. See [Where
 
 Three things limit what it can install:
 
-- **FAT32 can't hold a file of 4 GB or more,** which rules out the ISOs of Kubuntu and Omarchy, whose
-  `airootfs.sfs` is 6.1 GB. Omarchy's installer also hides the disk it started from, so it couldn't
-  use free space next to the installer, and it refuses a disk with BitLocker on it, even paused.
+- **FAT32 can't hold a file of 4 GB or more,** which rules out Kubuntu's ISO. Omarchy's has the same problem,
+  with a 6.1 GB `airootfs.sfs`, and gets a second partition. See [Omarchy](#omarchy).
 - **The firmware has to start it.** Many firmwares only start files from the EFI system partition, so
   the ISO's signed boot loader is copied to `\EFI\hop` there. It then has to find the installer partition,
   and how it does that depends on the system.
@@ -81,6 +80,7 @@ A failure in steps 4 to 6 runs `Invoke-Cleanup`, which puts everything back.
 | What | Where | How it's found |
 | --- | --- | --- |
 | Installer partition | After the chosen drive | Label `HOPINSTALL` |
+| Second installer partition (Omarchy) | After the installer | Label `HOPLIVE` |
 | Linux partitions (`prepared` systems) | After the installer | Labels `LINUXBOOT`, `LINUXROOT` |
 | Boot loader copy | `\EFI\hop` on Windows' EFI partition | Fixed path |
 | Startup entry | UEFI variables | `(hop)` in its name |
@@ -128,6 +128,7 @@ Other systems differ in steps 2, 3 and 5. The catalog holds what differs (`Live`
 | Fedora 44, Ultramarine 44 | shim and GRUB, Microsoft and Fedora | `grub.cfg` next to GRUB, by label | `root=live:LABEL=HOPINSTALL` |
 | CachyOS | GRUB, unsigned | Its own built-in config, by a marker file | `archisolabel=HOPINSTALL` |
 | Arch Linux | systemd-boot, unsigned | See below | `archisolabel=HOPINSTALL` |
+| Omarchy 4.0 | GRUB, unsigned | Its own built-in config, by a marker file | `archisolabel=HOPLIVE`. See [Omarchy](#omarchy) |
 
 Fedora's and Ultramarine's installer, Anaconda, protects the whole disk behind `/run/initramfs/live`,
 and so refuses the disk holding the installer partition. So `Get-DracutBoot` adds kernel arguments that
@@ -171,6 +172,50 @@ A problem from step 3 onwards stops at GRUB or the Linux console. **Coming strai
 means step 1 or 2 failed, or the firmware never tried:** firmware moves on to the next startup entry
 when a loader is refused or exits. Firmware clears `BootNext` as it starts, so one still set after
 coming back means it never tried, which is what `Test-BootNextIgnored` looks for.
+
+## Omarchy
+
+Omarchy's 4.0.6 ISO had three things in the way. Each was tried on the real ISO. See [Testing](TESTING.md).
+
+**A 6.1 GB file.** `Read-Iso` keeps the catalog's `LiveFiles` apart. They go on a second partition straight after the
+installer, formatted exFAT and labelled `HOPLIVE`, and the rest goes on FAT32 as ever. GRUB only needs FAT32, for the
+kernel and initramfs. Archiso only needs the second partition, which `archisolabel=HOPLIVE` names. Its initramfs has
+`exfat` and `ntfs3` modules, and both were seen working. exFAT was chosen because hop already formats `LINUXROOT` that way.
+
+**A disk it won't offer.** `disk_form` in `/root/configurator` leaves out the disk behind `/run/archiso/bootmnt`. Both ways round
+this worked:
+
+| | `systemd.run=umount -l` | `copytoram` |
+| --- | --- | --- |
+| The disk is offered | Yes: the mount point has gone | Yes: archiso unmounts it |
+| Memory | Worked at 8 GB | Copies 5.8 GB to a tmpfs limited to 75% of memory. Worked at 12 GB |
+| Disk busy | Yes, the image is still read from `HOPLIVE` | No: `blockdev --rereadpt` works |
+
+hop uses the first, as it does for Fedora, because the second would rule out PCs with 8 GB. Omarchy adds its partitions
+one at a time, which a busy disk allows. So **hop has taken away what stopped Full disk install reaching this disk.** It's where
+the cursor starts on that screen, so the steps warn about it, and it still asks for confirmation. With this route it's also
+erasing the image it's running from. Nothing has tried that, and hop doesn't offer replacing Windows with Omarchy.
+
+**BitLocker.** `run_partition_decide` reads each partition on the disk for `-FVE-FS-`, and stops if it finds one. That mark stays
+until the drive has finished decrypting, so hop's pause doesn't help. `Assert-NoBitLocker` makes the same check before the download,
+and refuses in plain words. Turning it off is the owner's choice, and it can take hours. A partition hop can't read counts as refused.
+
+**The EFI partition doesn't matter here.** Omarchy never uses Windows' for itself: it always makes its own 2 GB one, `OMARCHY_EFI`, then
+`OMARCHY_ROOT`, in the largest free space on the disk, and needs 32 GB of that, which `MinGB` turns into 33 for rounding. Limine goes on its
+own partition and comes first in the firmware's boot order. Two things to know:
+
+- **Its menu doesn't list Windows.** That's what Omarchy's manual says, with `limine-scan` to add it. Until then Windows is in the
+  firmware's boot menu. The note under the steps says so, since hop's own cleanup is in Windows.
+- **Starting it writes one thing to Windows' EFI partition.** `\loader\random-seed`, 32 bytes, appeared there on the first start. Nothing in the
+  journal mounted that partition, so it looks to come from before the kernel, though what wrote it wasn't pinned down. Windows' own files were
+  unchanged. Undo doesn't remove it.
+
+**4.5 will need looking at again.** Omarchy's source after 4.0.6 installs from `arch/x86_64/omarchy-root.img.zst`, under `/run/archiso/bootmnt`,
+which neither route above leaves there. So `Resolve-Download` only takes 4.0 and `Read-Iso` refuses an ISO with that file. **When omarchy.org
+moves on, hop stops offering a download until it's tried again**, which the weekly catalog check will show.
+
+**Installing Arch first, then Omarchy, isn't an option.** Its online installer was removed in June 2026. `omarchy.org/install` now prints that
+it installs from its ISO.
 
 ## Casper and the free space
 

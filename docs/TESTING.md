@@ -93,6 +93,26 @@ consoles stopped at `Starting initrd-switch-root.service`, with no `Welcome to U
 didn't happen again. That run started the installed system with `console=ttyS0,115200 console=tty0 splash`, and the run
 above without them, so that exact setup hasn't been repeated.
 
+## Omarchy, in a virtual PC
+
+On a GitHub Actions runner, in QEMU with OVMF, on an 80 GB NVMe disk: a 100 MB EFI partition, an NTFS "C:", 1 GB FAT32 `HOPINSTALL`, 8 GB `HOPLIVE`, then
+free space. The menu went through the engine's `Update-BootConfig`, and started through `Boot0042` and `BootNext` as hop writes them. It's the
+real 4.0.6 ISO, by its checksum, and its real wizard on `tty1`: a script pressed keys and read `/dev/vcs1` back over the serial port. It chose the disk,
+**Free space install** and the rest, as the steps say.
+
+| Second partition | Letting go of the disk | Encrypted | Memory | Installed in | First start |
+| --- | --- | --- | --- | --- | --- |
+| exFAT | `umount -l` | No | 8 GB | About 2 minutes | Login screen, `Reached target Graphical Interface` |
+| exFAT | `copytoram` | Yes, with the password typed at its prompt | 12 GB | About 2 minutes | Omarchy's desktop, which logs in by itself after that password |
+| NTFS | `copytoram` | No | 12 GB | About 2 minutes | Login screen, `Reached target Graphical Interface` |
+
+In all three, the NTFS, `HOPINSTALL` and `HOPLIVE` partitions came through byte for byte, after the install and after the restart, and
+Windows' EFI files were unchanged. Each check is from the disk image or the installed system's journal, not the job's result.
+
+**What this doesn't show:** `HOPLIVE` was made by `mkfs.exfat`, not Windows. `tests/Probe-VirtualDisks.ps1` shows that Windows makes it and copies to it, but
+no Linux has mounted one made by Windows. There's no real Windows, so `limine-scan` wasn't run, and neither was Windows started afterwards. BitLocker's refusal is
+only tested by unit tests, and Secure Boot wasn't turned on. hop's own screens and Undo after this install haven't been run either.
+
 ## Testing for real
 
 Use a virtual machine, not a PC you care about. It has to use UEFI:
@@ -115,6 +135,8 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] Windows with no partition after C:: Ubuntu's live system makes no `writable` partition
 - [ ] Fresh Windows: install a system whose boot menu hop changes (Fedora, CachyOS or Arch) through to a working Linux
 - [ ] Fedora or Ultramarine: click through **Share disk with other operating systems**, which automated tests don't reach
+- [ ] Omarchy with BitLocker on, then paused: refused before the download. Then fully off: installs, and Windows starts from the firmware's boot menu and after `limine-scan`
+- [ ] Omarchy: the live system starts from a `HOPLIVE` that Windows formatted
 - [ ] Windows still starts afterwards, from the firmware's boot menu
 
 **When it goes wrong**
