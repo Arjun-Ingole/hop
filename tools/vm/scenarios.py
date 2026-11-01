@@ -169,7 +169,37 @@ class Bench:
         return vm, Session(vm)
 
 
+def stream_output(tag):
+    """Sends what's printed to the live branch once a minute, while the probe is being written."""
+    import sys
+    from live import Live
+    live = Live.from_environment()
+    if not live:
+        return
+    lines = []
+    real = sys.stdout
+
+    class Tee:
+        def write(_, text):
+            lines.append(text)
+            real.write(text)
+
+        def flush(_):
+            real.flush()
+
+    sys.stdout = Tee()
+
+    def push():
+        while True:
+            time.sleep(60)
+            live.push(f'log-{tag}.txt', ''.join(lines).encode())
+
+    import threading
+    threading.Thread(target=push, daemon=True).start()
+
+
 def main(args):
+    stream_output('-'.join(args.scenarios))
     bench = Bench(secure_boot=not args.no_secure_boot)
     failed = False
     try:
