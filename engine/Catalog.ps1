@@ -127,6 +127,13 @@ function Get-Catalog {
         "Select the drive with the {GB} GB hop set aside and choose **Share disk with other operating systems**."
         'If it warns that **/boot/efi** is smaller than recommended, carry on: hop has checked there is room.'
         "Don't choose **Use entire disk**. The installer is running from this drive.")
+    # With only that drive chosen, Anaconda makes a new EFI partition and /boot there, and fills that drive's largest free space.
+    $AnacondaSecondDisk = @(
+        'On the welcome screen, choose **Not Now**.'
+        'Open the install app from the dock, then pick your language.'
+        "Select only **{DISK}**, not the disk Windows is on, and choose **Share disk with other operating systems**."
+        'It makes its own EFI partition on that drive and uses its largest free space, which can be more than the {GB} GB hop set aside.'
+        "Don't choose **Use entire disk**. The installer is running from this drive.")
     @(
         New-Entry 'elementary' 'elementary OS' 'Mac-like' 'elementary.io' '#3689E6' 'elementary' ((Get-CasperBoot) + @{
             Kind = 'elementary'; Strategy = 'prepared'; Mode = 'Custom Install (Advanced)' })
@@ -146,7 +153,8 @@ function Get-Catalog {
                 'If it lists more than one drive, choose **{DISK}**. Leave any other drive alone.'
                 'Click **Install Now**, check that only **{DISK}** is in the list of changes, then click **Continue**.') } })
         New-Entry 'fedora' 'Fedora Workstation' 'Up to date' 'fedoraproject.org' '#51A2DA' 'fedora' ((Get-DracutBoot 'boot/grub2') + @{
-            Kind = 'fedora'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps })
+            Kind = 'fedora'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps
+            SecondDisk = @{ Steps = $AnacondaSecondDisk; Notes = @("Afterwards this PC starts Fedora, from that disk. Its menu lists Windows too.") } })
         New-Entry 'debian' 'Debian' 'Rock solid' 'cdimage.debian.org' '#A80030' 'debian' @{
             Kind = 'debian'; Live = 'live/filesystem.squashfs'; Manual = 'Manual partitioning'; ManualExtra = $EspExtra
             FullDisk = (Get-FullDiskBoot 'liveboot') + @{ IsoGB = 3; Steps = @(
@@ -197,7 +205,8 @@ function Get-Catalog {
                 Notes = @("Afterwards this PC starts Omarchy, from that disk. To get to Windows, use your PC's boot menu.")
             } })
         New-Entry 'ultramarine' 'Ultramarine' 'Fedora made easy' 'images.fyralabs.com' '#00078F' 'ultramarine' ((Get-DracutBoot 'boot/grub') + @{
-            Kind = 'ultramarine'; Edition = 'gnome'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps })
+            Kind = 'ultramarine'; Edition = 'gnome'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps
+            SecondDisk = @{ Steps = $AnacondaSecondDisk; Notes = @("Afterwards this PC starts Ultramarine, from that disk, and its first start opens its own setup, beginning with **Language**.") } })
         New-UbuntuFlavor 'ubuntu-budgie' 'Ubuntu Budgie' 'Dock at the bottom' '#404552'
         New-UbuntuFlavor 'xubuntu' 'Xubuntu' 'Lightweight' '#0044AA'
         New-UbuntuFlavor 'lubuntu' 'Lubuntu' 'Lightest' '#0068C8' @{

@@ -1638,6 +1638,21 @@ Describe 'Assert-SystemFitsSpace' {
     }
 }
 
+Describe 'Anaconda on a second disk' {
+    It '<id> names the disk, and leaves out the warning about Windows'' small EFI partition' -ForEach @(@{ id = 'fedora' }, @{ id = 'ultramarine' }) {
+        $steps = Get-Steps (Get-Catalog | Where-Object Id -eq $id) 60 ([pscustomobject]@{ OnWindowsDisk = $false; DiskName = 'WD Blue'; DiskGB = 1000 })
+        ($steps.Steps -join ' ') | Should -BeLike '*Select only **WD Blue (1000 GB)***Share disk with other operating systems*can be more than the 60 GB*Use entire disk*'
+        ($steps.Steps -join ' ') | Should -Not -BeLike '*smaller than recommended*'
+        ($steps.Notes -join ' ') | Should -BeLike '*from that disk*'
+        ($steps.Notes -join ' ') | Should -BeLike '*Fast Boot*'
+    }
+    It '<id> keeps its usual steps on the disk Windows is on' -ForEach @(@{ id = 'fedora' }, @{ id = 'ultramarine' }) {
+        $steps = Get-Steps (Get-Catalog | Where-Object Id -eq $id) 60 ([pscustomobject]@{ OnWindowsDisk = $true })
+        ($steps.Steps -join ' ') | Should -BeLike '*smaller than recommended*'
+        ($steps.Notes -join ' ') | Should -Not -BeLike '*from that disk*'
+    }
+}
+
 Describe 'Omarchy''s steps' {
     It 'warns off the option that erases Windows, and says how to get back to it' {
         $steps = Get-Steps (Get-Catalog | Where-Object Id -eq 'omarchy') 60 ([pscustomobject]@{ OnWindowsDisk = $true })
@@ -1663,7 +1678,7 @@ Describe 'Assert-SystemFitsDrive' {
         Mock Resolve-Target { [pscustomobject]@{ Partition = [pscustomobject]@{ DiskNumber = 1 } } }
     }
     It 'refuses <id> on a second disk, with the reason, and claims nothing it has not seen' -ForEach @(
-        @{ id = 'debian' }, @{ id = 'cachyos' }, @{ id = 'arch' }, @{ id = 'fedora' }, @{ id = 'ultramarine' }
+        @{ id = 'debian' }, @{ id = 'cachyos' }, @{ id = 'arch' }
     ) {
         { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Throw "*for the disk Windows is on*hasn't been tried on a second disk*"
     }
@@ -1678,13 +1693,13 @@ Describe 'Assert-SystemFitsDrive' {
     It 'leaves systems with steps for a second disk alone' {
         { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq 'ubuntu') 'gap:{disk-1}:1048576' } | Should -Not -Throw
     }
-    It 'lets <id> onto a second disk, having seen it install there' -ForEach @(@{ id = 'omarchy' }) {
+    It 'lets <id> onto a second disk, having seen it install there' -ForEach @(@{ id = 'omarchy' }, @{ id = 'fedora' }, @{ id = 'ultramarine' }) {
         { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Not -Throw
     }
     It 'tells the window which systems this is' {
         $engine = New-Object Hop.Engine
         try {
-            @($engine.GetCatalog() | Where-Object WindowsDiskOnly | ForEach-Object { $_.Id } | Sort-Object) | Should -Be @('arch', 'cachyos', 'debian', 'fedora', 'ultramarine')
+            @($engine.GetCatalog() | Where-Object WindowsDiskOnly | ForEach-Object { $_.Id } | Sort-Object) | Should -Be @('arch', 'cachyos', 'debian')
         } finally { $engine.Dispose() }
     }
 }

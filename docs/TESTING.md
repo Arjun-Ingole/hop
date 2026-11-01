@@ -124,6 +124,8 @@ That leaves more free before the installer than after it, which matters below. T
 | System | Driven by | Went where | EFI partition | Started from disk | Windows' EFI files, and the partitions |
 | --- | --- | --- | --- | --- | --- |
 | Omarchy 4.0.6 | Its real wizard on `tty1`, with keys pressed, as the steps say, without encryption | **The 129 GB before the installer**, the largest free space, not hop's 60 GB. Its screen said `Install Omarchy in the 129.0GB of free space` | Its own new 2 GB one, on the second disk | Yes: `Boot0009 "Limine"` from the second disk first in `BootOrder`, then the login screen in its journal and a screenshot | Unchanged. MSR, C:, recovery, `HOPINSTALL` and `HOPLIVE` byte for byte, after the install and the restart |
+| Fedora 44 | Anaconda's `--cmdline` mode with a kickstart: `ignoredisk --only-use=nvme1n1`, `clearpart --none`, `autopart`. Its graphical screens weren't seen | The 133 GB before the installer, not hop's 60 GB | Its own new 600 MB one, on the second disk, with a 2 GB `/boot` | Yes: `Boot000A "Fedora Linux"` from the second disk first in `BootOrder`, root on the second disk, and `Windows Boot Manager (on /dev/nvme0n1p1)` in its menu | Unchanged. MSR, C:, recovery and `HOPINSTALL` byte for byte, after both |
+| Ultramarine 44 | The same | The same, 133 GB | The same | Yes: `Boot000A "Ultramarine Linux"`, and a screenshot of its own setup at **Language**, which waits there, so the test's marker never ran. Its menu wasn't read | The same |
 
 **What this doesn't show:** no real PC, so nothing about how a real firmware treats a second disk, or Fast Boot. Windows was never started: its files are stand-ins that only show whether they changed.
 Nobody clicked anything, and hop's own screens and Undo weren't run.
@@ -187,7 +189,8 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] A Thunderbolt or USB4 NVMe enclosure: refused as something that can be unplugged. Nothing has checked this on real hardware
 - [ ] A second NVMe drive inside the PC: still offered
 - [ ] Undo with each: the space goes back to the right drive
-- [ ] Debian, CachyOS, Arch, Fedora or Ultramarine with a second disk chosen: refused before anything changes, with the reason
+- [ ] Debian, CachyOS or Arch with a second disk chosen: refused before anything changes, with the reason
+- [ ] Fedora or Ultramarine on a second disk: click through **Share disk with other operating systems**, which automated tests don't reach, with Windows' disk unselected
 - [ ] Omarchy on a second disk: installs, starts, and Windows starts from the firmware's boot menu. Then remove it from hop: its `Limine` entry and EFI partition go too
 - [ ] Make room on C:, then on D:: C:'s hibernation and paging file are back on before D: starts
 - [ ] Two Windows Boot Manager entries, each with its own EFI partition: `\EFI\hop` and the startup entry are on the same one, the one this Windows started from
