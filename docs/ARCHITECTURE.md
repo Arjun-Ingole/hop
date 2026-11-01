@@ -259,6 +259,21 @@ With no state file, or a Linux installed as well, it isn't removed. In the first
 Windows disk. In the second, Windows can't see whether that Linux is using it. A failed `mkfs` over old data
 on a real disk won't look empty either, so that one still counts as Linux.
 
+## The Windows Recovery partition (WinRE) and updates
+
+Most UEFI Windows 10 and 11 installations place Windows' Recovery partition (`winre.wim`, GPT type `{de94bba4-06d1-4d40-a16a-bfd50179d6ac}`) at the very end of the disk, directly after C::
+
+```
+Before   [EFI][MSR][ C: Windows                         ][Recovery]
+After    [EFI][MSR][ C: Windows       ][ Installer ][ Linux ][Recovery]
+```
+
+hop treats this layout with specific invariants:
+
+- **Untouched and preserved:** hop never alters, moves, resizes, formats, or shifts the Recovery partition. Space calculations bound the installation region directly before `$next.Offset` when a partition follows C:.
+- **Diagnostic detection:** `Get-AdjacentRecoveryPartition` in `Drives.ps1` identifies whether a recovery partition immediately bounds the target space. `Get-Plan` in `Disk.ps1` logs its offset, partition number, and size.
+- **Pre-flight warning (KB5028997):** Windows Update requires at least 250 MB of free space inside the recovery partition to install WinRE security patches. If the partition runs out of room, Windows attempts to grow it leftwards into adjacent space. Once Linux occupies that space, Windows cannot grow recovery without manual resizing. `Get-Warnings` in `System.ps1` detects adjacent recovery partitions (noting partitions under 750 MB) and advises users to let pending Windows updates complete first.
+
 ## Where Linux can go
 
 `Get-DriveBlocker` in `Drives.ps1` is the one place that decides, and it gives the reason.

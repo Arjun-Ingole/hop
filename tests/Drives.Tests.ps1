@@ -789,6 +789,7 @@ Describe 'Get-Warnings for the chosen drive' {
         Mock Test-RestartPending { $false }
         Mock Test-BitLockerOn { $false }
         Mock Get-PartitionSignature { $null }
+        Mock Get-AdjacentRecoveryPartition { $null }
     }
     It 'mentions Fast Boot for a second disk' {
         Mock Resolve-Target { [pscustomobject]@{ Kind = 'gap'; Disk = [pscustomobject]@{ Number = 1 } } }
@@ -802,6 +803,48 @@ Describe 'Get-Warnings for the chosen drive' {
         Mock Resolve-Target { [pscustomobject]@{ Kind = 'volume'; Disk = [pscustomobject]@{ Number = 0 }; Partition = (New-TestPartition -Disk 0) } }
         Mock Get-PartitionSignature { 'bitlocker' }
         Get-Warnings 'volume:x:1' | Should -BeLike '*Drive D: is encrypted*'
+    }
+    It 'warns when an undersized recovery partition is adjacent to the target' {
+        Mock Resolve-Target { [pscustomobject]@{ Kind = 'volume'; Disk = [pscustomobject]@{ Number = 0 }; Partition = (New-TestPartition -Disk 0) } }
+        Mock Get-AdjacentRecoveryPartition { [pscustomobject]@{ PartitionNumber = 4; Offset = 50GB; Size = [int64]500MB } }
+        $w = @(Get-Warnings 'volume:x:1')
+        $w | Should -BeLike '*Windows Recovery partition is directly after this space (500 MB)*'
+        $w | Should -BeLike '*KB5028997*'
+    }
+    It 'advises when a full-sized recovery partition is adjacent to the target' {
+        Mock Resolve-Target { [pscustomobject]@{ Kind = 'volume'; Disk = [pscustomobject]@{ Number = 0 }; Partition = (New-TestPartition -Disk 0) } }
+        Mock Get-AdjacentRecoveryPartition { [pscustomobject]@{ PartitionNumber = 4; Offset = 50GB; Size = [int64]1000MB } }
+        $w = @(Get-Warnings 'volume:x:1')
+        $w | Should -BeLike '*Windows Recovery partition sits directly after this space.*'
+    }
+}
+
+Describe 'Get-AdjacentRecoveryPartition' {
+    It 'returns null when no partition is provided' {
+        Get-AdjacentRecoveryPartition $null | Should -BeNullOrEmpty
+    }
+    It 'detects an adjacent GPT recovery partition' {
+        Mock Get-Partition {
+            @(
+                [pscustomobject]@{ PartitionNumber = 2; Offset = [int64]1GB; Size = [int64]50GB; GptType = $BasicDataType }
+                [pscustomobject]@{ PartitionNumber = 3; Offset = [int64]51GB; Size = [int64]650MB; GptType = $RecoveryType }
+            )
+        }
+        $target = New-TestPartition -Disk 0 -Offset 1GB
+        $rec = Get-AdjacentRecoveryPartition $target
+        $rec | Should -Not -BeNullOrEmpty
+        $rec.PartitionNumber | Should -Be 3
+        $rec.Size | Should -Be ([int64]650MB)
+    }
+    It 'returns null when the next partition is a data partition' {
+        Mock Get-Partition {
+            @(
+                [pscustomobject]@{ PartitionNumber = 2; Offset = [int64]1GB; Size = [int64]50GB; GptType = $BasicDataType }
+                [pscustomobject]@{ PartitionNumber = 3; Offset = [int64]51GB; Size = [int64]100GB; GptType = $BasicDataType }
+            )
+        }
+        $target = New-TestPartition -Disk 0 -Offset 1GB
+        Get-AdjacentRecoveryPartition $target | Should -BeNullOrEmpty
     }
 }
 

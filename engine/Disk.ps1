@@ -74,20 +74,25 @@ function Get-Plan([int]$LinuxGB, [int]$InstallerGB, [string]$Target, [int]$LiveG
     $linuxStart = [int64]($regionEnd - [int64]$LinuxGB * 1GB)
     $installerOffset = [int64]($linuxStart - [int64]($InstallerGB + $LiveGB) * 1GB)
     $shrink = $installerOffset -lt $windowsEnd
+    $adjacentRecovery = Get-AdjacentRecoveryPartition $c
+    if ($adjacentRecovery) {
+        Write-Log "Windows Recovery partition detected directly after planned space (Partition $($adjacentRecovery.PartitionNumber), $([math]::Round($adjacentRecovery.Size / 1MB)) MB). Recovery is preserved untouched."
+    }
     [pscustomobject]@{
-        DiskNumber      = $c.DiskNumber
-        PartitionNumber = $c.PartitionNumber
-        Shrink          = $shrink
-        NewWindowsSize  = if ($shrink) { [int64]($installerOffset - $c.Offset) } else { [int64]$c.Size }
-        FreeStart       = $linuxStart
-        LinuxGB         = $LinuxGB
-        InstallerOffset = $installerOffset
-        InstallerSize   = [int64]$InstallerGB * 1GB
-        LiveOffset      = [int64]($installerOffset + [int64]$InstallerGB * 1GB)
-        LiveSize        = [int64]$LiveGB * 1GB
-        TargetOffset    = [int64]$c.Offset
-        Kind            = if ($space.Kind) { $space.Kind } else { 'volume' }
-        Letter          = $space.Letter
+        DiskNumber           = $c.DiskNumber
+        PartitionNumber      = $c.PartitionNumber
+        Shrink               = $shrink
+        NewWindowsSize       = if ($shrink) { [int64]($installerOffset - $c.Offset) } else { [int64]$c.Size }
+        FreeStart            = $linuxStart
+        LinuxGB              = $LinuxGB
+        InstallerOffset      = $installerOffset
+        InstallerSize        = [int64]$InstallerGB * 1GB
+        LiveOffset           = [int64]($installerOffset + [int64]$InstallerGB * 1GB)
+        LiveSize             = [int64]$LiveGB * 1GB
+        TargetOffset         = [int64]$c.Offset
+        Kind                 = if ($space.Kind) { $space.Kind } else { 'volume' }
+        Letter               = $space.Letter
+        AdjacentRecovery     = $adjacentRecovery
     }
 }
 
