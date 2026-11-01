@@ -147,6 +147,8 @@ function Remove-CasperPartition($State) {
     Remove-PartitionAt $partition.DiskNumber $partition.Offset
 }
 
+function Get-VolumeOf($Partition) { try { $Partition | Get-Volume -ErrorAction SilentlyContinue } catch { $null } }
+
 function Read-PartitionHead($Partition) { [Hop.DiskProbe]::ReadHead($Partition.DiskNumber, [int64]$Partition.Offset) }
 
 # Partitions hop recorded but may not have got as far as labelling, for example when formatting
@@ -161,7 +163,7 @@ function Get-RecordedPartitions($State, [string[]]$Roles) {
     foreach ($partition in @(Get-Partition -DiskNumber $disk -ErrorAction SilentlyContinue)) {
         $match = $recorded | Where-Object { [int64]$_.Offset -eq [int64]$partition.Offset -and [int64]$_.Size -eq [int64]$partition.Size }
         if (-not $match -or $partition.IsSystem -or $partition.IsBoot -or $partition.GptType -in $LinuxPartitionTypes) { continue }
-        $volume = try { $partition | Get-Volume -ErrorAction SilentlyContinue } catch { $null }
+        $volume = Get-VolumeOf $partition
         if ($volume -and $volume.FileSystemType -and $volume.FileSystemType -ne 'Unknown') { continue }
         $head = try { Read-PartitionHead $partition } catch {
             Write-Log "Could not read partition $($partition.PartitionNumber), so it stays: $($_.Exception.Message)"
@@ -186,7 +188,7 @@ function Write-StateFile([string]$Path, [string]$Text) {
             $stream.Write($bytes, 0, $bytes.Length)
             $stream.Flush($true)
         } finally { $stream.Dispose() }
-        if ([IO.File]::Exists($Path)) { [IO.File]::Replace($temporary, $Path, $null) } else { [IO.File]::Move($temporary, $Path) }
+        if ([IO.File]::Exists($Path)) { [IO.File]::Replace($temporary, $Path, [NullString]::Value) } else { [IO.File]::Move($temporary, $Path) }
     } catch {
         [IO.File]::Delete($temporary)
         throw
