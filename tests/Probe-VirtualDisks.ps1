@@ -533,7 +533,9 @@ try {
     $other = Get-OtherSystem
     Check 'and that Linux is now offered for removal' ($null -ne $other -and -not $other.OnWindowsDisk) ''
     Check 'the disk is refused while it has Linux on it' ((Get-DriveBlocker (Get-Disk -Number $b) $null) -like '*already has Linux*') ''
-    Remove-OtherSystem
+    function Get-WindowsEsp { Storage\Get-Partition -DiskNumber $a | Where-Object GptType -eq $EspType | Select-Object -First 1 }
+    Remove-OtherSystem (Get-OtherSystem).Selection
+    function Get-WindowsEsp { throw 'No EFI partition in the probe.' }
     Check 'removing it gives the disk back as it was' ((Get-Layout $b) -eq $beforeLinux) "$(Get-Layout $b) vs $beforeLinux"
     Check 'and forgets the disk' (@(Get-LinuxDisks).Count -eq 0) ''
     Check 'data survived' ((Get-TestHash $xLetter) -eq $xHash) ''

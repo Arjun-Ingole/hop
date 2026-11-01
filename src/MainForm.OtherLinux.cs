@@ -17,13 +17,14 @@ namespace Hop
         void ShowRemoveOther()
         {
             string name = startup.OtherName;
+            steps.Set(startup.OtherPartitions ?? new string[0], new[] { "Back up anything you want to keep." });
             Arrange(new[]
             {
                 new[] { Run.Gray("Remove"), Run.Black(name) },
                 new[] { Run.Gray("and free"), Run.Black(startup.OtherGB + " GB") },
-            }, $"This deletes {name} and everything stored in it, and takes it out of the startup menu. Windows and your files stay.{KeptNote(startup.OtherKept)}",
-                Secondary, null, 0);
-            Footer("Back", ShowChoose, "Remove " + name, () => _ = RemoveOtherAsync());
+            }, $"This deletes every partition listed below, including other Linux installations and Linux data. All files on these partitions are erased.{KeptNote(startup.OtherKept)}",
+                Secondary, steps, 12);
+            Footer("Back", ShowChoose, "Delete listed partitions", () => _ = RemoveOtherAsync());
         }
 
         async Task RemoveOtherAsync()
@@ -35,7 +36,7 @@ namespace Hop
             BeginWork(new[] { new[] { Run.Gray("Removing"), Run.Black(name) } }, "Starting…");
             try
             {
-                await engine.RemoveOtherSystemAsync();
+                await engine.RemoveOtherSystemAsync(startup.OtherSelection);
                 await ReloadAsync();
                 EndWork();
                 if (onWindowsDisk)
@@ -56,7 +57,7 @@ namespace Hop
                 EndWork();
                 try { startup = await engine.GetStartupInfoAsync(); } catch { }
                 Arrange(new[] { new[] { Run.Gray("Couldn't remove"), Run.Black(name) } }, Describe(ex), Danger, null, 0);
-                Footer("Back", ShowChoose, "Try again", startup.OtherGB > 0 ? () => _ = RemoveOtherAsync() : (Action)null);
+                Footer("Back", ShowChoose, "Review partitions", startup.OtherGB > 0 ? ShowRemoveOther : (Action)null);
             }
         }
 

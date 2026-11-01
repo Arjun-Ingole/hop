@@ -124,8 +124,9 @@ function Find-OtherSystem([int]$Disk) {
         @($partitions | Where-Object { $own -contains $_.Guid -and ($boot | Where-Object PartitionGuid -eq $_.Guid) })
     }
 
-    $name = ($boot | Select-Object -First 1).Description
-    if (-not $name) { $name = 'the other Linux' }
+    # A disk can hold several installations and Linux data partitions. No boot entry
+    # proves that all of them belong to the first named system.
+    $name = 'all Linux partitions on this disk'
     $all = @($linux) + @($esps)
     [pscustomobject]@{
         Name       = $name
@@ -136,7 +137,20 @@ function Find-OtherSystem([int]$Disk) {
         WindowsEsp = $windowsEsp
         OnWindowsDisk = $Disk -eq (Get-WindowsPartition).DiskNumber
         DiskGuid   = (Get-Disk -Number $Disk).Guid
+        PartitionList = @("Disk $Disk, ID $((Get-Disk -Number $Disk).Guid)") + @($all | ForEach-Object {
+            "Partition $($_.PartitionNumber): $([math]::Round($_.Size / 1GB, 1)) GB, $(if ($_.GptType -eq $EspType) { 'EFI' } else { 'Linux or Linux data' }), ID $($_.Guid)"
+        })
+        Selection = Get-OtherSelection (Get-Disk -Number $Disk).Guid $all $boot
     }
+}
+
+# Bind confirmation to the exact disk, partitions and startup entries shown in the UI.
+function Get-OtherSelection([string]$DiskGuid, $Partitions, $Entries) {
+    [pscustomobject]@{
+        Disk = $DiskGuid
+        Partitions = @($Partitions | Sort-Object Guid | Select-Object Guid, Offset, Size, GptType)
+        Entries = @($Entries | Sort-Object Number | Select-Object Number, PartitionGuid, Path)
+    } | ConvertTo-Json -Depth 4 -Compress
 }
 
 # True only when the partition's own first bytes say it holds a Linux file system. Being
@@ -159,6 +173,9 @@ function Invoke-Diskpart([string[]]$Commands) {
 function Remove-PartitionByGuid([string]$Guid, [int]$DiskNumber) {
     $partition = Get-Partition -DiskNumber $DiskNumber -ErrorAction SilentlyContinue | Where-Object Guid -eq $Guid | Select-Object -First 1
     if (-not $partition) { return }
+    if ($partition.IsSystem -or $partition.IsBoot -or $partition.Guid -eq (Get-WindowsEsp).Guid) {
+        throw 'Refusing to remove a partition Windows needs to start.'
+    }
     try {
         Remove-Partition -DiskNumber $partition.DiskNumber -PartitionNumber $partition.PartitionNumber -Confirm:$false
         return
@@ -174,9 +191,17 @@ function Remove-PartitionByGuid([string]$Guid, [int]$DiskNumber) {
     throw "Could not delete partition $($partition.PartitionNumber): $output"
 }
 
-function Remove-OtherSystem {
+function Remove-OtherSystem([string]$Selection) {
     $other = Get-OtherSystem
     if (-not $other) { throw 'There is no other Linux on this drive.' }
+    if (-not $Selection -or $Selection -cne $other.Selection) {
+        throw 'The Linux partitions or startup entries have changed. Nothing has been removed. Go back and review the partition list again.'
+    }
+    # Fail before removing any boot entries, not halfway through the partition loop.
+    $windowsEsp = Get-WindowsEsp
+    if (@($other.Partitions | Where-Object { $_.IsSystem -or $_.IsBoot -or $_.Guid -eq $windowsEsp.Guid }).Count) {
+        throw 'Refusing to remove a partition Windows needs to start. Nothing has been removed.'
+    }
     Set-Status "Removing $($other.Name)..."
     foreach ($name in @($other.Kept)) { if ($name) { Write-Log "Kept the startup entry for $name, which hop can't tie to this Linux." } }
 

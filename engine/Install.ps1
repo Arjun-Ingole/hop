@@ -139,7 +139,7 @@ function Get-StartupInfo {
     # Free space gives no drive anything back. An older file can only mean C:.
     $stateLetter = $null
     if ($state) { $stateLetter = if ($state.TargetOffset) { $state.TargetLetter } else { $env:SystemDrive.TrimEnd(':') } }
-    $other = try { Get-OtherSystem | Select-Object Name, SizeGB, OnWindowsDisk, Kept } catch { Write-Log "Could not look for another Linux: $($_.Exception.Message)"; $null }
+    $other = try { Get-OtherSystem | Select-Object Name, SizeGB, OnWindowsDisk, Kept, PartitionList, Selection } catch { Write-Log "Could not look for another Linux: $($_.Exception.Message)"; $null }
     [pscustomobject]@{
         # C: on its own, for when the drives can't be listed.
         WindowsFallback = [pscustomobject]@{
@@ -260,6 +260,12 @@ function Get-SpaceOwner($State, $HopPartitions) {
 function Invoke-Cleanup([switch]$InstallerOnly) {
     $state = Read-State
     $Sync.SpaceNote = $null
+    # Labels and ISO-looking contents can belong to someone else's disk. They are useful
+    # for discovery, but never authorize deletion without a matching creation record.
+    $discovered = @(Get-HopPartitions)
+    if (@($discovered | Where-Object { $_.Recorded -eq $false }).Count) {
+        throw "hop found partitions with its labels but no matching creation record. Nothing has been removed. Inspect them in Disk Management and remove them manually only if you recognize them as hop's installer."
+    }
     # While Make room's settings are off, its safety net is what brings them back.
     if (-not (Test-Path -LiteralPath $RoomPath)) { Unregister-RunAfterRestart }
     # Choosing "Linux isn't installed yet" by mistake must not take its boot partition with it.

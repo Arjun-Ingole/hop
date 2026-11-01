@@ -31,8 +31,8 @@ function Get-SpaceInfo([string]$Target) {
         MinSize   = [int64]$supported.SizeMin
         TailFree  = $tail
         Reserve   = [int64]$reserve
-        # GB Linux can get: free space after the drive, plus what it can give up while keeping its reserve.
-        UsableGB  = [int][math]::Floor(($tail + $c.Size - $supported.SizeMin - $reserve) / 1GB)
+        # The reserve limits shrinking, not space already outside the volume.
+        UsableGB  = [int][math]::Floor(($tail + [math]::Max([int64]0, [int64]($c.Size - $supported.SizeMin - $reserve))) / 1GB)
         Kind      = 'volume'
         Name      = "$letter`:"
         Letter    = $letter
@@ -136,6 +136,7 @@ function New-RecordedPartition($Plan, $State, [string]$Role, [int64]$Offset, [in
     $partition = New-Partition -DiskNumber $Plan.DiskNumber -Offset $Offset -Size $Size
     $record.Offset = $partition.Offset
     $record.Size = $partition.Size
+    $record | Add-Member -NotePropertyName Guid -NotePropertyValue $partition.Guid -Force
     Save-State $State
     $partition
 }
@@ -225,6 +226,7 @@ function Copy-LiveFiles($Iso, [string]$Target) {
     foreach ($file in $Iso.LiveFiles) {
         $copy = Get-Item -LiteralPath (Join-Path $targetRoot $file.FullName.Substring($sourceRoot.Length)) -Force -ErrorAction SilentlyContinue
         if (-not $copy -or $copy.Length -ne $file.Length) { throw "$($file.Name) did not copy to the second installer partition." }
+        Assert-CopyMatches $file.FullName $copy.FullName
     }
     Write-Log 'Live system copied and checked.'
 }
@@ -241,11 +243,12 @@ function Copy-Installer($Iso, [string]$Target) {
     $sourceRoot = "$($Iso.Letter):\"
     $targetRoot = "$Target`:\"
     $missing = New-Object System.Collections.Generic.List[string]
-    foreach ($file in Get-ChildItem -LiteralPath $sourceRoot -Recurse -Force -File) {
+    foreach ($file in Get-InstallerFiles $sourceRoot) {
         if ($file.FullName -in $live) { continue }
         $relative = $file.FullName.Substring($sourceRoot.Length)
         $copy = Get-Item -LiteralPath (Join-Path $targetRoot $relative) -Force -ErrorAction SilentlyContinue
         if (-not $copy -or $copy.Length -ne $file.Length) { $missing.Add($relative) }
+        else { Assert-CopyMatches $file.FullName $copy.FullName }
     }
     if ($missing.Count) {
         foreach ($name in $missing) { Write-Log "Not copied: $name" }
@@ -254,6 +257,18 @@ function Copy-Installer($Iso, [string]$Target) {
     Write-Log 'Installer files copied and checked.'
     # Offline packages are a convenience: a problem here must not cost a finished copy.
     try { Repair-ShortenedNames $targetRoot } catch { Write-Log "Could not check package names: $($_.Exception.Message)" }
+}
+
+function Get-InstallerFiles([string]$Root) { Get-ChildItem -LiteralPath $Root -Recurse -Force -File }
+
+# Size catches missing and truncated files; SHA-256 also catches damage of the same length.
+function Assert-CopyMatches([string]$Source, [string]$Destination) {
+    Set-Status "Checking copied file $(Split-Path $Source -Leaf)..."
+    $expected = (Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash
+    $actual = (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash
+    if ($expected -ne $actual) {
+        throw "The copied file $(Split-Path $Source -Leaf) is damaged. Check the drive for errors and try again."
+    }
 }
 
 # The files the ISO's package indexes say it has, as paths from its root.

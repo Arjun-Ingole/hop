@@ -259,13 +259,18 @@ function Invoke-Download($Download, [string]$Path) {
 
 function Get-Iso($Download, [string]$Path) {
     if (Test-Path -LiteralPath $Path) {
-        if (-not $Download.Sha256 -or (Test-Sha256 $Path $Download.Sha256)) {
+        if ($Download.Sha256 -and (Test-Sha256 $Path $Download.Sha256)) {
             Write-Log "Using the copy already in $Path"
             return
         }
-        Write-Log 'The file already downloaded is damaged; downloading it again.'
-        Remove-Item -LiteralPath $Path -Force
+        # Without an official checksum, the filename cannot establish where this copy
+        # came from. Keep it until a fresh download succeeds and replaces it.
+        Write-Log 'The existing file cannot be verified; downloading a fresh copy.'
+        if ($Download.Sha256) { Remove-Item -LiteralPath $Path -Force }
     }
+    # Without a checksum, a partial file cannot be tied to this release either,
+    # even when no complete ISO is present.
+    if (-not $Download.Sha256 -and (Test-Path -LiteralPath "$Path.part")) { Remove-Item -LiteralPath "$Path.part" -Force }
     Invoke-Download $Download $Path
     if ($Download.Sha256) {
         if (-not (Test-Sha256 $Path $Download.Sha256)) {

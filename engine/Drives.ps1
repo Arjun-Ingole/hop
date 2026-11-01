@@ -204,7 +204,7 @@ function Get-DriveTargets {
                 $tail = Get-TailFree $partition
                 $row.TailFreeGB = [int][math]::Floor($tail / 1GB)
                 $reserve = if ($isWindows) { $WindowsReserve } else { $DataReserve }
-                $row.UsableGB = [int][math]::Max(0, [math]::Floor(($tail + $volume.SizeRemaining - $reserve) / 1GB))
+                $row.UsableGB = [int][math]::Floor(($tail + [math]::Max([int64]0, [int64]($volume.SizeRemaining - $reserve))) / 1GB)
             }
             $row
         }

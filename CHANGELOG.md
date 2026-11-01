@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Count all unallocated space after a drive even when Windows cannot shrink it or the drive has less free space than its reserve. Such drives no longer lose usable space or report a negative capacity.
+- Bind cleanup records to the original disk and partition GUID. Partitions found only by labels and contents now require manual inspection instead of automatic deletion.
+- Show every partition before removing Linux, including Linux data and other installations on that disk, and refuse removal if the confirmed selection changes. Protect Windows' boot partitions from the diskpart fallback.
+- Find UEFI startup entries throughout the same 16-bit range used to create them, including orphaned entries above Boot00FF.
+- Download a fresh ISO when an existing copy cannot be verified against an official checksum, preserving the old copy if the download fails.
+- Verify copied installer and live-image files with SHA-256, including corruption that leaves file sizes unchanged.
+- Clarify that the Secure Boot certificate-name check is a compatibility heuristic, not cryptographic signature or dbx validation.
+
 ## 0.3.0 - 2026-11-01
 
 ### Added
