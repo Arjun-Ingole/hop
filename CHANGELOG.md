@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 - 2026-11-01
 
 ### Added
 
@@ -36,7 +36,7 @@
 ### Fixed
 
 - **Linux Mint Cinnamon, Xfce and MATE and Zorin OS are back next to Windows, through a partition hop makes first,** after a full install and restart in a virtual PC for each. They stay refused on a second disk. Its installer replaces the fallback loader `\EFI\Boot\bootx64.efi` on Windows' EFI partition.
-- **hop's steps for Zorin OS and Linux Mint were wrong.** Their installer, started from the disk it's installing to, says it can't make partitions there and doesn't offer to install alongside Windows. Replacing Windows with Zorin OS still works, as it starts from memory.
+- **hop's steps for Zorin OS and Linux Mint were wrong in earlier builds.** Their installer, started from the disk it's installing to, says it can't make partitions there and doesn't offer to install alongside Windows. The steps above replace them.
 - **The Ready screen could hide its buttons.** Omarchy's and Arch's steps ran over Undo changes, Restart now and Later, so they couldn't be seen or clicked. Long lists now stop above the buttons and scroll, with the wheel, the keyboard or a thin bar.
 - Clicking something while hop was checking the PC could start two things at once, and let hop be closed in the middle of changing the disk. Nothing can be clicked during those checks now.
 - After a failed install, Choose and Make room kept showing the old log in place of the drive.
@@ -86,22 +86,6 @@
 - A Thunderbolt or USB4 NVMe enclosure counted as a drive inside the PC, because it reports the same bus. hop now asks
   Windows whether it expects a drive to be unplugged, and refuses it if so, or if Windows won't say. Windows' own disk
   isn't affected. This hasn't been tried on real Thunderbolt hardware.
-
-### Changed
-
-- **Stuck space no longer looks like an error.** A drive with free space Windows can't release yet shows how much is free,
-  the mark it can't shrink past and the file in the way, with Make room as the next step. The Make room screen now says how
-  much is stuck, and moving files has its own screen.
-- The size slider starts at what the chosen system needs, so Omarchy's starts at 33 GB.
-- Make room works on the chosen drive. Other drives usually need no restart.
-- The steps for the Linux installer now depend on where Linux is going. They use the manual option if the
-  easy one would pick different free space.
-- Undo gives space back to the drive it came from, and clean-up finds hop's partitions on any internal disk.
-- Debian, CachyOS, Arch, Fedora and Ultramarine can't go on a second disk for now. Their steps were written
-  for the disk Windows is on, and none has been tried on another. hop says so before anything changes.
-
-### Fixed
-
 - **Make room's restart could be blocked by hop itself**, because it refused to close while waiting for that
   restart. Windows could then say hop was preventing it. If something else stops the restart, hop now says so
   and offers to restart again or put its settings back.
@@ -121,6 +105,21 @@
 - Undo reported the wrong result straight after an install, and the confirmation could say a drive would keep its
   size when a bigger ISO would shrink it. Two drives that couldn't release their space kept suggesting each other.
 - Sentences such as "Linux Mint , downloaded from..." no longer have a gap where a value is missing.
+- If hop gave up turning hibernation or the paging file back on, only the log said so. It now tells you before the next install.
+- If Windows refused a restart, hop could later say the installer hadn't started, when the PC had never restarted.
+
+### Changed
+
+- **Stuck space no longer looks like an error.** A drive with free space Windows can't release yet shows how much is free,
+  the mark it can't shrink past and the file in the way, with Make room as the next step. The Make room screen now says how
+  much is stuck, and moving files has its own screen.
+- The size slider starts at what the chosen system needs, so Omarchy's starts at 33 GB.
+- Make room works on the chosen drive. Other drives usually need no restart.
+- The steps for the Linux installer now depend on where Linux is going. They use the manual option if the
+  easy one would pick different free space.
+- Undo gives space back to the drive it came from, and clean-up finds hop's partitions on any internal disk.
+- Debian, CachyOS, Linux Mint and Zorin OS can't go on a second disk for now, because none has finished an install there.
+  hop says so before anything changes.
 
 ## 0.2.0 - 2026-10-31
 

@@ -188,7 +188,7 @@ QEMU's NVMe disks need nothing special: Windows reports the bus as NVMe, with re
 | `scales` | Those with most text at 100% and 125% | No clipping or overlap. Word gaps were wrong at 100% until text stopped using grid fitting |
 | `stuck` | Forces the paging file to the end of C:, then Make room, then closes hop | 105 GB free and 1.4 GB releasable, with Windows naming `\pagefile.sys`. No "preventing restart" screen. hop came back by itself with no prompt, from the protected copy. 111 GB releasable afterwards. On closing hop, hibernation, the paging setting and a new change journal of the same size were back, and the tasks and copy had gone |
 | `stuckinstall` | The same, then a real Ubuntu install in place of closing hop | The settings came back as the disk finished changing, not when hop closed. The copy had gone after the next restart. `defrag` gave up with 1223, and worked when tried again |
-| `abandon` | Make room, hop killed once it's back, then a restart with nobody opening hop | Nothing changed for 18 minutes after that restart. By 21 minutes the settings were back, and the tasks, copy and state file had gone |
+| `abandon` | Make room, hop killed once it's back, then a restart with nobody opening hop | Nothing changed for 18 minutes after that restart. By 21 minutes the settings were back, and the tasks, copy and state file had gone. Run again on `main` after the hardening work (`400e5ba`), on a GitHub runner: still off at 18 minutes, back at the next check, and the same after one more restart |
 | `abandonfast` | The same, with the task started by hand | The same result in under a minute |
 | `install` | A real Ubuntu 26.04.1 from its real download, with Secure Boot on, then back to Windows and Undo | See below |
 

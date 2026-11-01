@@ -22,6 +22,8 @@ first.
 - **Downloads from official sources.** It gets the ISO from the project's own server and verifies its
   checksum where the project publishes one. You can also use an ISO you already have.
 - **Makes room safely.** It checks your PC first, and nothing on the disk changes until those checks pass.
+- **Frees space that's stuck.** A drive can show plenty free and still refuse to shrink, because of files Windows can't
+  move. Make room clears them in one click and puts your settings back afterwards.
 - **Goes where there's room.** Shrink C: or another drive, use free space, or use a second disk inside the
   PC. If C: is full, hop suggests a drive that isn't, and the download can go elsewhere too.
 - **Tells you what to click.** It lists the exact choices to make in the Linux installer.
@@ -38,9 +40,14 @@ Studio), Linux Mint, Pop!_OS, Zorin OS, Debian, Fedora Workstation, Ultramarine,
 Other Ubuntu-based ISOs should work too, if you choose the file yourself. Kubuntu isn't
 supported, because its ISO has a file too big for FAT32. CachyOS, Arch, Omarchy and Pop!_OS need Secure Boot off.
 Omarchy also needs BitLocker fully off on its disk, not paused, and hop refuses until it is. hop won't turn it off for you.
+Debian, CachyOS, Linux Mint and Zorin OS can't go on a second disk yet.
 
 **Needs:** Windows 10 (1803 or newer) or 11, on a UEFI PC with a GPT disk, which is nearly every PC sold with
 them. Linux has to go on a disk inside the PC, not a USB drive.
+
+<p align="center">
+  <img src="docs/make-room.gif" alt="A drive bar with 92 GB free that Windows can't release. After Make room, the mark moves back and hop can use all of it" width="760">
+</p>
 
 ## How it works
 
