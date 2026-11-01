@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Make room gets past `$Mft::$BITMAP`.** Windows' defrag can leave this NTFS file near the end of a drive, where it stops Windows shrinking it. hop now moves it, and the other NTFS files Microsoft lists as movable, when Windows names one.
+- hop took its 8 GB safety margin off what Windows could release, even with plenty left free inside the drive, so a drive that could release a few GB showed 0.
+- Make room left the paging file on for most 8 GB PCs, which report less than 8 GB. PCs with too little memory now get told why it may not help.
+- If Windows stops moving files early, hop offers **Move files again** instead of saying it did all it could. Make room also waits up to a day for you to sign in before undoing itself, and says so when hop won't reopen by itself.
+- Remove now lists every partition it deletes, because it takes all the Linux partitions on the disk, and it stops if that list has changed. It deletes partitions before startup entries, so trying again after a failure finds everything.
+- hop's startup entry can no longer land first in the startup order if that order lists an entry that's gone, which would have started the installer on every restart.
+- Copied installer files are compared by checksum, so damage that keeps a file's size is found before the restart.
+- Downloads retry once when antivirus or a work network breaks the certificate revocation check. A web page saved as an ISO no longer gets reused for systems with no checksum.
+- A missing EFI shell on an Arch ISO is found before the disk changes, and an empty card reader's letter is no longer used for the EFI partition.
+- After keeping Linux and removing the installer, Mint and Zorin PCs no longer get a false "earlier attempt" screen.
+- Closing hop can't freeze while a bug report is being made, messages name the real Windows drive, and bug reports keep the partition table when a drive can't be measured.
+
 ## 0.3.0 - 2026-11-01
 
 ### Added
