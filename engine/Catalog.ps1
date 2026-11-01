@@ -112,6 +112,12 @@ function Get-FullDiskBoot([string]$Family) {
 #   when memory's short. Steps is what to click, and {DISK} names the disk.
 # Kubuntu is missing on purpose: its ISO has a file over 4 GB, which FAT32 cannot hold.
 function Get-Catalog {
+    # The same installer as Ubuntu's, whose first choice ends in each flavour's own name.
+    $UbuntuErase = @(
+        'Pick your language and keyboard, then start the installer.'
+        'When asked how to install, choose the one that starts **Erase disk and install**.'
+        'Under **Select drive**, choose **{DISK}**. Leave any other drive alone.'
+        'On **Ready to install**, check that only **{DISK}** is listed under **Erased**, then click **Install**.')
     $AnacondaErase = @(
         'On the welcome screen, choose **Not Now**.'
         'Open the install app from the dock, then pick your language.'
@@ -203,11 +209,11 @@ function Get-Catalog {
         New-Entry 'ultramarine' 'Ultramarine' 'Fedora made easy' 'images.fyralabs.com' '#00078F' 'ultramarine' ((Get-DracutBoot 'boot/grub') + @{
             Kind = 'ultramarine'; Edition = 'gnome'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps
             FullDisk = (Get-FullDiskBoot 'dracut') + @{ IsoGB = 4; Steps = $AnacondaErase } })
-        New-UbuntuFlavor 'ubuntu-budgie' 'Ubuntu Budgie' 'Dock at the bottom' '#404552'
-        New-UbuntuFlavor 'xubuntu' 'Xubuntu' 'Lightweight' '#0044AA'
+        New-UbuntuFlavor 'ubuntu-budgie' 'Ubuntu Budgie' 'Dock at the bottom' '#404552' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 4; Steps = $UbuntuErase } }
+        New-UbuntuFlavor 'xubuntu' 'Xubuntu' 'Lightweight' '#0044AA' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 5; Steps = $UbuntuErase } }
         New-UbuntuFlavor 'lubuntu' 'Lubuntu' 'Lightest' '#0068C8' @{
             Alongside = $null; Manual = 'Manual partitioning'; ManualExtra = $EspExtra }
-        New-UbuntuFlavor 'ubuntucinnamon' 'Ubuntu Cinnamon' 'Windows-like layout' '#DD682A'
+        New-UbuntuFlavor 'ubuntucinnamon' 'Ubuntu Cinnamon' 'Windows-like layout' '#DD682A' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 6; Steps = $UbuntuErase } }
         New-UbuntuFlavor 'ubuntu-unity' 'Ubuntu Unity' 'Classic Ubuntu' '#5A06C3'
         New-MintEdition 'xfce' 'Linux Mint Xfce' 'Lighter Mint'
         New-MintEdition 'mate' 'Linux Mint MATE' 'Traditional'
