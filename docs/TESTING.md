@@ -18,6 +18,8 @@ can't tell you anything about booting either.**
 hop refuses virtual disks. The script checks that it does, then defines its own `Get-Disk` that reports its
 disks as NVMe. The app has no way to do this.
 
+`.github/workflows/probe.yml`, started by hand, runs that probe on a GitHub runner. Last run, November 2026: 143 passed, 0 failed, in 7 minutes.
+
 `tests/Probe-SystemFiles.ps1` runs in CI. It puts `$Mft::$BITMAP` at the end of a real NTFS volume on a virtual disk, checks that stops a shrink, has hop move it, then shrinks the volume, runs Windows' disk check and reads every file back.
 
 ## Replacing Windows, in a virtual PC
@@ -191,6 +193,7 @@ QEMU's NVMe disks need nothing special: Windows reports the bus as NVMe, with re
 | `stuck` | Forces the paging file to the end of C:, then Make room, then closes hop | 105 GB free and 1.4 GB releasable, with Windows naming `\pagefile.sys`. No "preventing restart" screen. hop came back by itself with no prompt, from the protected copy. 111 GB releasable afterwards. On closing hop, hibernation, the paging setting and a new change journal of the same size were back, and the tasks and copy had gone |
 | `stuckinstall` | The same, then a real Ubuntu install in place of closing hop | The settings came back as the disk finished changing, not when hop closed. The copy had gone after the next restart. `defrag` gave up with 1223, and worked when tried again |
 | `stuckmft` | Moves `$Mft::$BITMAP` to the end of C:, then Make room | 104 GB free and 5 GB releasable, with Windows naming `\$Mft::$BITMAP`. The restart and `defrag` left it there, with code 0. hop moved 5 clusters of it, and 111.8 GB was releasable. Windows' disk check found nothing wrong |
+| `firstorder` | A real Ubuntu install, then **Try another way**, reached by leaving `BootNext` set in Windows, because real firmware can't be made to ignore it | The screen offered it. `BootOrder` became `0007,0003,...`, and the firmware started `Boot0007`, hop's entry, with Secure Boot on. Back in Windows through `BootNext`, opening hop put `BootOrder` back to `0003,...,0007`. `BootNextSticks` said True and left `BootNext` as it was. Undo took C: back to 127 GB, and Windows started again |
 | `abandon` | Make room, hop killed once it's back, then a restart with nobody opening hop | Nothing changed for 18 minutes after that restart. By 21 minutes the settings were back, and the tasks, copy and state file had gone. Run again on `main` after the hardening work (`400e5ba`), on a GitHub runner: still off at 18 minutes, back at the next check, and the same after one more restart |
 | `abandonfast` | The same, with the task started by hand | The same result in under a minute |
 | `install` | A real Ubuntu 26.04.1 from its real download, with Secure Boot on, then back to Windows and Undo | See below |

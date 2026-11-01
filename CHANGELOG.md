@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- **Try another way.** When the firmware won't follow hop's one-time start, hop can put the installer first in the startup order, and moves it back the next time hop opens in Windows. Until then, the PC's boot menu is how to reach Windows.
+- **Report this on GitHub** copies a report and opens a new issue to paste it into. Nothing is sent by itself.
+- hop keeps the PC from sleeping on its own while it works.
+- hop tests a startup menu change before the disk changes, and warns if the firmware refuses it.
+- Intel RST/VMD and other RAID controllers are spotted by name, because their drives can report as plain NVMe.
+- Troubleshooting for a black screen, with `nomodeset`.
+
 ### Fixed
 
 - **Make room gets past `$Mft::$BITMAP`.** Windows' defrag can leave this NTFS file near the end of a drive, where it stops Windows shrinking it. hop now moves it, and the other NTFS files Microsoft lists as movable, when Windows names one.
