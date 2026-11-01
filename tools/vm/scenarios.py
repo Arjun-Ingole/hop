@@ -623,7 +623,7 @@ def scenario_install(bench):
     undo_after_linux(vm, s, before)
 
 
-HOP_FIRMWARE = rf"[void][Reflection.Assembly]::LoadFrom('{HOP}')"
+HOP_FIRMWARE = rf"[void][Reflection.Assembly]::LoadFrom('{HOP}')" + "\n"
 
 STARTUP_ORDER = HOP_FIRMWARE + r'''
 $state = Get-Content C:\ProgramData\hop\state.json -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
