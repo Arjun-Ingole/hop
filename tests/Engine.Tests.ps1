@@ -1438,6 +1438,13 @@ Describe 'Putting the installer first' {
     }
 }
 
+Describe 'Steps with no install behind them' {
+    It 'refuses rather than make them up' {
+        Mock Read-State { $null }
+        { Get-StateSteps } | Should -Throw '*no record of an installer*'
+    }
+}
+
 Describe 'Putting the startup order back' {
     BeforeEach { Mock Move-InstallerInOrder { $true } }
     It 'does nothing unless hop moved it' {

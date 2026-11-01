@@ -185,6 +185,8 @@ function Get-StateDistro($State) {
 
 function Get-StateSteps {
     $state = Read-State
+    # Steps made up from nothing would look real, with a size of 0 GB.
+    if (-not $state) { throw 'hop has no record of an installer on this PC. Open hop again and install it.' }
     Get-Steps (Get-StateDistro $state) $state.LinuxGB $state
 }
 
