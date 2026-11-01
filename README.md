@@ -28,7 +28,7 @@ first.
 - **Gets you unstuck.** If the PC goes back to Windows, reopening hop explains why and can restart into the BIOS.
 - **Cleans up after itself.** Undo gives the space back to the drive it came from, and it can also remove
   another Linux already on the drive.
-- **Can replace Windows entirely, for the systems where hop has seen it work:** Ubuntu, Xubuntu, Ubuntu Budgie, Ubuntu Cinnamon, Edubuntu, Zorin OS, Fedora Workstation, Ultramarine, elementary OS, Debian, Arch and Omarchy. It's a separate choice with its own warning, and you have to
+- **Can replace Windows entirely, for the systems where hop has seen it work:** Ubuntu, Xubuntu, Ubuntu Budgie, Ubuntu Cinnamon, Edubuntu, Ubuntu Studio, Zorin OS, Fedora Workstation, Ultramarine, elementary OS, Debian, Arch and Omarchy. It's a separate choice with its own warning, and you have to
   type ERASE. hop only makes the installer, which copies itself to memory so it can erase the disk it started
   from when you tell it to. It needs more memory than the ISO's size, and it's only offered for systems where
   hop has seen it erase a disk and start again afterwards.
