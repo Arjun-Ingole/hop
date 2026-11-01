@@ -117,7 +117,7 @@ function Get-Steps($Distro, [int]$LinuxGB, $Place) {
         $steps += "Don't choose **Erase disk**. The installer is running from this drive."
     }
     $notes = @('If the PC starts Windows again or shows a security error, turn off Secure Boot in the BIOS, then open hop and restart again.')
-    if ($own.Notes) { $notes += @($own.Notes) }
+    if ($own.Notes) { $notes += @($own.Notes | ForEach-Object { $_ -replace '\{DISK\}', "$($Place.DiskName) ($($Place.DiskGB) GB)" }) }
     if ($otherDisk) { $notes += 'If it stops at a **grub>** prompt, turn off **Fast Boot** in the BIOS, because it can hide a second drive. Hold the power button to get back to Windows.' }
     [pscustomobject]@{ Steps = $steps; Notes = $notes }
 }
