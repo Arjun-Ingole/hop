@@ -5,13 +5,14 @@ using static Hop.Theme;
 
 namespace Hop
 {
-    enum DriveMode { Edit, Progress, Static }
+    enum DriveMode { Edit, Progress, Static, Stuck }
 
     /// <summary>
     /// The chosen drive drawn to scale: what's on it now (used and free), the installer, and
     /// the Linux part in the system's brand color. In Edit mode the boundary between the
     /// drive and Linux is dragged to choose the size. Free space has no drive to shrink, so
-    /// its left part is simply what stays free.
+    /// its left part is simply what stays free. In Stuck mode there's no Linux yet: it shows
+    /// what's free and the mark Windows can't shrink past.
     /// </summary>
     sealed class DriveBar : DrawnControl
     {
@@ -33,6 +34,8 @@ namespace Hop
         public DriveMode Mode = DriveMode.Edit;
         public string Status = "";
         public string Legend;       // in place of the usual words about the installer
+        public int ReleaseGB;       // Stuck: how much of the drive Windows can release
+        public string StuckFile;    // Stuck: the file in the way
         int linuxGB = 60;
 
         public event EventHandler ValueChanged;
@@ -41,7 +44,7 @@ namespace Hop
         {
             MakeClickable();
             Cursor = Cursors.Default;
-            Height = S(HeaderHeight + HeaderGap + BarHeight + LegendGap + LegendHeight);
+            Height = FullHeight;
             animation.Tick += (s, e) =>
             {
                 shownProgress += (targetProgress - shownProgress) * 0.12f;
@@ -49,6 +52,11 @@ namespace Hop
                 Invalidate();
             };
         }
+
+        int FullHeight => S(HeaderHeight + HeaderGap + BarHeight + LegendGap + LegendHeight);
+
+        /// <summary>Stuck mode has no legend, so what's below can sit right under the bar.</summary>
+        public void FitToMode() => Height = Mode == DriveMode.Stuck ? S(HeaderHeight + HeaderGap + BarHeight) : FullHeight;
 
         public int LinuxGB
         {
@@ -156,13 +164,20 @@ namespace Hop
                 : TailFreeGB > 0 ? $"{DriveTitle} {WindowsGB} GB + {TailFreeGB} GB free" : $"{DriveTitle} {WindowsGB} GB";
             string header = DiskName.Length > 0 ? $"{DiskName} · {size}" : size;
             TextKit.Draw(g, header, smallStrong, Ink, 0, headerBaseline);
-            string right = Mode == DriveMode.Edit ? "Drag to resize" : Status;
+            string right = Mode == DriveMode.Edit ? "Drag to resize" : Mode == DriveMode.Stuck ? StuckFile ?? "" : Status;
             var rightFont = Mode == DriveMode.Edit ? small : smallStrong;
             TextKit.Draw(g, right, rightFont, Mode == DriveMode.Edit ? Tertiary : Ink, Width - TextKit.Width(right, rightFont), headerBaseline);
 
             var bar = Bar;
             var saved = g.Clip;
             using (var clip = RoundedRect(bar, F(12))) g.SetClip(clip);
+
+            if (Mode == DriveMode.Stuck)
+            {
+                DrawStuck(g, bar);
+                g.Clip = saved;
+                return;
+            }
 
             float usedRight = bar.X + Math.Min(UsedGB, WindowsGB) * PxPerGB;
             using (var used = new SolidBrush(DriveUsed)) g.FillRectangle(used, bar.X, bar.Y, Math.Max(0, Math.Min(usedRight, WindowsRight) - bar.X), bar.Height);
@@ -206,6 +221,24 @@ namespace Hop
             float lx = Width - legendWidth;
             FillRounded(g, Mix(Color.White, Brand, 0.42f), new RectangleF(lx - F(16), legendTop + F(4), F(8), F(8)), F(2));
             TextKit.Draw(g, legend, small, Tertiary, lx, TextKit.BaselineIn(small, legendTop, F(LegendHeight)));
+        }
+
+        void DrawStuck(Graphics g, RectangleF bar)
+        {
+            float usedRight = bar.X + Math.Min(UsedGB, WindowsGB) * PxPerGB;
+            using (var free = new SolidBrush(DriveFree)) g.FillRectangle(free, bar);
+            using (var used = new SolidBrush(DriveUsed)) g.FillRectangle(used, bar.X, bar.Y, usedRight - bar.X, bar.Height);
+
+            float bottom = bar.Bottom - F(14);
+            DrawLabels(g, new RectangleF(bar.X + F(16), bar.Y, usedRight - bar.X - F(32), bar.Height), bottom,
+                DriveLabel, $"{UsedGB} GB used", Ink, DriveUsedText);
+            DrawLabels(g, new RectangleF(usedRight + F(16), bar.Y, bar.Right - usedRight - F(32), bar.Height), bottom,
+                $"{Math.Max(0, WindowsGB - UsedGB)} GB free", $"Windows can release {ReleaseGB} GB of it", Ink, DriveUsedText);
+
+            // Windows can't shrink past this. It can't be drawn right on the edge, where nothing would show it.
+            float mark = bar.X + (WindowsGB - ReleaseGB) * PxPerGB;
+            mark = Math.Max(usedRight, Math.Min(bar.Right - F(14), mark));
+            using (var brush = new SolidBrush(Ink)) g.FillRectangle(brush, mark, bar.Y, F(4), bar.Height);
         }
 
         void DrawLabels(Graphics g, RectangleF area, float bottom, string title, string detail, Color titleColor, Color detailColor)

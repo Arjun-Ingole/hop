@@ -22,6 +22,7 @@ namespace Hop
         public bool SecureBootOff;      // can't start with Secure Boot on
         public bool FullDisk;           // shown to work replacing Windows
         public bool WindowsDiskOnly;    // its steps are only for the disk Windows is on
+        public int MinGB;               // the least its installer accepts, if more than hop's own least
         public System.Drawing.Color Color;
     }
 
@@ -255,6 +256,7 @@ namespace Hop
                 SecureBootOff = Get<bool>(o, "SecureBootOff"),
                 FullDisk = o.Properties["FullDisk"]?.Value != null,
                 WindowsDiskOnly = o.Properties["Steps"]?.Value != null,
+                MinGB = Get<int>(o, "MinGB"),
                 Color =System.Drawing.ColorTranslator.FromHtml(Get<string>(o, "Color")),
             }).ToList();
 
