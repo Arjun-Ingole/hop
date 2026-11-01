@@ -140,21 +140,12 @@ function Test-EnoughMemoryWithoutPaging {
 
 function Get-MakeRoomSteps([string]$Drive) {
     $room = Get-RoomDrive $Drive
-    if ($room -eq $env:SystemDrive) {
-        $steps = @("On drive $room turns off **hibernation** and clears the **change journal**.")
-        if (Test-EnoughMemoryWithoutPaging) { $steps += "On drive $room turns off the **paging file**." }
-        $steps += 'Restarts this PC, opens again, and moves what''s left out of the way.'
-        $steps += 'Turns everything back on once Linux has its space, or when you close hop.'
-        return [pscustomobject]@{ Steps = $steps; Restart = $true; Notes = @('Save your work first. Your files aren''t touched.') }
-    }
-    $steps = @("On drive $room clears the **change journal**.")
-    $restart = (Test-PagingFileOn $room) -and (Test-EnoughMemoryWithoutPaging)
-    if ($restart) {
-        $steps += "On drive $room turns off the **paging file**."
-        $steps += 'Restarts this PC, opens again, and moves what''s left out of the way.'
-    } else {
-        $steps += 'Moves files out of the way, for up to 15 minutes.'
-    }
+    $isWindows = $room -eq $env:SystemDrive
+    $pagingOff = (Test-EnoughMemoryWithoutPaging) -and ($isWindows -or (Test-PagingFileOn $room))
+    $restart = $isWindows -or $pagingOff
+    $steps = @(if ($isWindows) { "On drive $room turns off **hibernation** and clears the **change journal**." } else { "On drive $room clears the **change journal**." })
+    if ($pagingOff) { $steps += "On drive $room turns off the **paging file**." }
+    $steps += if ($restart) { 'Restarts this PC, opens again, and moves what''s left out of the way.' } else { 'Moves files out of the way, for up to 15 minutes.' }
     $steps += 'Turns everything back on once Linux has its space, or when you close hop.'
     $note = if ($restart) { 'Save your work first. Your files aren''t touched.' } else { 'Your files aren''t touched, and this PC doesn''t restart.' }
     [pscustomobject]@{ Steps = $steps; Restart = $restart; Notes = @($note) }

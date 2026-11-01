@@ -59,7 +59,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
             LinuxBefore = @(Get-LinuxPartitions @(Get-Partition -DiskNumber $plan.DiskNumber -ErrorAction SilentlyContinue) | ForEach-Object { $_.Guid })
             # WindowsShrunk and InstallerNextToWindows now mean the chosen drive, and keep their names so older files still read.
             FastStartupWasOn = (Get-FastStartup) -eq 1; BitLockerPaused = $false; InstallerNextToWindows = $plan.Kind -eq 'volume'
-            DiskGuid = $disk.Guid; DiskName = Get-DiskLabel $disk; DiskGB = [int][math]::Round($disk.Size / 1GB)
+            DiskGuid = $disk.Guid; DiskName = Get-DiskLabel $disk; DiskGB = Get-DiskGB $disk
             OnWindowsDisk = $plan.DiskNumber -eq (Get-WindowsPartition).DiskNumber
             TargetKind = $plan.Kind; TargetLetter = $plan.Letter; TargetOffset = $plan.TargetOffset; AlongsideOk = $null
         }
@@ -143,7 +143,7 @@ function Get-StartupInfo {
         # C: on its own, for when the drives can't be listed.
         WindowsFallback = [pscustomobject]@{
             Id = ''; Kind = 'volume'; Letter = 'C'; Title = 'Drive C:'; OnWindowsDisk = $true
-            DiskName  = ($disk.FriendlyName -replace '\s+', ' ').Trim()
+            DiskName  = Get-DiskLabel $disk
             SizeGB    = [int][math]::Floor($space.Partition.Size / 1GB)
             UsedGB    = [int][math]::Ceiling(($volume.Size - $volume.SizeRemaining) / 1GB)
             TailFreeGB = [int][math]::Floor($space.TailFree / 1GB)

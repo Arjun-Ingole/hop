@@ -43,7 +43,6 @@ function Get-FullDiskBlocker($Distro) {
     Get-FullDiskMemoryBlocker $Distro ([int64]$Distro.FullDisk.IsoGB * 1GB)
 }
 
-function Get-DiskGB($Disk) { [int][math]::Round([int64]$Disk.Size / 1GB) }
 
 # Whether BitLocker is on for a drive. Win32_EncryptableVolume only answers an administrator, which hop is.
 function Test-DriveEncrypted([string]$Letter) {

@@ -16,6 +16,8 @@ function Get-LetterOf($Partition) {
 
 function Get-DiskLabel($Disk) { ($Disk.FriendlyName -replace '\s+', ' ').Trim() }
 
+function Get-DiskGB($Disk) { [int][math]::Round([int64]$Disk.Size / 1GB) }
+
 function Get-PartitionSignature($Partition) {
     try { [Hop.DiskProbe]::ReadSignature($Partition.DiskNumber, [int64]$Partition.Offset) } catch { $null }
 }
@@ -161,7 +163,7 @@ function Get-DiskGaps($Disk, $Partitions) {
 function New-DriveRow([string]$Id, [string]$Kind, $Disk, [string]$Letter, [string]$Title, [string]$Blocker, [bool]$OnWindowsDisk) {
     [pscustomobject]@{
         Id = $Id; Kind = $Kind; Letter = $Letter; Title = $Title; Blocker = $Blocker
-        DiskName = Get-DiskLabel $Disk; DiskGB = [int][math]::Round($Disk.Size / 1GB); OnWindowsDisk = $OnWindowsDisk
+        DiskName = Get-DiskLabel $Disk; DiskGB = Get-DiskGB $Disk; OnWindowsDisk = $OnWindowsDisk
         Estimated = $true; SizeGB = 0; UsedGB = 0; FreeGB = 0; TailFreeGB = 0; UsableGB = 0; StuckGB = 0; ShrinkBlocker = $null; BlockerKind = 'unknown'
     }
 }
