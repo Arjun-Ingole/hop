@@ -225,8 +225,8 @@ namespace Hop
                     ? $"{target.Title} has room, but Windows can't release it yet. hop can clear what's in the way."
                     : $"{target.Title} has room, but Windows can't release it yet. Make room clears what's in the way, or use {better.InSentence}, which has {(better.Estimated ? "about " : "")}{better.UsableGB} GB to spare.";
             if (target.BlockerKind == "restore")
-                return $"Windows can release {release} GB. Restore points on {target.InSentence} are stopping it releasing more.";
-            return $"hop made what room it could, and Windows can release {release} GB. It can't move {target.ShrinkBlocker ?? "some system files"}, which limits the rest.";
+                return $"hop can use {release} GB. Restore points on {target.InSentence} are stopping Windows releasing more.";
+            return $"hop made what room it could, and can use {release} GB. Windows can't move {target.ShrinkBlocker ?? "some system files"}, which limits the rest.";
         }
 
         // --- Choosing a drive -------------------------------------------------------------

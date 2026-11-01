@@ -17,6 +17,7 @@ namespace Hop
     sealed class DriveBar : DrawnControl
     {
         const float HeaderHeight = 16, HeaderGap = 12, BarHeight = 84, LegendGap = 14, LegendHeight = 16, Gap = 3;
+        const float MinLabelWidth = 48, MinCutLabelWidth = 96;
 
         readonly Timer animation = new Timer { Interval = 16 };
         float shownProgress, targetProgress;
@@ -34,7 +35,7 @@ namespace Hop
         public DriveMode Mode = DriveMode.Edit;
         public string Status = "";
         public string Legend;       // in place of the usual words about the installer
-        public int ReleaseGB;       // Stuck: how much of the drive Windows can release
+        public int ReleaseGB;       // Stuck: how much hop can use, after its reserve
         public string StuckFile;    // Stuck: the file in the way
         int linuxGB = 60;
 
@@ -196,7 +197,7 @@ namespace Hop
             DrawLabels(g, new RectangleF(bar.X + F(16), bar.Y, WindowsRight - bar.X - F(32), bar.Height), labelBottom,
                 IsFreeSpace ? "Free space" : DriveLabel,
                 IsFreeSpace ? $"{Math.Max(0, TailFreeGB - linuxGB - InstallerGB)} GB stays free" : $"{UsedGB} GB used · {Math.Max(0, WindowsAfterGB - UsedGB)} GB free",
-                Ink, DriveUsedText);
+                Ink, DriveUsedText, IsFreeSpace ? null : $"{UsedGB} GB used");
 
             var onLinux = preparing ? Mix(Brand, Color.Black, 0.45f) : TextOn(Brand);
             var onLinuxSoft = preparing ? Mix(Brand, Color.Black, 0.2f) : Color.FromArgb(210, onLinux);
@@ -229,29 +230,46 @@ namespace Hop
             using (var free = new SolidBrush(DriveFree)) g.FillRectangle(free, bar);
             using (var used = new SolidBrush(DriveUsed)) g.FillRectangle(used, bar.X, bar.Y, usedRight - bar.X, bar.Height);
 
-            float bottom = bar.Bottom - F(14);
-            DrawLabels(g, new RectangleF(bar.X + F(16), bar.Y, usedRight - bar.X - F(32), bar.Height), bottom,
-                DriveLabel, $"{UsedGB} GB used", Ink, DriveUsedText);
-            DrawLabels(g, new RectangleF(usedRight + F(16), bar.Y, bar.Right - usedRight - F(32), bar.Height), bottom,
-                $"{Math.Max(0, WindowsGB - UsedGB)} GB free", $"Windows can release {ReleaseGB} GB of it", Ink, DriveUsedText);
-
             // Windows can't shrink past this. It can't be drawn right on the edge, where nothing would show it.
-            float mark = bar.X + (WindowsGB - ReleaseGB) * PxPerGB;
+            // ReleaseGB counts the free space after the drive too, which takes nothing off the drive.
+            float mark = bar.X + (WindowsGB - Math.Max(0, ReleaseGB - TailFreeGB)) * PxPerGB;
             mark = Math.Max(usedRight, Math.Min(bar.Right - F(14), mark));
+
+            // The used label takes the width it needs, even if the used part is thinner, and the free one starts after it.
+            float bottom = bar.Bottom - F(14);
+            string usedDetail = $"{UsedGB} GB used";
+            float usedLabel = (float)Math.Ceiling(Math.Max(TextKit.Width(DriveLabel, Font(14, true)), TextKit.Width(usedDetail, Font(13))));
+            var usedArea = new RectangleF(bar.X + F(16), bar.Y, usedLabel, bar.Height);
+            DrawLabels(g, usedArea, bottom, DriveLabel, usedDetail, Ink, DriveUsedText);
+
+            float freeLeft = Math.Max(usedRight, usedArea.Right) + F(16);
+            float beforeMark = mark - F(8) - freeLeft, afterMark = bar.Right - F(16) - (mark + F(4) + F(12));
+            // After the mark only if there's no room before it, because the free part mostly is before it.
+            var freeArea = beforeMark >= F(MinLabelWidth) || afterMark <= beforeMark
+                ? new RectangleF(freeLeft, bar.Y, beforeMark, bar.Height)
+                : new RectangleF(mark + F(4) + F(12), bar.Y, afterMark, bar.Height);
+            DrawLabels(g, freeArea, bottom, $"{Math.Max(0, WindowsGB - UsedGB)} GB free", $"hop can use {ReleaseGB} GB of it", Ink, DriveUsedText, $"{ReleaseGB} GB usable");
+
             using (var brush = new SolidBrush(Ink)) g.FillRectangle(brush, mark, bar.Y, F(4), bar.Height);
         }
 
-        void DrawLabels(Graphics g, RectangleF area, float bottom, string title, string detail, Color titleColor, Color detailColor)
+        /// <summary>A shorter detail stands in if there's room for that, and what doesn't fit isn't drawn: "Wind…" says nothing.</summary>
+        void DrawLabels(Graphics g, RectangleF area, float bottom, string title, string detail, Color titleColor, Color detailColor, string shortDetail = null)
         {
-            if (area.Width < F(48)) return;
+            if (area.Width < F(MinLabelWidth)) return;
             var titleFont = Font(14, true);
             var detailFont = Font(13);
-            string t = TextKit.Ellipsize(title, titleFont, area.Width);
-            string d = TextKit.Ellipsize(detail, detailFont, area.Width);
+            string t = FitLabel(title, titleFont, area.Width);
+            string d = TextKit.Width(detail, detailFont) <= area.Width || shortDetail == null ? FitLabel(detail, detailFont, area.Width)
+                : TextKit.Width(shortDetail, detailFont) <= area.Width ? shortDetail : null;
             float detailBaseline = bottom - TextKit.Descent(detailFont);
             TextKit.Draw(g, t, titleFont, titleColor, area.X, detailBaseline - F(18));
             TextKit.Draw(g, d, detailFont, detailColor, area.X, detailBaseline);
         }
+
+        /// <summary>Long names can lose their end where there's room for most of them. Otherwise they go.</summary>
+        string FitLabel(string text, Font font, float width) =>
+            TextKit.Width(text, font) <= width ? text : width >= F(MinCutLabelWidth) ? TextKit.Ellipsize(text, font, width) : null;
 
         void DrawHandle(Graphics g, RectangleF bar)
         {
