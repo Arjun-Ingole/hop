@@ -8,36 +8,13 @@ on:
       scenario:
         description: 'Scenarios from tools/vm/scenarios.py, separated by spaces'
         default: screens stuck
-  push:
-    branches: ['probe/winvm']
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  tests:
-    if: contains(github.event.head_commit.message, 'tests=1')
-    runs-on: windows-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-      - run: dotnet build Hop.csproj -c Release
-      - shell: powershell
-        run: |
-          Set-PSRepository PSGallery -InstallationPolicy Trusted
-          Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
-          Import-Module Pester -RequiredVersion 5.7.1
-          $config = New-PesterConfiguration
-          $config.Run.Path = 'tests'
-          $config.Run.Exit = $true
-          $config.Output.Verbosity = 'Normal'
-          Invoke-Pester -Configuration $config
-
   image:
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 170
     outputs:
       key: ${{ steps.key.outputs.key }}
@@ -65,9 +42,6 @@ jobs:
       - name: Install Windows
         if: steps.cached.outputs.cache-hit != 'true'
         timeout-minutes: 120
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          HOPVM_LIVE_BRANCH: probe/winvm-live
         run: python3 tools/vm/hopvm.py build-image --iso /mnt/hopvm/windows.iso --limit 110
 
       - uses: actions/cache/save@v4
@@ -85,8 +59,8 @@ jobs:
 
   run:
     needs: image
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 330
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -107,14 +81,10 @@ jobs:
           fail-on-cache-miss: true
 
       - name: Run the scenarios
-        timeout-minutes: 320
+        timeout-minutes: 110
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          HOPVM_LIVE_BRANCH: probe/winvm-live
           SCENARIO: ${{ inputs.scenario }}
-          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          if [ -z "$SCENARIO" ]; then SCENARIO=$(printf '%s' "$COMMIT_MESSAGE" | grep -oP 'scenario=\K\S+' || echo live); fi
           cp bin/Release/hop.exe /mnt/hopvm/files/hop.exe
           python3 tools/vm/hopvm.py run $SCENARIO
 

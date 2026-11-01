@@ -163,7 +163,6 @@ class Bench:
     def __init__(self, secure_boot=True):
         self.secure_boot = secure_boot
         self.vm = None
-        self.live = None
 
     def fresh(self, second_disk=False, secure_boot=None):
         """Back to Windows as it was installed, with a new VM."""
@@ -172,7 +171,6 @@ class Bench:
             self.vm.server.shutdown()
             self.vm.server.server_close()
         vm = hopvm.Vm(secure_boot=self.secure_boot if secure_boot is None else secure_boot)
-        self.live = hopvm.attach_live(vm)
         if second_disk:
             path = os.path.join(hopvm.RUN, 'second.qcow2')
             os.makedirs(hopvm.RUN, exist_ok=True)
@@ -184,43 +182,11 @@ class Bench:
         return vm, Session(vm)
 
 
-def stream_output(tag):
-    """Sends what's printed to the live branch once a minute, while the probe is being written."""
-    import sys
-    from live import Live
-    live = Live.from_environment()
-    if not live:
-        return
-    lines = []
-    real = sys.stdout
-
-    class Tee:
-        def write(_, text):
-            lines.append(text)
-            real.write(text)
-
-        def flush(_):
-            real.flush()
-
-    sys.stdout = Tee()
-
-    def push():
-        while True:
-            time.sleep(60)
-            live.push(f'log-{tag}.txt', ''.join(lines).encode())
-
-    import threading
-    threading.Thread(target=push, daemon=True).start()
-
-
 def main(args):
-    stream_output('-'.join(args.scenarios))
     bench = Bench(secure_boot=not args.no_secure_boot)
     failed = False
     try:
         for name in args.scenarios:
-            if name == 'live':
-                continue
             log(f'===== scenario {name}')
             try:
                 globals()[f'scenario_{name}'](bench)
@@ -231,9 +197,6 @@ def main(args):
                     bench.vm.shot(f'{name}-stopped')
                 except Exception:
                     pass
-        if 'live' in args.scenarios:
-            from live import Live
-            Live.from_environment().serve({'bench': bench, 'time': time, 'hopvm': hopvm, 'scenarios': globals(), 'FACTS_SCRIPT': FACTS_SCRIPT})
     finally:
         if bench.vm:
             bench.vm.stop()

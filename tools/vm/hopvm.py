@@ -143,7 +143,6 @@ class Vm:
         self.extra_disks = []
         self.cds = []
         self.stop_lapse = threading.Event()
-        self.on_shot = None
         os.makedirs(OUT, exist_ok=True)
         os.makedirs(os.path.join(OUT, 'lapse'), exist_ok=True)
         Agents.vm = self
@@ -229,8 +228,6 @@ class Vm:
             count += 1
             try:
                 self.dump(os.path.join(OUT, 'lapse', f'{count:04}.png'))
-                if self.on_shot and count % 3 == 0:
-                    self.on_shot(os.path.join(OUT, 'lapse', f'{count:04}.png'))
             except Exception as ex:
                 log(f'lapse: {ex}')
 
@@ -263,8 +260,6 @@ class Vm:
         path = os.path.join(OUT, f'{self.shots:03}-{name}.png')
         self.dump(path)
         log(f'screen {os.path.basename(path)}')
-        if self.on_shot:
-            self.on_shot(path)
         return path
 
     def key(self, *combo, hold=80):
@@ -364,7 +359,6 @@ def build_image(args):
     run('qemu-img', 'create', '-f', 'qcow2', disk, '128G')
     shutil.copy(OVMF_VARS, vars_fd)
     vm = Vm(memory_gb=8)
-    attach_live(vm)
     vm.start(disk, vars_fd, tpm, cds=[args.iso, unattend], boot_from_cd=True)
     # "Press any key to boot from CD or DVD", once. Not for long: Setup's Cancel button comes next.
     for second in range(20):
@@ -400,15 +394,6 @@ def new_run_disks():
     shutil.rmtree(tpm, ignore_errors=True)
     shutil.copytree(os.path.join(IMAGE, 'tpm'), tpm)
     return disk, vars_fd, tpm
-
-
-def attach_live(vm):
-    """With a token and a branch, screens and output also go to that branch as they happen."""
-    from live import Live
-    live = Live.from_environment()
-    if live:
-        vm.on_shot = live.push_file
-    return live
 
 
 def main():
