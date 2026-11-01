@@ -148,6 +148,7 @@ namespace Hop
         {
             var system = Current;
             SyncLog();
+            int held = HoldScreen();
             bool changed = false;
             try
             {
@@ -155,6 +156,7 @@ namespace Hop
                 changed = startup.Status != "none";
             }
             catch { }
+            if (!ReleaseScreen(held)) return;
 
             Arrange(new[]
             {

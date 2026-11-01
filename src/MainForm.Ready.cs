@@ -19,9 +19,15 @@ namespace Hop
         {
             if (startup.CameBack) { await ShowCameBackAsync(); return; }
 
+            int held = HoldScreen();
             InstallSteps installSteps;
             try { installSteps = await engine.GetStepsAsync(); }
-            catch (Exception ex) { ShowBlocked(Describe(ex)); return; }
+            catch (Exception ex)
+            {
+                if (ReleaseScreen(held)) ShowBlocked(Describe(ex));
+                return;
+            }
+            if (!ReleaseScreen(held)) return;
 
             steps.Set(installSteps.Steps, installSteps.Notes);
             Arrange(new[]
@@ -37,9 +43,15 @@ namespace Hop
         /// <summary>hop restarted the PC for the installer, and here is Windows again.</summary>
         async Task ShowCameBackAsync()
         {
+            int held = HoldScreen();
             InstallSteps help;
             try { help = await engine.GetReturnedHelpAsync(); }
-            catch (Exception ex) { ShowBlocked(Describe(ex)); return; }
+            catch (Exception ex)
+            {
+                if (ReleaseScreen(held)) ShowBlocked(Describe(ex));
+                return;
+            }
+            if (!ReleaseScreen(held)) return;
 
             steps.Set(help.Steps, help.Notes);
             Arrange(new[]
@@ -142,6 +154,7 @@ namespace Hop
         /// <summary>The PC, the disk layout, the startup menu and the log, ready to paste into an issue.</summary>
         async Task CopyReportAsync()
         {
+            int shown = screen;
             footerLink.Set("Copying…", false, Tertiary, false);
             onLink = null;
             string report;
@@ -150,11 +163,11 @@ namespace Hop
             try
             {
                 Clipboard.SetText(report);
-                footerLink.Set("Copied. Paste it into a GitHub issue.", false, Tertiary, false);
+                if (shown == screen) footerLink.Set("Copied. Paste it into a GitHub issue.", false, Tertiary, false);
             }
             catch
             {
-                footerLink.Set("Couldn't reach the clipboard.", false, Tertiary, false);
+                if (shown == screen) footerLink.Set("Couldn't reach the clipboard.", false, Tertiary, false);
             }
         }
     }

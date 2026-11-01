@@ -301,9 +301,15 @@ namespace Hop
 
         async Task ShowMakeRoomAsync()
         {
+            int held = HoldScreen();
             InstallSteps plan;
             try { plan = await engine.GetMakeRoomStepsAsync(target.Letter); }
-            catch (Exception ex) { ShowBlocked(Describe(ex)); return; }
+            catch (Exception ex)
+            {
+                if (ReleaseScreen(held)) ShowBlocked(Describe(ex));
+                return;
+            }
+            if (!ReleaseScreen(held)) return;
 
             string title = target.InSentence;
             ConfigureDrive(DriveMode.Stuck, Current);
@@ -474,17 +480,18 @@ namespace Hop
 
         async Task CheckThenAsync(string place, Action next)
         {
-            primary.Enabled = false;
+            int held = HoldScreen();
             string[] warnings;
             try { warnings = await engine.GetWarningsAsync(place); }
             catch { warnings = new string[0]; }
-            primary.Enabled = true;
+            if (!ReleaseScreen(held)) return;
             if (warnings.Length == 0) { next(); return; }
 
             steps.Set(warnings, null);
             Arrange(new[] { new[] { Run.Gray("Before you"), Run.Black("start") } },
                 "hop can go ahead, but check these first.", Secondary, steps, 32);
             Footer("Back", ShowChoose, "Continue", next);
+            primary.Focus();
         }
 
         // --- Replacing Windows ------------------------------------------------------------

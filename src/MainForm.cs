@@ -58,6 +58,7 @@ namespace Hop
 
         Distro prepared;          // what the ready screen is about
         bool busy, installing, working, cancelling, showingLog;
+        int screen;               // goes up each time a screen is drawn, so that a late answer can tell it's been replaced
         bool fullDisk;            // set only by typing the word on the last screen of replacing Windows
         string shownStatus;
         Action onPrimary, onSecondary, onLink, onEraseWord;
@@ -179,6 +180,8 @@ namespace Hop
         /// <summary>Shows the sentence, a note, one body element and the footer.</summary>
         void Arrange(Run[][] lines, string noteText, Color noteColor, Control body, int bodyGap)
         {
+            screen++;
+            foreach (var c in new Control[] { sentence, drive, removeAll, removeInstaller }) c.Enabled = true;
             sentence.Set(lines);
             note.Set(noteText, noteColor);
             note.Location = new Point(S(Gutter), sentence.Top + S(46 * lines.Length + 18));
@@ -219,6 +222,7 @@ namespace Hop
             string secondaryText = null, Action secondaryAction = null, Color? linkColor = null)
         {
             bool clickable = linkAction != null;
+            footerLink.Enabled = true;
             footerLink.Set(link, clickable, linkColor ?? (clickable ? Ink : Tertiary), clickable);
             footerLink.Location = new Point(S(Gutter), ClientSize.Height - S(48) - footerLink.Height / 2);
             onLink = linkAction;
@@ -235,6 +239,25 @@ namespace Hop
             secondary.Location = new Point(right - secondary.Width, primary.Top);
             secondary.Enabled = secondaryAction != null;
             onSecondary = secondaryAction;
+        }
+
+        /// <summary>
+        /// For asking the engine something on the way to the next screen: nothing on this one can start
+        /// anything meanwhile, and it stays busy so that closing is handled. The next screen enables it all.
+        /// </summary>
+        int HoldScreen()
+        {
+            busy = true;
+            foreach (var c in new Control[] { sentence, drive, removeAll, removeInstaller, footerLink, secondary, primary }) c.Enabled = false;
+            return screen;
+        }
+
+        /// <summary>False if something has drawn another screen since, whose state isn't this one's to change.</summary>
+        bool ReleaseScreen(int held)
+        {
+            if (held != screen) return false;
+            busy = false;
+            return true;
         }
 
         Image LogoFor(Distro d) => Logo(d?.Logo);
