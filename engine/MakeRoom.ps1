@@ -213,6 +213,7 @@ function Request-RoomRestart {
 function Register-RunAfterRestart {
     $exe = Get-RestartCopy
     $state = Read-RoomState
+    $earlier = @($state.CopyFolder, [Hop.RestartCopy]::OwnFolder()) | Where-Object { $_ -and $_ -ne (Split-Path $exe -Parent) } | Select-Object -Unique
     if ($state) {
         $state | Add-Member -NotePropertyName CopyFolder -NotePropertyValue (Split-Path $exe -Parent) -Force
         Save-RoomState $state
@@ -222,12 +223,13 @@ function Register-RunAfterRestart {
         if (-not (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue)) { throw "Windows didn't keep the task called $name." }
     }
     Remove-ItemProperty -Path $RunOnceKey -Name 'hop' -ErrorAction SilentlyContinue
+    # Nothing starts these any more: one from asking to restart before, and the one running, if it's a copy.
+    foreach ($folder in @($earlier)) { Remove-RestartCopy $folder }
 }
 
-# Running from one already, after an earlier restart, it's already safe and the tasks can use it again.
+# Always a new one. The one hop may be running from can already be set to go as Windows next starts,
+# which would leave the tasks pointing at nothing, just when they're needed.
 function Get-RestartCopy {
-    $own = [Hop.RestartCopy]::OwnFolder()
-    if ($own) { return Join-Path $own 'hop.exe' }
     [Hop.RestartCopy]::Create($ProgramData)
 }
 
