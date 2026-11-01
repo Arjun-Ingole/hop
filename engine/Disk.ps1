@@ -187,11 +187,26 @@ function Invoke-CopyWatched([string[]]$Arguments, [string]$Target, [int64]$Total
     $startFree = (Get-Volume -DriveLetter $Target).SizeRemaining
     $proc = Start-Process -FilePath robocopy.exe -PassThru -WindowStyle Hidden -ArgumentList $Arguments
     $null = $proc.Handle
-    while (-not $proc.HasExited) {
-        $copied = $startFree - (Get-Volume -DriveLetter $Target).SizeRemaining
-        $Sync.Status = 'Copying {0}... {1:N1} of {2:N1} GB' -f $What, ($copied / 1GB), ($Total / 1GB)
-        Set-ByteProgress ([math]::Max([int64]0, [int64]$copied)) $Total
-        Start-Sleep -Milliseconds 700
+    $pollFailed = $false
+    try {
+        while (-not $proc.HasExited) {
+            # Only the progress: not being able to read it says nothing about the copy.
+            try {
+                $copied = $startFree - (Get-Volume -DriveLetter $Target).SizeRemaining
+                $Sync.Status = 'Copying {0}... {1:N1} of {2:N1} GB' -f $What, ($copied / 1GB), ($Total / 1GB)
+                Set-ByteProgress ([math]::Max([int64]0, [int64]$copied)) $Total
+            } catch {
+                if (-not $pollFailed) { Write-Log "Could not read how far the copy has got: $($_.Exception.Message)" }
+                $pollFailed = $true
+            }
+            Start-Sleep -Milliseconds 700
+        }
+    } finally {
+        # Being stopped mustn't leave it writing to a partition that's about to be removed.
+        if (-not $proc.HasExited) {
+            $proc.Kill()
+            [void]$proc.WaitForExit(10000)
+        }
     }
     if ($proc.ExitCode -ge 8) { throw "Copying $What failed (robocopy code $($proc.ExitCode))." }
 }
