@@ -55,8 +55,10 @@ Describe 'Catalog' {
     It 'only gives Omarchy a second partition' {
         @($catalog | Where-Object LiveFiles).Id | Should -Be @('omarchy')
     }
-    It 'does not offer replacing Windows with Omarchy, which nothing has shown working' {
-        ($catalog | Where-Object Id -eq 'omarchy').FullDisk | Should -BeNullOrEmpty
+    It 'lets Omarchy replace Windows with BitLocker on: its installer only checks that for free space' {
+        $omarchy = $catalog | Where-Object Id -eq 'omarchy'
+        $omarchy.NoBitLocker | Should -BeTrue
+        $omarchy.FullDisk | Should -Not -BeNullOrEmpty
     }
     It 'edits the boot files of the systems that need it, with the edit they cannot start without first' {
         foreach ($distro in $catalog | Where-Object BootEdits) {
