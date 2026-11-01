@@ -281,7 +281,7 @@ fsutil file createnew C:\probe\filler.bin $size
 fsutil file setvaliddata C:\probe\filler.bin $size
 New-ItemProperty -Path $key -Name PagingFiles -PropertyType MultiString -Value ([string[]]@(Get-Content C:\probe\paging-before.txt)) -Force | Out-Null
 "filler {0:N1} GB, then {1:N1} GB free" -f ($size/1GB), ((Get-Volume -DriveLetter C).SizeRemaining/1GB)
-"""), flush=True)
+""", timeout=600), flush=True)
     restart_and_wait(vm)
     print(vm.ps(r"""
 Remove-Item C:\probe\filler.bin -Force
