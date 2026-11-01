@@ -350,7 +350,7 @@ try {
     Check 'undo: status is none' ((Get-InstallStatus) -eq 'none') (Get-InstallStatus)
     Reset-Run
     $refused = $false
-    try { Invoke-Install 'elementary' $iso 60 $target '' -FullDisk } catch { $refused = $_.Exception.Message -like "*hasn't shown*" }
+    try { Invoke-Install 'lubuntu' $iso 60 $target '' -FullDisk } catch { $refused = $_.Exception.Message -like "*hasn't shown*" }
     Check 'a system not shown to work is refused' $refused ''
     Check 'and the disk was not touched' ((Get-Layout $a) -eq $beforeA) (Get-Layout $a)
     function Get-WindowsEsp { throw 'No EFI partition in the probe.' }

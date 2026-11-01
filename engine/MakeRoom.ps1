@@ -18,7 +18,6 @@ $DefragLimitSeconds = 900
 $DefragTries = 4
 $DefragRetrySeconds = 30
 $DefragCancelled = 1223
-$RoomGaveUpPath = Join-Path $StateDir 'make-room-gave-up.txt'
 $RoomRestoreTries = 8   # the task tries every 15 minutes, and each time hop opens or closes
 
 # Windows logs the file that limits a shrink whenever it works out the limit, so ask and read it.
@@ -70,9 +69,10 @@ function Save-RoomState($State) {
 # 'continue' after the restart, 'restore' if something stopped before finishing, or nothing.
 # Only the log knew otherwise. Shown once, the next time hop checks before an install.
 function Get-RoomGaveUpWarning {
-    if (-not (Test-Path -LiteralPath $RoomGaveUpPath)) { return }
-    $what = (Get-Content -LiteralPath $RoomGaveUpPath -Raw).Trim()
-    Remove-Item -LiteralPath $RoomGaveUpPath -Force -ErrorAction SilentlyContinue
+    $file = "$RoomPath.gave-up"
+    if (-not (Test-Path -LiteralPath $file)) { return }
+    $what = (Get-Content -LiteralPath $file -Raw).Trim()
+    Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
     "**Make room couldn't turn $what back on.** Turn it on again in Windows' settings. Your files aren't affected."
 }
 
@@ -408,7 +408,7 @@ function Restore-RoomSettings {
             return
         }
         Write-Log "Gave up turning $($failed -join ' and ') back on after $tries tries. Turn it on in Windows' settings."
-        try { Write-StateFile $RoomGaveUpPath ($failed -join ' and ') } catch { Write-Log "Could not save that: $($_.Exception.Message)" }
+        try { Write-StateFile "$RoomPath.gave-up" ($failed -join ' and ') } catch { Write-Log "Could not save that: $($_.Exception.Message)" }
     }
     Unregister-RunAfterRestart
     Remove-Item -LiteralPath $RoomPath -Force -ErrorAction SilentlyContinue

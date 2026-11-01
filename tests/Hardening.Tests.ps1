@@ -723,13 +723,13 @@ Describe 'Make room''s steps' {
 }
 
 Describe 'Saying when Make room gave up' {
-    BeforeEach { $script:RoomGaveUpPath = Join-Path $TestDrive 'gave-up.txt' }
+    BeforeEach { $script:RoomPath = Join-Path $TestDrive 'room.json' }
 
     It 'says nothing when it did not' {
         Get-RoomGaveUpWarning | Should -BeNullOrEmpty
     }
     It 'names what stayed off, once' {
-        Set-Content -LiteralPath $RoomGaveUpPath 'hibernation'
+        Set-Content -LiteralPath "$RoomPath.gave-up" 'hibernation'
         Get-RoomGaveUpWarning | Should -Match "couldn't turn hibernation back on"
         Get-RoomGaveUpWarning | Should -BeNullOrEmpty
     }
