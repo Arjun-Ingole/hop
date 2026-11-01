@@ -68,6 +68,8 @@ namespace Hop
         Task RestartIntoInstallerFirstAsync() => RestartAsync(engine.RestartIntoInstallerFirstAsync,
             $"You can also restart yourself and tap {startup.BootKey} while the PC starts, then choose the installer.");
 
+        Task RestartToBiosAsync() => RestartAsync(engine.RestartToBiosAsync, "Restart yourself and tap Delete, F2 or F10 while the PC starts.");
+
         Task RestartIntoBiosAsync() => RestartAsync(engine.RestartIntoFirmwareAsync, "Restart yourself and tap Delete, F2 or F10 while the PC starts.");
 
         /// <summary>Windows closes hop as it restarts. If that's cancelled, the buttons have to come back.</summary>

@@ -151,7 +151,7 @@ namespace Hop
             else if (refused)
                 noteText = selected.Refused;
             else if (secureBootStops)
-                noteText = $"{system.Name} doesn't start with Secure Boot on. Pick another system, or turn off Secure Boot in the BIOS and open hop again.";
+                noteText = $"{system.Name} doesn't start with Secure Boot on. Turn it off in this PC's BIOS, which hop can take you to, or pick another system.";
             else if (secondDiskStops)
                 noteText = $"hop hasn't got {system.Name} to finish on a second disk yet. Choose a drive on the disk Windows is on, or another system.";
             else if (unmeasured)
@@ -187,7 +187,12 @@ namespace Hop
             Action primaryAction = install;
             // Nothing else can happen until there's room, so this is what the button does.
             bool needRoom = stuck && !RoomMadeHere && !systemStops;
-            if (better != null && !systemStops)
+            if (secureBootStops && usable && !refused && !secondDiskStops)
+            {
+                primaryText = "Turn off Secure Boot";
+                primaryAction = () => _ = ShowTurnOffSecureBootAsync();
+            }
+            else if (better != null && !systemStops)
             {
                 primaryText = $"Use {better.InSentence}";
                 primaryAction = () => _ = UseDriveAsync(better);
@@ -311,6 +316,24 @@ namespace Hop
                 Arrange(new[] { new[] { Run.Gray("Couldn't check"), Run.Black(choice.InSentence) } }, Describe(ex), Danger, null, 0);
                 Footer("Back", ShowChoose, null, null);
             }
+        }
+
+        async Task ShowTurnOffSecureBootAsync()
+        {
+            int held = HoldScreen();
+            InstallSteps plan;
+            try { plan = await engine.GetSecureBootStepsAsync(); }
+            catch (Exception ex)
+            {
+                if (ReleaseScreen(held)) ShowBlocked(Describe(ex));
+                return;
+            }
+            if (!ReleaseScreen(held)) return;
+
+            steps.Set(plan.Steps, plan.Notes.Skip(1).ToArray());
+            Arrange(new[] { new[] { Run.Gray("Turn off"), Run.Black("Secure Boot") } },
+                "It's a setting in this PC's BIOS, so hop can't change it for you. Windows and your files aren't affected.", Secondary, steps, 24);
+            Footer(plan.Notes.FirstOrDefault(), null, "Restart to BIOS", () => _ = RestartToBiosAsync(), "Back", ShowChoose);
         }
 
         async Task ShowMakeRoomAsync()

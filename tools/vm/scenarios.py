@@ -633,6 +633,30 @@ $state = Get-Content C:\ProgramData\hop\state.json -Raw -ErrorAction SilentlyCon
 '''
 
 
+def scenario_biosbutton(bench):
+    """A system that needs Secure Boot off, with it on: the button, its steps, and the restart into the firmware."""
+    vm, s = bench.fresh()
+    s.desktop()
+    s.get_hop()
+    s.open_as_a_person()
+    s.settle()
+    s.click_hop(236, LINE_ONE_Y)
+    time.sleep(1.5)
+    # The fourth row: Pop!_OS.
+    s.click_hop(236, SYSTEM_ROW_Y + 3 * DRIVE_ROW_H)
+    time.sleep(3)
+    vm.shot('bios-choose')
+    print(s.names(), flush=True)
+    s.press('Turn off Secure Boot', limit=30)
+    time.sleep(3)
+    vm.shot('bios-steps')
+    print(s.names(), flush=True)
+    s.press('Restart to BIOS', limit=30)
+    for second in range(0, 90, 15):
+        time.sleep(15)
+        vm.shot(f'bios-after-{second:02}s')
+
+
 def scenario_firstorder(bench):
     """A firmware that won't follow the one-time start: Try another way, the installer, and the order put back.
     Real firmware can't be made to ignore it, so the screen is reached by leaving BootNext set in Windows."""

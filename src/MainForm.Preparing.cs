@@ -173,6 +173,7 @@ namespace Hop
             }, message, Secondary, log, 40);
             // The engine undoes its own changes after a failure; if something is still left, offer to clean up.
             if (changed) Footer(ReportLink, () => _ = CopyReportAsync(), "Clean up", ShowLeftover);
+            else if (startup.SecureBoot && message.Contains("Secure Boot")) Footer(ReportLink, () => _ = CopyReportAsync(), "Turn off Secure Boot", () => _ = ShowTurnOffSecureBootAsync(), "Try again", ShowChoose);
             else Footer(ReportLink, () => _ = CopyReportAsync(), "Try again", ShowChoose);
         }
     }

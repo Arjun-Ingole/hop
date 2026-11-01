@@ -50,6 +50,10 @@ It's usually the graphics driver, most often on NVIDIA laptops. Wait a couple of
 
 If the installed Linux has the same problem, do the same in its boot menu, then install your graphics driver from inside Linux. To get to Windows meanwhile, use the PC's boot menu key and choose **Windows Boot Manager**.
 
+## "Doesn't start with Secure Boot on"
+
+Arch, CachyOS, Omarchy and Pop!_OS need Secure Boot off. Pick the system, click **Turn off Secure Boot**, then **Restart to BIOS**. Find Secure Boot, set it to Disabled, save and exit, then open hop again. If hop can't restart into the BIOS, restart yourself and tap **Delete**, **F2** or **F10** as the PC starts.
+
 ## "Secure Boot doesn't trust this ISO's boot loader"
 
 Your PC's list of trusted certificates doesn't include the one that signed this system's boot loader.

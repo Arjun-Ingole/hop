@@ -5,6 +5,7 @@
 ### Added
 
 - **Try another way.** When the firmware won't follow hop's one-time start, hop can put the installer first in the startup order, and moves it back the next time hop opens in Windows. Until then, the PC's boot menu is how to reach Windows.
+- **Turn off Secure Boot.** Systems that need it off now get a button and steps, by PC maker, and hop restarts into the BIOS for you. BitLocker is paused for that restart.
 - **Report this on GitHub** copies a report and opens a new issue to paste it into. Nothing is sent by itself.
 - hop keeps the PC from sleeping on its own while it works.
 - hop tests a startup menu change before the disk changes, and warns if the firmware refuses it.

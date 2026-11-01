@@ -361,6 +361,10 @@ namespace Hop
 
         public Task<InstallSteps> GetReturnedHelpAsync() => GetStepsFromAsync("Get-ReturnedHelp");
 
+        public Task<InstallSteps> GetSecureBootStepsAsync() => GetStepsFromAsync("Get-SecureBootSteps");
+
+        public Task RestartToBiosAsync() => InvokeAsync("Restart-ToBios");
+
         public Task<InstallSteps> GetMakeRoomStepsAsync(string letter) =>
             GetStepsFromAsync("Get-MakeRoomSteps", new Hashtable { ["Drive"] = letter ?? "" });
 

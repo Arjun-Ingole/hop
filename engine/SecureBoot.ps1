@@ -52,6 +52,41 @@ function Get-SecureBootAdvice {
     $advice
 }
 
+# Where each maker tends to keep it. Models differ, so these only say where to look first.
+function Get-SecureBootPlace {
+    $maker = try { (Get-CimInstance Win32_ComputerSystem).Manufacturer } catch { '' }
+    switch -Regex ($maker) {
+        'Micro-Star|MSI' { return 'On MSI PCs it''s usually under **Settings**, then **Security**.' }
+        'ASUS' { return 'On ASUS PCs it''s usually under **Boot**. If you can''t turn it off, set **OS Type** to **Other OS**.' }
+        'Acer' { return 'On Acer PCs it''s usually under **Boot**, and you may have to set a supervisor password under **Security** first.' }
+        'Lenovo' { return 'On Lenovo PCs it''s usually under **Security**.' }
+        'Hewlett|HP' { return 'On HP PCs it''s usually under **Security** or **Advanced**, in **Secure Boot Configuration**.' }
+        'Dell' { return 'On Dell PCs it''s usually under **Boot Configuration** or **Secure Boot**.' }
+        'Gigabyte' { return 'On Gigabyte PCs it''s usually under **Boot** or **BIOS**.' }
+    }
+    'It''s usually under **Security** or **Boot**.'
+}
+
+function Get-SecureBootSteps {
+    $notes = @('Save your work first. Nothing on your disk changes.')
+    if (Test-BitLockerOn) { $notes += 'hop pauses BitLocker for this restart. Have your recovery key ready anyway, at account.microsoft.com/devices/recoverykey.' }
+    [pscustomobject]@{
+        Steps = @(
+            '**Restart to BIOS** opens this PC''s settings.'
+            "Find **Secure Boot** and set it to **Disabled**. $(Get-SecureBootPlace)"
+            '**Save and exit**, often with **F10**. Windows starts again.'
+            'Open hop again and carry on.'
+        )
+        Notes = $notes
+    }
+}
+
+# Turning Secure Boot off makes BitLocker ask for its key, unless it's paused first.
+function Restart-ToBios {
+    if (Test-BitLockerOn) { [void](Suspend-BitLockerForSetup) }
+    Invoke-Shutdown '/r', '/fw', '/t', '0'
+}
+
 # Why Secure Boot would stop the ISO mounted at $Root, or nothing if it shouldn't.
 function Get-SecureBootProblem([string]$Root) {
     if (-not (Test-SecureBoot)) { return }

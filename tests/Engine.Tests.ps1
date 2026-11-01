@@ -1332,6 +1332,38 @@ Describe 'A secure connection that fails' {
     }
 }
 
+Describe 'Turning off Secure Boot' {
+    BeforeEach {
+        Mock Test-BitLockerOn { $false }
+        Mock Invoke-Shutdown { }
+        Mock Suspend-BitLockerForSetup { $true }
+        Mock Get-SecureBootPlace { 'Look here.' }
+    }
+    It 'says what to do, and where to look' {
+        $steps = Get-SecureBootSteps
+        $steps.Steps -join ' ' | Should -BeLike '*Restart to BIOS*Disabled*Look here*Save and exit*Open hop*'
+        $steps.Notes | Should -Be @('Save your work first. Nothing on your disk changes.')
+    }
+    It 'warns about BitLocker only when it is on' {
+        Mock Test-BitLockerOn { $true }
+        (Get-SecureBootSteps).Notes -join ' ' | Should -BeLike '*recovery key*'
+    }
+    It 'restarts into the firmware, without pausing BitLocker when it is off' {
+        Restart-ToBios
+        Should -Invoke Invoke-Shutdown -ParameterFilter { $Arguments -contains '/fw' } -Times 1
+        Should -Invoke Suspend-BitLockerForSetup -Times 0
+    }
+    It 'pauses BitLocker first when it is on, because the change would ask for the key' {
+        Mock Test-BitLockerOn { $true }
+        Restart-ToBios
+        Should -Invoke Suspend-BitLockerForSetup -Times 1
+    }
+    It 'needs no state, because nothing has been installed yet' {
+        Mock Read-State { throw 'should not read it' }
+        { Restart-ToBios } | Should -Not -Throw
+    }
+}
+
 Describe 'Spotting RAID controllers' {
     It 'finds <name>' -ForEach @(
         @{ name = 'Intel(R) Chipset SATA/PCIe RST Premium Controller' }, @{ name = 'Intel(R) RST VMD Controller 9A0B' }, @{ name = 'Intel Volume Management Device NVMe RAID Controller' }, @{ name = 'AMD-RAID Bottom Device' }, @{ name = 'LSI MegaRAID SAS 9361' }
