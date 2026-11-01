@@ -46,6 +46,10 @@
 
 ### Changed
 
+- **Stuck space no longer looks like an error.** A drive with free space Windows can't release yet shows how much is free,
+  the mark it can't shrink past and the file in the way, with Make room as the next step. The Make room screen now says how
+  much is stuck, and moving files has its own screen.
+- The size slider starts at what the chosen system needs, so Omarchy's starts at 33 GB.
 - Make room works on the chosen drive. Other drives usually need no restart.
 - The steps for the Linux installer now depend on where Linux is going. They use the manual option if the
   easy one would pick different free space.

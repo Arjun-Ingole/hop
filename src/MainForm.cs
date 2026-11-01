@@ -19,7 +19,7 @@ namespace Hop
     sealed partial class MainForm : Form
     {
         const int DesignWidth = 880, DesignHeight = 560, Gutter = 56, TitleHeight = 44;
-        const int MinLinuxGB = 25, InstallerGB = 8, IsoDownloadGB = 8;
+        const int SmallestLinuxGB = 25, InstallerGB = 8, IsoDownloadGB = 8;
         const int RestoreBeforeExitMilliseconds = 15000;
 
         static readonly string[] StageVerbs =
@@ -52,6 +52,9 @@ namespace Hop
         Distro selected;
         string isoPath;
         int linuxGB = 60;
+
+        /// <summary>Some installers won't start with less than hop's own least.</summary>
+        int MinLinuxGB => Math.Max(SmallestLinuxGB, selected?.MinGB ?? 0);
 
         Distro prepared;          // what the ready screen is about
         bool busy, installing, working, cancelling, showingLog;
