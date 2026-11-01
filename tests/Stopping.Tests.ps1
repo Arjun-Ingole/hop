@@ -18,12 +18,23 @@ Describe 'Stopping a command' {
         Write-Host "PowerShell.Invoke when stopped: $what"
         $ps.InvocationStateInfo.State | Should -Be 'Stopped'
     }
+    # In a process of its own: what's being tested stops PowerShell commands, and this mustn't stop the tests.
     It 'is never mistaken for success by the engine' {
-        $engine = New-Object Hop.Engine
-        try {
-            $invoke = [Hop.Engine].GetMethod('Invoke', [Reflection.BindingFlags]'NonPublic,Instance')
-            Stop-After $engine 2
-            { $invoke.Invoke($engine, @('Start-Sleep', @{ Seconds = 30 })) } | Should -Throw
-        } finally { $engine.Dispose() }
+        $exe = Join-Path (Split-Path $PSScriptRoot -Parent) 'bin\Release\hop.exe'
+        $script = Join-Path $TestDrive 'stop.ps1'
+        Set-Content $script @"
+[void][Reflection.Assembly]::LoadFrom('$exe')
+`$engine = New-Object Hop.Engine
+`$stopper = [powershell]::Create().AddScript({ param(`$e) Start-Sleep 3; `$e.Stop() }).AddArgument(`$engine)
+[void]`$stopper.BeginInvoke()
+`$invoke = [Hop.Engine].GetMethod('Invoke', [Reflection.BindingFlags]'NonPublic,Instance')
+try {
+    `$invoke.Invoke(`$engine, [object[]]@('Start-Sleep', @{ Seconds = 30 })) | Out-Null
+    'came back as if it worked'
+} catch { 'threw ' + `$_.Exception.GetBaseException().GetType().Name }
+"@
+        $output = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script 2>&1 | Out-String
+        Write-Host "The engine when stopped: $output"
+        $output | Should -BeLike '*threw PipelineStoppedException*'
     }
 }
