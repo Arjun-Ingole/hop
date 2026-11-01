@@ -304,6 +304,7 @@ A volume shrink analysis was initiated on volume Windows (C:).
         Mock Restore-Paging { }
         Mock Register-RunAfterRestart { }
         Mock Unregister-RunAfterRestart { }
+        Mock Unregister-ResumeTask { }
         Mock Invoke-Shutdown { }
         Mock Invoke-Defrag { }
         Mock Get-LastBoot { [datetime]'2030-01-01' }
@@ -440,6 +441,12 @@ A volume shrink analysis was initiated on volume Windows (C:).
         Start-MakeRoom
         Restore-RoomSettings
         Should -Invoke Set-Hibernation -ParameterFilter { $On } -Times 0
+    }
+    It 'keeps the task that puts things back until they are back' {
+        Start-MakeRoom
+        Complete-MakeRoom
+        Should -Invoke Unregister-ResumeTask -Times 1
+        Should -Invoke Unregister-RunAfterRestart -Times 0
     }
     It 'finishes restoring when one part fails' {
         Mock Set-Hibernation { if ($On) { throw 'no' } }
@@ -1820,5 +1827,134 @@ Describe 'Firmware load option' {
         $option[$file + 1] | Should -Be 4                                  # file path node
         $option[($option.Length - 4)..($option.Length - 1)] -join ',' | Should -Be '127,255,4,0'   # end node
         [BitConverter]::ToUInt16($option, 4) | Should -Be ($option.Length - $path)                 # path length
+    }
+}
+
+Describe 'Whether hibernation is on' {
+    It 'is on when a new Windows only has the default' {
+        Mock Get-ItemProperty { [pscustomobject]@{ HibernateEnabledDefault = 1 } } -ParameterFilter { $Path -like '*Control\Power' }
+        Test-HibernationOn | Should -BeTrue
+    }
+    It 'goes by what was set, over the default' {
+        Mock Get-ItemProperty { [pscustomobject]@{ HibernateEnabled = 0; HibernateEnabledDefault = 1 } } -ParameterFilter { $Path -like '*Control\Power' }
+        Test-HibernationOn | Should -BeFalse
+    }
+    It 'is off when nothing says so' {
+        Mock Get-ItemProperty { [pscustomobject]@{ Other = 1 } } -ParameterFilter { $Path -like '*Control\Power' }
+        Test-HibernationOn | Should -BeFalse
+    }
+}
+
+Describe 'Reopening after Make room' {
+    BeforeEach {
+        Remove-Item $RoomPath -ErrorAction SilentlyContinue
+        Mock Test-HibernationOn { $true }
+        Mock Test-EnoughMemoryWithoutPaging { $true }
+        Mock Get-PagingSettings { @('?:\pagefile.sys') }
+        Mock Set-Hibernation { }
+        Mock Clear-ChangeJournal { }
+        Mock New-ChangeJournal { }
+        Mock Set-PagingOff { }
+        Mock Restore-Paging { }
+        Mock Invoke-Shutdown { }
+        Mock Invoke-Defrag { }
+        Mock Get-RestartCopy { "$env:ProgramData\hop-restart-test\hop.exe" }
+        Mock Remove-RestartCopy { }
+        Mock Remove-RoomTask { }
+        Mock Get-ScheduledTask { [pscustomobject]@{ TaskName = $TaskName } }
+        Mock Set-RoomTasks { }
+    }
+    It 'makes the tasks before restarting, and records the copy so it can go' {
+        Mock Invoke-Shutdown { Should -Invoke Set-RoomTasks -Times 1 -Scope It }
+        Start-MakeRoom
+        Should -Invoke Invoke-Shutdown -Times 1
+        (Read-RoomState).CopyFolder | Should -Be "$env:ProgramData\hop-restart-test"
+    }
+    It 'puts everything back and does not restart if a task cannot be made' {
+        Mock Set-RoomTasks { throw 'no tasks here' }
+        { Start-MakeRoom } | Should -Throw '*no tasks here*'
+        Should -Invoke Invoke-Shutdown -Times 0
+        Should -Invoke Set-Hibernation -ParameterFilter { $On } -Times 1
+        Should -Invoke Restore-Paging -Times 1
+        Test-Path $RoomPath | Should -BeFalse
+    }
+    It 'puts everything back and does not restart if Windows did not keep a task' {
+        Mock Get-ScheduledTask { }
+        { Start-MakeRoom } | Should -Throw
+        Should -Invoke Invoke-Shutdown -Times 0
+        Should -Invoke Restore-Paging -Times 1
+    }
+    It 'does not restart if the protected copy cannot be made' {
+        Mock Get-RestartCopy { throw 'no copy' }
+        { Start-MakeRoom } | Should -Throw '*no copy*'
+        Should -Invoke Invoke-Shutdown -Times 0
+        Should -Invoke Restore-Paging -Times 1
+    }
+    It 'puts the settings back from the task when nobody came back to hop' {
+        Start-MakeRoom
+        Restore-RoomFromTask
+        Should -Invoke Set-Hibernation -ParameterFilter { $On } -Times 1
+        Should -Invoke Restore-Paging -Times 1
+        Should -Invoke New-ChangeJournal -Times 1
+        Test-Path $RoomPath | Should -BeFalse
+        Should -Invoke Remove-RestartCopy -ParameterFilter { $Folder -eq "$env:ProgramData\hop-restart-test" }
+        Should -Invoke Remove-RoomTask -ParameterFilter { $Name -eq $ResumeTaskName }
+        Should -Invoke Remove-RoomTask -ParameterFilter { $Name -eq $RestoreTaskName }
+    }
+    It 'removes the tasks and the copy when the settings go back' {
+        Start-MakeRoom
+        Restore-RoomSettings
+        Should -Invoke Remove-RoomTask -ParameterFilter { $Name -eq $RestoreTaskName } -Times 1
+        Should -Invoke Remove-RestartCopy -ParameterFilter { $Folder -eq "$env:ProgramData\hop-restart-test" } -Times 1
+    }
+}
+
+Describe 'The copy the tasks run' {
+    It 'is in a new folder that only administrators and SYSTEM can write to' {
+        $parent = Join-Path $TestDrive 'data'
+        New-Item -ItemType Directory -Path $parent | Out-Null
+        $copy = [Hop.RestartCopy]::Create($parent)
+        try {
+            Test-Path -LiteralPath $copy | Should -BeTrue
+            $folder = Split-Path $copy -Parent
+            Split-Path $folder -Leaf | Should -BeLike 'hop-restart-*'
+            $rights = Get-Acl -LiteralPath $folder
+            $rights.AreAccessRulesProtected | Should -BeTrue
+            $writing = [Security.AccessControl.FileSystemRights]'WriteData,AppendData,WriteAttributes,WriteExtendedAttributes,Delete,DeleteSubdirectoriesAndFiles,ChangePermissions,TakeOwnership'
+            $writers = @($rights.Access | Where-Object { ($_.FileSystemRights -band $writing) -ne 0 } |
+                    ForEach-Object { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value })
+            ($writers | Sort-Object) -join ',' | Should -Be 'S-1-5-18,S-1-5-32-544'
+            (Get-Item -LiteralPath $copy).Length | Should -Be (Get-Item -LiteralPath ([Hop.RestartCopy]::RunningImage())).Length
+        } finally {
+            [IO.Directory]::Delete((Split-Path $copy -Parent), $true)
+        }
+    }
+    It 'names a different folder each time, so nothing can be waiting in it' {
+        $parent = Join-Path $TestDrive 'data2'
+        New-Item -ItemType Directory -Path $parent | Out-Null
+        $one = [Hop.RestartCopy]::Create($parent)
+        $two = [Hop.RestartCopy]::Create($parent)
+        $one | Should -Not -Be $two
+        [IO.Directory]::Delete((Split-Path $one -Parent), $true)
+        [IO.Directory]::Delete((Split-Path $two -Parent), $true)
+    }
+    It 'refuses to delete anything but one of its copies' {
+        $keep = Join-Path $TestDrive 'keep'
+        New-Item -ItemType Directory -Path $keep | Out-Null
+        Remove-RestartCopy $keep
+        Test-Path -LiteralPath $keep | Should -BeTrue
+    }
+    It 'makes the tasks with fixed arguments, the logon one elevated and for this user only' {
+        $script:tasks = @{}
+        Mock Register-ScheduledTask { $script:tasks[$TaskName] = @{ Action = $Action; Principal = $Principal; Trigger = $Trigger } }
+        Set-RoomTasks "$env:ProgramData\hop-restart-x\hop.exe"
+        $resume = $script:tasks[$ResumeTaskName]
+        $resume.Action.Execute | Should -Be "$env:ProgramData\hop-restart-x\hop.exe"
+        $resume.Action.Arguments | Should -BeNullOrEmpty
+        $resume.Principal.RunLevel | Should -Be 'Highest'
+        $resume.Trigger.UserId | Should -Be ([Security.Principal.WindowsIdentity]::GetCurrent().Name)
+        $restore = $script:tasks[$RestoreTaskName]
+        $restore.Action.Arguments | Should -Be '--restore-room'
+        $restore.Principal.UserId | Should -Be 'SYSTEM'
     }
 }
