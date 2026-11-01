@@ -254,7 +254,7 @@ namespace Hop
                 Logo = Get<string>(o, "Logo"),
                 SecureBootOff = Get<bool>(o, "SecureBootOff"),
                 FullDisk = o.Properties["FullDisk"]?.Value != null,
-                WindowsDiskOnly = o.Properties["Steps"]?.Value != null,
+                WindowsDiskOnly = o.Properties["Steps"]?.Value != null && o.Properties["SecondDisk"]?.Value == null,
                 Color =System.Drawing.ColorTranslator.FromHtml(Get<string>(o, "Color")),
             }).ToList();
 

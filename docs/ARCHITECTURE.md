@@ -322,7 +322,10 @@ off and on goes back to Windows. hop warns about this, and it's in Troubleshooti
 | Lubuntu (Calamares) | The existing one it's told to use | Its existing step, which is Windows' |
 | elementary OS, Pop!_OS ([distinst](https://github.com/pop-os/distinst/blob/master/src/installer/steps/bootloader.rs)) | Whichever is mounted at `/boot/efi`, which is hop's `LINUXBOOT` on the target disk. The startup entry points at it | The same steps as ever |
 
-| Debian, CachyOS, Arch, Fedora, Ultramarine | Not known | **Refused** by `Assert-SystemFitsDrive`. Their steps are written for Windows' disk, and name its EFI partition or the drive with the free space. None has been tried on a second disk |
+| Omarchy | Its own new one, on the disk it's given, in that disk's largest free space. Seen in a virtual PC: see [Testing](TESTING.md) | Choose the second disk, and expect it to say more than hop set aside |
+| Fedora, Ultramarine | Their own new one, on the one drive selected, with a new `/boot` and root in its largest free space. Seen with a kickstart: see [Testing](TESTING.md) | Select only the second disk. The usual warning about Windows' small EFI partition doesn't apply |
+| Arch (archinstall) | The existing one it's told to use, on any disk it was told about. Seen with a config file: see [Testing](TESTING.md) | Choose both disks, and use Windows' |
+| Debian, CachyOS | Not known | **Refused** by `Assert-SystemFitsDrive`. Their steps are written for Windows' disk, and name its EFI partition or the drive with the free space. Not yet shown on a second disk |
 
 **The easy option isn't used for a second disk.** Ubuntu's [picks the largest free space on any
 disk](https://github.com/canonical/ubuntu-desktop-provision/blob/main/apps/ubuntu_bootstrap/lib/pages/storage/guided_resize/guided_resize_model.dart),
