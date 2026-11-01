@@ -48,7 +48,9 @@ namespace Hop
         }
 
         /// <summary>Where a picker sits, in screen coordinates, for placing what it opens.</summary>
-        public Rectangle PickerScreenBounds(int picker) => RectangleToScreen(Rectangle.Round(pickerRects[picker]));
+        public Rectangle PickerScreenBounds(int picker) => RectangleToScreen(pickerRects.Count == 0
+            ? new Rectangle(0, 0, 0, Height)
+            : Rectangle.Round(pickerRects[Math.Min(picker, pickerRects.Count - 1)]));
 
         int PickerAt(Point p) => pickerRects.FindIndex(r => RectangleF.Inflate(r, F(6), F(2)).Contains(p));
 

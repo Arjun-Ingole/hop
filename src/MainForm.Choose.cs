@@ -148,6 +148,7 @@ namespace Hop
             // The drive has the room, but Windows can't release it. Deleting files wouldn't help.
             bool stuck = usable && !enoughSpace && !target.IsFreeSpace && MaxLinuxGB + target.StuckGB >= MinLinuxGB;
             var better = enoughSpace ? null : BetterDrive;
+            bool otherDrive = startup.Drives.Any(d => d.Id != target.Id);
 
             string noteText;
             if (!usable)
@@ -157,7 +158,7 @@ namespace Hop
             else if (secondDiskStops)
                 noteText = $"hop's steps for {system.Name} are for the disk Windows is on, and it hasn't been tried on a second disk. Choose a drive on that disk, or another system.";
             else if (unmeasured)
-                noteText = $"hop couldn't work out how much room {target.InSentence} can give up. {measureError} Choose another drive, or open hop again.";
+                noteText = $"hop couldn't work out how much room {target.InSentence} can give up. {measureError} {(otherDrive ? "Choose another drive, or open hop again." : "Open hop again.")}";
             else if (stuck)
                 noteText = StuckNote(better);
             else if (!enoughSpace && better != null)
@@ -203,7 +204,7 @@ namespace Hop
             if (startup.OtherGB > 0)
                 Footer($"Remove {startup.OtherName} ({startup.OtherGB} GB)", ShowRemoveOther, primaryText, primaryAction);
             else if (!usable || secondDiskStops || unmeasured)
-                Footer("Choose another drive", OpenDrivePicker, primaryText, primaryAction);
+                Footer(otherDrive ? "Choose another drive" : null, otherDrive ? OpenDrivePicker : (Action)null, primaryText, primaryAction);
             else if (needRoom && better != null)
                 Footer("Make room", () => _ = ShowMakeRoomAsync(), primaryText, primaryAction);
             else if (target.TailFreeGB > 0 && !target.IsFreeSpace)
