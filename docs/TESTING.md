@@ -151,6 +151,7 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] Close the window during the download, then reopen
 - [ ] After Make room, close the window during the download: hibernation and the paging file are back on straight away
 - [ ] Make room on C:, with another app blocking the restart: hop isn't listed as blocking it, Cancel leaves a "didn't restart" screen after a minute, and both of its buttons work
+- [ ] Make room on C: with a standard user who typed an administrator's password: hop comes back for that administrator, or the settings come back by themselves
 - [ ] Make room on a second drive with its own paging file, and unplug that drive during the restart: hop opens, with the settings back
 - [ ] Turn the VM off during the copy, then reopen: "didn't finish", and Clean up restores everything
 - [ ] Fill C: until there isn't room: the window says how much to free

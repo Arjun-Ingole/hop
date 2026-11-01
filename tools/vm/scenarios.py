@@ -517,6 +517,32 @@ def scenario_abandon(bench):
     s.hop_log()
 
 
+def scenario_abandonfast(bench):
+    """The same, with the safety-net task started by hand instead of waiting for its 20 minutes."""
+    vm, s = bench.fresh()
+    s.desktop()
+    make_space_stuck(vm)
+    s.get_hop()
+    make_room(vm, s)
+    vm.ps('Stop-Process -Name hop -Force', timeout=30)
+    restart_and_wait(vm)
+    s.facts('restarted, hop killed, settings still off')
+    print(vm.ps(r"""
+Get-ScheduledTask 'hop restore settings' | Format-List TaskName, State
+$t = Get-ScheduledTask 'hop restore settings'
+"delay $($t.Triggers[0].Delay), every $($t.Triggers[0].Repetition.Interval)"
+Start-ScheduledTask 'hop restore settings'
+Start-Sleep 45
+Get-ScheduledTaskInfo -TaskName 'hop restore settings' -ErrorAction SilentlyContinue | Format-List LastRunTime, LastTaskResult
+""", timeout=120), flush=True)
+    vm.shot('abandonfast-after-task')
+    s.facts('after the task ran')
+    time.sleep(15)
+    restart_and_wait(vm)
+    s.facts('one more restart: all back, and nothing left of hop?')
+    s.hop_log()
+
+
 def install(vm, s, system_row=1, tag='install'):
     """Install, from hop's first screen until it says it's ready."""
     s.click_hop(236, LINE_ONE_Y)
