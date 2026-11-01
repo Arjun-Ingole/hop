@@ -227,7 +227,7 @@ function Invoke-CopyWatched([string[]]$Arguments, [string]$Target, [int64]$Total
 
 # The same size can still be damaged, which only shows up as the installer failing after the restart.
 function Assert-SameFile([string]$Source, [string]$Copy) {
-    Set-Status "Checking the copy: $(Split-Path $Source -Leaf)"
+    $Sync.Status = "Checking the copy: $(Split-Path $Source -Leaf)"   # not the log: an ISO has thousands of files
     if ((Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $Copy -Algorithm SHA256).Hash) {
         throw "$(Split-Path $Source -Leaf) copied with damage. The drive may be failing. Check it for errors, then try again."
     }
