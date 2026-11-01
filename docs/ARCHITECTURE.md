@@ -194,9 +194,10 @@ this worked:
 hop uses the first, as it does for Fedora, because the second would rule out PCs with 8 GB. Omarchy adds its partitions
 one at a time, which a busy disk allows. So **hop has taken away what stopped Full disk install reaching this disk.** It's where
 the cursor starts on that screen, so the steps warn about it, and it still asks for confirmation. With this route it's also
-erasing the image it's running from. Nothing has tried that, and hop doesn't offer replacing Windows with Omarchy.
+erasing the image it's running from, unless it was copied to memory. So replacing Windows with Omarchy adds `copytoram` to the same
+menu, and that was seen working at the ISO plus 4 GB of memory: see docs/TESTING.md.
 
-**BitLocker.** `run_partition_decide` reads each partition on the disk for `-FVE-FS-`, and stops if it finds one. That mark stays
+**BitLocker.** `run_partition_decide`, which only Free space install runs, reads each partition on the disk for `-FVE-FS-`, and stops if it finds one. Full disk install doesn't look, so hop doesn't refuse BitLocker when replacing Windows. That mark stays
 until the drive has finished decrypting, so hop's pause doesn't help. `Assert-NoBitLocker` makes the same check before the download,
 and refuses in plain words. Turning it off is the owner's choice, and it can take hours. A partition hop can't read counts as refused.
 

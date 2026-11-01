@@ -26,7 +26,7 @@ BeforeAll {
 
 Describe 'Which systems are offered' {
     It 'only offers what was really seen erasing a disk and starting afterwards' {
-        @(Get-Catalog | Where-Object FullDisk).Id | Should -Be @('elementary', 'ubuntu', 'zorin', 'fedora', 'debian', 'arch', 'omarchy', 'ultramarine', 'ubuntu-budgie', 'xubuntu', 'ubuntucinnamon', 'edubuntu')
+        @(Get-Catalog | Where-Object FullDisk).Id | Should -Be @('elementary', 'ubuntu', 'zorin', 'fedora', 'debian', 'arch', 'omarchy', 'ultramarine', 'ubuntu-budgie', 'xubuntu', 'ubuntucinnamon', 'edubuntu', 'ubuntustudio')
     }
     It 'has what the install needs for every system it offers' {
         foreach ($distro in Get-Catalog | Where-Object FullDisk) {
