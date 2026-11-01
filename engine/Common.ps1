@@ -38,6 +38,7 @@ $EntryMarkers = @($EntryMarker, '(LinuxHop)')
 $EntryPattern = '\((hop|LinuxHop)\)'
 $WindowsReserve = 8GB    # free space Windows keeps on top of what it already uses
 $MinLinuxGB = 25
+$ShrinkMargin = 1GB       # kept between what's planned and how far Windows says it can shrink a drive
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 # Work proxies usually want the Windows sign-in, which isn't sent unless asked for.

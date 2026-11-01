@@ -13,7 +13,8 @@ $ResumeTaskName = 'hop resume'
 $RestoreTaskName = 'hop restore settings'
 $RestoreArgument = '--restore-room'
 $PagingKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management'
-$MinMemoryWithoutPaging = 8GB
+# Windows reports less than what's fitted, because the graphics and firmware keep some: an 8 GB PC can say under 6.
+$MinMemoryWithoutPaging = 5.5GB
 $DefragLimitSeconds = 900
 $DefragTries = 4
 $DefragRetrySeconds = 30
@@ -157,7 +158,9 @@ function Get-MakeRoomSteps([string]$Drive) {
     $steps += if ($restart) { 'Restarts this PC, opens again, and moves what''s left out of the way.' } else { 'Moves files out of the way, for up to 15 minutes.' }
     $steps += 'Turns everything back on once Linux has its space, or when you close hop.'
     $note = if ($restart) { 'Save your work first. Your files aren''t touched.' } else { 'Your files aren''t touched, and this PC doesn''t restart.' }
-    [pscustomobject]@{ Steps = $steps; Restart = $restart; Notes = @($note) }
+    $notes = @($note)
+    if (-not $pagingOff -and $isWindows) { $notes += 'This PC has too little memory to turn off the paging file safely. If that''s what is in the way, this won''t free much.' }
+    [pscustomobject]@{ Steps = $steps; Restart = $restart; Notes = $notes }
 }
 
 # Says 'restarting' when the PC is on its way down, or 'done' when another drive didn't need it to be.
@@ -357,12 +360,47 @@ function Invoke-Defrag([string]$Drive) {
     if ($cancelled -eq $DefragTries) { Write-Log "Windows cancelled moving files all $DefragTries times, so nothing moved." }
     # Windows can't work out the limit for a moment after that.
     $c = Get-Partition -DriveLetter $room.TrimEnd(':')
+    Wait-ShrinkLimit $c $deadline
+    # With a system file out of the way, the next thing in the way may be something defrag can move.
+    if (Move-SystemFiles $room $c) {
+        $left = [int][math]::Floor(($deadline - (Get-Date)).TotalSeconds)
+        if ($left -gt 0) { Write-Log "Finished moving files (code $(Start-DefragRun $room $left))." }
+        Wait-ShrinkLimit $c $deadline
+    }
+}
+
+function Wait-ShrinkLimit($Partition, [datetime]$Deadline) {
     for ($i = 0; $i -lt 6; $i++) {
-        try { [void](Get-SupportedSize $c); break } catch {
-            if ((Get-Date) -ge $deadline) { break }
+        try { [void](Get-SupportedSize $Partition); break } catch {
+            if ((Get-Date) -ge $Deadline) { break }
             Start-Sleep -Seconds 5
         }
     }
+}
+
+# The system files Microsoft lists as movable, as Windows names them when one limits a shrink.
+function Test-MovableSystemFile([string]$File) {
+    $File -and (Get-BlockerKind $File) -eq 'ntfs' -and $File -match '^\\\$(mft|attrdef|secure|upcase|extend)(?![a-z])'
+}
+
+# defrag can leave one of these near the end of a drive, $Mft::$BITMAP most of all. Moves whichever
+# Windows names, until it names something else. Says whether any moved. A failure here costs nothing:
+# NTFS turns down a move it won't make, and hop carries on with the room it has.
+function Move-SystemFiles([string]$Room, $Partition) {
+    $moved = @{}
+    for ($i = 0; $i -lt 6; $i++) {
+        $file = Get-ShrinkBlocker $Partition
+        if (-not (Test-MovableSystemFile $file) -or $moved[$file]) { break }
+        Set-Status 'Moving a Windows system file out of the way...'
+        try { $clusters = [Hop.NtfsMove]::MoveDown($Room, $file) } catch {
+            Write-Log "Could not move $file`: $($_.Exception.Message)"
+            break
+        }
+        Write-Log "Moved $clusters clusters of $file."
+        if ($clusters -le 0) { break }
+        $moved[$file] = $true
+    }
+    $moved.Count -gt 0
 }
 
 function Clear-RestorePoints([string]$Drive) {

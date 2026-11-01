@@ -204,6 +204,8 @@ namespace Hop
                 Footer(otherDrive ? "Choose another drive" : null, otherDrive ? OpenDrivePicker : (Action)null, primaryText, primaryAction);
             else if (needRoom && better != null)
                 Footer("Make room", () => _ = ShowMakeRoomAsync(), primaryText, primaryAction);
+            else if (stuck && RoomMadeHere && otherDrive && better == null)
+                Footer("Choose another drive", OpenDrivePicker, primaryText, primaryAction);
             else if (target.TailFreeGB > 0 && !target.IsFreeSpace)
                 Footer($"Give the free {target.TailFreeGB} GB to {(target.IsWindows ? "Windows" : target.InSentence)}", () => _ = ExpandWindowsAsync(), primaryText, primaryAction);
             else if (!stuck && target.StuckGB >= StuckWorthExplainingGB && !RoomMadeHere)
@@ -223,7 +225,9 @@ namespace Hop
                     : $"{target.Title} has room, but Windows can't release it yet. Make room clears what's in the way, or use {better.InSentence}, which has {(better.Estimated ? "about " : "")}{better.UsableGB} GB to spare.";
             if (target.BlockerKind == "restore")
                 return $"hop can use {release} GB. Restore points on {target.InSentence} are stopping Windows releasing more.";
-            return $"hop made what room it could, and can use {release} GB. Windows can't move {target.ShrinkBlocker ?? "some system files"}, which limits the rest.";
+            string blocker = target.BlockerKind == "ntfs" ? "Windows' own file system data, near the end of the drive," : target.ShrinkBlocker ?? "some system files";
+            string instead = MaxLinuxGB >= MinLinuxGB ? "" : startup.Drives.Any(d => d.Id != target.Id) ? " Choose another drive." : " Windows can't shrink it past that, so Linux needs a second disk.";
+            return $"hop made what room it could, and can use {release} GB. {blocker} limits the rest.{instead}";
         }
 
         // --- Choosing a drive -------------------------------------------------------------

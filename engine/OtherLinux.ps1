@@ -136,7 +136,14 @@ function Find-OtherSystem([int]$Disk) {
         WindowsEsp = $windowsEsp
         OnWindowsDisk = $Disk -eq (Get-WindowsPartition).DiskNumber
         DiskGuid   = (Get-Disk -Number $Disk).Guid
+        PartitionList = @($all | ForEach-Object { "Partition $($_.PartitionNumber), $([math]::Round($_.Size / 1GB, 1)) GB, $(if ($_.GptType -eq $EspType) { 'its startup files' } else { 'Linux' })" })
+        Selection  = Get-OtherSelection $all
     }
+}
+
+# What was on the screen when someone agreed to it, so anything different isn't what they agreed to.
+function Get-OtherSelection($Partitions) {
+    (@($Partitions | ForEach-Object { "$($_.Guid)=$([int64]$_.Size)" }) | Sort-Object) -join ','
 }
 
 # True only when the partition's own first bytes say it holds a Linux file system. Being
@@ -174,9 +181,10 @@ function Remove-PartitionByGuid([string]$Guid, [int]$DiskNumber) {
     throw "Could not delete partition $($partition.PartitionNumber): $output"
 }
 
-function Remove-OtherSystem {
+function Remove-OtherSystem([string]$Selection) {
     $other = Get-OtherSystem
     if (-not $other) { throw 'There is no other Linux on this drive.' }
+    if ($Selection -cne $other.Selection) { throw 'The Linux partitions on this drive have changed, so nothing was removed. Go back and check the list again.' }
     Set-Status "Removing $($other.Name)..."
     foreach ($name in @($other.Kept)) { if ($name) { Write-Log "Kept the startup entry for $name, which hop can't tie to this Linux." } }
 

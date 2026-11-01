@@ -139,7 +139,7 @@ function Get-StartupInfo {
     # Free space gives no drive anything back. An older file can only mean C:.
     $stateLetter = $null
     if ($state) { $stateLetter = if ($state.TargetOffset) { $state.TargetLetter } else { $env:SystemDrive.TrimEnd(':') } }
-    $other = try { Get-OtherSystem | Select-Object Name, SizeGB, OnWindowsDisk, Kept } catch { Write-Log "Could not look for another Linux: $($_.Exception.Message)"; $null }
+    $other = try { Get-OtherSystem | Select-Object Name, SizeGB, OnWindowsDisk, Kept, PartitionList, Selection } catch { Write-Log "Could not look for another Linux: $($_.Exception.Message)"; $null }
     [pscustomobject]@{
         # C: on its own, for when the drives can't be listed.
         WindowsFallback = [pscustomobject]@{

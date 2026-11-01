@@ -121,8 +121,8 @@ hop opens again by itself after the restart, without asking. If you close it som
 turns them back on by itself about 20 minutes after it starts. The paging file returns at the next restart.
 It asks first if restore points are in the way, because deleting those can't be undone.
 
-If it still can't release enough, hop names the file in the way. Windows can't move some NTFS system files
-while it's running, so try a smaller size.
+hop also moves NTFS system files that Windows' defrag leaves behind, such as `$Mft::$BITMAP`. If it still can't release
+enough, hop says what's in the way. Choose another drive or a second disk, or a smaller size if there's enough for one.
 
 If Windows doesn't restart, something else stopped it. After a minute hop says so. Click **Restart now**, or **Back**
 to put its settings back. If the drive isn't there after the restart, hop puts them back and opens as usual.

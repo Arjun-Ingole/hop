@@ -3,9 +3,9 @@ name: CI
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
+    paths-ignore: ['**.md', 'docs/**', 'site/**', 'LICENSE']
   pull_request:
-    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
+    paths-ignore: ['**.md', 'docs/**', 'site/**', 'LICENSE']
 
 # A newer push makes the older run pointless.
 concurrency:
@@ -93,3 +93,7 @@ jobs:
         with:
           name: hop
           path: bin/Release/hop.exe
+
+      - name: Moving system files, on a real NTFS volume
+        shell: powershell
+        run: powershell -File tests\Probe-SystemFiles.ps1

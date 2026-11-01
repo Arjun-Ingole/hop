@@ -17,13 +17,15 @@ namespace Hop
         void ShowRemoveOther()
         {
             string name = startup.OtherName;
+            string[] partitions = startup.OtherPartitions ?? new string[0];
+            steps.Set(partitions, new[] { "Back up anything on them that you want to keep." });
             Arrange(new[]
             {
                 new[] { Run.Gray("Remove"), Run.Black(name) },
                 new[] { Run.Gray("and free"), Run.Black(startup.OtherGB + " GB") },
-            }, $"This deletes {name} and everything stored in it, and takes it out of the startup menu. Windows and your files stay.{KeptNote(startup.OtherKept)}",
-                Secondary, null, 0);
-            Footer("Back", ShowChoose, "Remove " + name, () => _ = RemoveOtherAsync());
+            }, $"This deletes every Linux partition on this disk, and everything stored on them, even if another system or your files are there. It also takes {name} out of the startup menu. Windows stays.{KeptNote(startup.OtherKept)}",
+                Secondary, steps, 12);
+            Footer("Back", ShowChoose, partitions.Length > 1 ? $"Delete {partitions.Length} partitions" : "Remove " + name, () => _ = RemoveOtherAsync());
         }
 
         async Task RemoveOtherAsync()
@@ -35,7 +37,7 @@ namespace Hop
             BeginWork(new[] { new[] { Run.Gray("Removing"), Run.Black(name) } }, "Starting…");
             try
             {
-                await engine.RemoveOtherSystemAsync();
+                await engine.RemoveOtherSystemAsync(startup.OtherSelection);
                 await ReloadAsync();
                 EndWork();
                 if (onWindowsDisk)

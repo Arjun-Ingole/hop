@@ -13,6 +13,16 @@ function Get-TailFree($Partition) {
     [math]::Max([int64]0, [int64]($limit - $end))
 }
 
+# What a volume can give up: as far as Windows can shrink it, while it keeps its reserve free. That's free
+# space left inside it, so a file stuck near the end doesn't cost the reserve as well. Windows' limit moves
+# as files are written, so this doesn't plan right up to it.
+function Get-ShrinkableBytes($Partition, $Supported, [int64]$Reserve) {
+    $room = [int64]($Partition.Size - $Supported.SizeMin)
+    $volume = try { $Partition | Get-Volume -ErrorAction SilentlyContinue } catch { $null }
+    $spare = if ($volume -and $volume.Size) { [math]::Min($room - $ShrinkMargin, [int64]($volume.SizeRemaining - $Reserve)) } else { $room - $Reserve }
+    [int64][math]::Max(0, $spare)
+}
+
 function Get-SpaceInfo([string]$Target) {
     $place = Resolve-Target $Target
     $c = $place.Partition
@@ -32,7 +42,7 @@ function Get-SpaceInfo([string]$Target) {
         TailFree  = $tail
         Reserve   = [int64]$reserve
         # GB Linux can get: free space after the drive, plus what it can give up while keeping its reserve.
-        UsableGB  = [int][math]::Floor(($tail + $c.Size - $supported.SizeMin - $reserve) / 1GB)
+        UsableGB  = [int][math]::Floor(($tail + (Get-ShrinkableBytes $c $supported $reserve)) / 1GB)
         Kind      = 'volume'
         Name      = "$letter`:"
         Letter    = $letter
@@ -215,6 +225,14 @@ function Invoke-CopyWatched([string[]]$Arguments, [string]$Target, [int64]$Total
     if ($proc.ExitCode -ge 8) { throw "Copying $What failed (robocopy code $($proc.ExitCode))." }
 }
 
+# The same size can still be damaged, which only shows up as the installer failing after the restart.
+function Assert-SameFile([string]$Source, [string]$Copy) {
+    Set-Status "Checking the copy: $(Split-Path $Source -Leaf)"
+    if ((Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $Copy -Algorithm SHA256).Hash) {
+        throw "$(Split-Path $Source -Leaf) copied with damage. The drive may be failing. Check it for errors, then try again."
+    }
+}
+
 # The files that went on the second partition instead of the installer's, where the ISO has them.
 function Copy-LiveFiles($Iso, [string]$Target) {
     $sourceRoot = "$($Iso.Letter):\"
@@ -225,6 +243,7 @@ function Copy-LiveFiles($Iso, [string]$Target) {
     foreach ($file in $Iso.LiveFiles) {
         $copy = Get-Item -LiteralPath (Join-Path $targetRoot $file.FullName.Substring($sourceRoot.Length)) -Force -ErrorAction SilentlyContinue
         if (-not $copy -or $copy.Length -ne $file.Length) { throw "$($file.Name) did not copy to the second installer partition." }
+        Assert-SameFile $file.FullName $copy.FullName
     }
     Write-Log 'Live system copied and checked.'
 }
@@ -246,6 +265,7 @@ function Copy-Installer($Iso, [string]$Target) {
         $relative = $file.FullName.Substring($sourceRoot.Length)
         $copy = Get-Item -LiteralPath (Join-Path $targetRoot $relative) -Force -ErrorAction SilentlyContinue
         if (-not $copy -or $copy.Length -ne $file.Length) { $missing.Add($relative) }
+        else { Assert-SameFile $file.FullName $copy.FullName }
     }
     if ($missing.Count) {
         foreach ($name in $missing) { Write-Log "Not copied: $name" }

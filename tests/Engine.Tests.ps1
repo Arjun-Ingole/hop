@@ -1216,11 +1216,70 @@ Describe 'Removing one Linux when another shares Windows'' EFI partition' {
     It 'leaves kept loaders on the EFI partition and in the startup menu when removing' {
         Mock Remove-PartitionByGuid { }
         Mock Set-Status { }
-        Mock Get-OtherSystem { [pscustomobject]@{ Name = 'the other Linux'; Entries = @(); Kept = @('Linux Mint'); WindowsEsp = '{esp}'; OnWindowsDisk = $true; Partitions = @([pscustomobject]@{ Guid = '{pond}'; DiskNumber = 0; Size = [int64]40GB }) } }
-        Remove-OtherSystem
+        Mock Get-OtherSystem { [pscustomobject]@{ Name = 'the other Linux'; Entries = @(); Kept = @('Linux Mint'); WindowsEsp = '{esp}'; OnWindowsDisk = $true; Selection = 'what was shown'; Partitions = @([pscustomobject]@{ Guid = '{pond}'; DiskNumber = 0; Size = [int64]40GB }) } }
+        Remove-OtherSystem 'what was shown'
         Should -Invoke Use-Esp -Times 0
         Test-Path "$esp\EFI\ubuntu" | Should -BeTrue
         Should -Invoke Remove-PartitionByGuid -ParameterFilter { $Guid -eq '{pond}' -and $DiskNumber -eq 0 } -Times 1
+    }
+    It 'removes nothing if the partitions changed since they were shown' {
+        Mock Remove-PartitionByGuid { }
+        Mock Get-OtherSystem { [pscustomobject]@{ Name = 'Pond'; Entries = @(); Kept = @(); Selection = 'a=1,b=2'; Partitions = @([pscustomobject]@{ Guid = 'b'; DiskNumber = 0; Size = [int64]2 }) } }
+        { Remove-OtherSystem 'a=1' } | Should -Throw '*changed*'
+        Should -Invoke Remove-PartitionByGuid -Times 0
+    }
+    It 'lists every partition Remove would delete, whatever system is named' {
+        Set-Content "$esp\EFI\pond\grub.cfg" "search.fs_uuid 11111111-1111-1111-1111-111111111111 root hd0,gpt3"
+        Set-Content "$esp\EFI\ubuntu\grub.cfg" "search.fs_uuid 22222222-2222-2222-2222-222222222222 root hd1,gpt1"
+        $found = Find-OtherSystem 0
+        @($found.PartitionList).Count | Should -Be @($found.Partitions).Count
+        $found.Selection | Should -Match ([regex]::Escape(@($found.Partitions)[0].Guid))
+    }
+}
+
+Describe 'How much a drive can give up' {
+    BeforeEach {
+        $partition = [pscustomobject]@{ Size = [int64]500GB }
+    }
+    It 'is the reserve that limits a drive with nothing in the way' {
+        Mock Get-Volume { [pscustomobject]@{ Size = [int64]500GB; SizeRemaining = [int64]100GB } }
+        Get-ShrinkableBytes $partition ([pscustomobject]@{ SizeMin = [int64]395GB }) ([int64]8GB) | Should -Be ([int64]92GB)
+    }
+    It 'does not take the reserve off a file stuck near the end, with plenty still free inside' {
+        Mock Get-Volume { [pscustomobject]@{ Size = [int64]500GB; SizeRemaining = [int64]300GB } }
+        Get-ShrinkableBytes $partition ([pscustomobject]@{ SizeMin = [int64]493GB }) ([int64]8GB) | Should -Be ([int64]6GB)
+    }
+    It 'is never less than nothing' {
+        Mock Get-Volume { [pscustomobject]@{ Size = [int64]500GB; SizeRemaining = [int64]3GB } }
+        Get-ShrinkableBytes $partition ([pscustomobject]@{ SizeMin = [int64]499GB }) ([int64]8GB) | Should -Be ([int64]0)
+    }
+    It 'keeps the reserve off the limit if the volume cannot be read' {
+        Mock Get-Volume { $null }
+        Get-ShrinkableBytes $partition ([pscustomobject]@{ SizeMin = [int64]100GB }) ([int64]8GB) | Should -Be ([int64]392GB)
+    }
+}
+
+Describe 'Moving system files Windows left in the way' {
+    It 'knows the ones Microsoft lists as movable' -ForEach @(
+        @{ file = '\$Mft::$BITMAP' }, @{ file = '\$MFT' }, @{ file = '\$Secure:$SDH:$INDEX_ALLOCATION' }, @{ file = '\$Extend\$Quota:$Q:$INDEX_ALLOCATION' }
+    ) { Test-MovableSystemFile $file | Should -BeTrue }
+    It 'leaves the rest alone' -ForEach @(
+        @{ file = '\$MFTMirr' }, @{ file = '\$LogFile' }, @{ file = '\$Bitmap' }, @{ file = '\$BadClus' }, @{ file = '\$Extend\$UsnJrnl:$J:$DATA' }, @{ file = '\pagefile.sys' }, @{ file = '' }
+    ) { Test-MovableSystemFile $file | Should -BeFalse }
+    It 'carries on when Windows has nothing movable to name' {
+        Mock Get-ShrinkBlocker { '\pagefile.sys' }
+        Move-SystemFiles 'C:' ([pscustomobject]@{}) | Should -BeFalse
+    }
+}
+
+Describe 'Checking a copy' {
+    It 'passes when the files match' {
+        Set-Content "$TestDrive\a" 'same'; Set-Content "$TestDrive\b" 'same'
+        { Assert-SameFile "$TestDrive\a" "$TestDrive\b" } | Should -Not -Throw
+    }
+    It 'catches damage that keeps the size' {
+        Set-Content "$TestDrive\a" 'same'; Set-Content "$TestDrive\b" 'sane'
+        { Assert-SameFile "$TestDrive\a" "$TestDrive\b" } | Should -Throw '*damage*'
     }
 }
 
