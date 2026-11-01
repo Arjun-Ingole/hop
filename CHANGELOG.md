@@ -13,6 +13,7 @@
   BitLocker fully off on its disk, because its installer refuses even a paused one. hop checks before the download and won't turn it off for you. A full install
   and restart worked in a virtual PC. Afterwards the PC starts Omarchy, and its menu doesn't list Windows until you add it. Later versions of Omarchy
   are refused until they've been tried.
+- Omarchy on a second disk. A full install and restart worked in a virtual PC. It makes its own EFI partition there, and uses the largest free space on that disk, which can be more than hop set aside.
 - Zorin OS, Debian, Fedora Workstation, Ultramarine, CachyOS and Arch Linux. CachyOS and Arch need Secure
   Boot off, as they say when picked, and Arch installs from a text prompt.
 - Fedora and Ultramarine no longer need a command typed in Terminal. Their installer can now use the drive

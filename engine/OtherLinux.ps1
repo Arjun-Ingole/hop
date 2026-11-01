@@ -11,7 +11,7 @@ $LinuxPartitionTypes = @(
     '{a19d880f-05fc-4d3b-a006-743f0f84911e}'   # Linux RAID
 )
 
-$LinuxLoaderPattern = '(shim|grub|systemd-boot|refind)[^\\]*\.efi$'
+$LinuxLoaderPattern = '(shim|grub|systemd-boot|refind|limine)[^\\]*\.efi$'
 
 # The partitions a Linux on these disks might start from, including an EFI partition on another
 # disk. Whichever else is named, the Windows disk counts, since Linux Mint starts from there.
