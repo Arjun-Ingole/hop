@@ -74,11 +74,16 @@ function Get-Plan([int]$LinuxGB, [int]$InstallerGB, [string]$Target, [int]$LiveG
     $linuxStart = [int64]($regionEnd - [int64]$LinuxGB * 1GB)
     $installerOffset = [int64]($linuxStart - [int64]($InstallerGB + $LiveGB) * 1GB)
     $shrink = $installerOffset -lt $windowsEnd
+    $newWindowsSize = if ($shrink) { [int64]($installerOffset - $c.Offset) } else { [int64]$c.Size }
+    if ($shrink -and $space.MinSize -and $space.MinSize -gt 0 -and $newWindowsSize -lt $space.MinSize) {
+        $shortGB = [int][math]::Ceiling(($space.MinSize - $newWindowsSize) / 1GB)
+        throw "Windows can't release enough space from $drive for $LinuxGB GB. It needs about $shortGB GB more. Lower the Linux size or $ShrinkAdvice"
+    }
     [pscustomobject]@{
         DiskNumber      = $c.DiskNumber
         PartitionNumber = $c.PartitionNumber
         Shrink          = $shrink
-        NewWindowsSize  = if ($shrink) { [int64]($installerOffset - $c.Offset) } else { [int64]$c.Size }
+        NewWindowsSize  = $newWindowsSize
         FreeStart       = $linuxStart
         LinuxGB         = $LinuxGB
         InstallerOffset = $installerOffset
