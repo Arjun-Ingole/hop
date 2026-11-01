@@ -1358,6 +1358,11 @@ Describe 'Turning off Secure Boot' {
         Restart-ToBios
         Should -Invoke Suspend-BitLockerForSetup -Times 1
     }
+    It 'says so plainly when the firmware will not do it' {
+        Mock Invoke-Shutdown { throw 'shutdown.exe : The system could not find the environment option that was entered.(203)' }
+        Mock Write-Log { }
+        { Restart-ToBios } | Should -Throw "Windows can't open the BIOS on this PC."
+    }
     It 'needs no state, because nothing has been installed yet' {
         Mock Read-State { throw 'should not read it' }
         { Restart-ToBios } | Should -Not -Throw

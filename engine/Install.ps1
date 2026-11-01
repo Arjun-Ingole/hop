@@ -259,7 +259,8 @@ function Set-InstallerForNextStart {
 
 function Invoke-Shutdown([string[]]$Arguments) {
     $ErrorActionPreference = 'Continue'
-    $output = & shutdown.exe @Arguments 2>&1 | Out-String
+    # Just the words: an error record would bring PowerShell's own account of where it happened.
+    $output = (& shutdown.exe @Arguments 2>&1 | ForEach-Object { "$_" }) -join ' '
     if ($LASTEXITCODE -ne 0) { throw "Windows could not restart this PC: $($output.Trim())" }
 }
 

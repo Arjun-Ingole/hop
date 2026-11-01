@@ -84,7 +84,11 @@ function Get-SecureBootSteps {
 # Turning Secure Boot off makes BitLocker ask for its key, unless it's paused first.
 function Restart-ToBios {
     if (Test-BitLockerOn) { [void](Suspend-BitLockerForSetup) }
-    Invoke-Shutdown '/r', '/fw', '/t', '0'
+    # Not all firmware lets Windows do this, as in a virtual PC, where it fails straight away with error 203.
+    try { Invoke-Shutdown '/r', '/fw', '/t', '0' } catch {
+        Write-Log $_.Exception.Message
+        throw "Windows can't open the BIOS on this PC."
+    }
 }
 
 # Why Secure Boot would stop the ISO mounted at $Root, or nothing if it shouldn't.
