@@ -656,6 +656,45 @@ Get-Content (Get-ChildItem C:\ProgramData\hop\logs\*.log | Sort-Object LastWrite
 ''', timeout=60), flush=True)
 
 
+def scenario_cancel(bench):
+    """What put "ready" on a real PC with nothing installed: Cancel during Step 1, and a stray second click on Start."""
+    vm, s = bench.fresh()
+    s.desktop()
+    s.get_hop()
+    s.open_as_a_person()
+    s.settle()
+    s.press('Install', limit=30)
+    time.sleep(4)
+    if 'Continue' in s.names():
+        s.press('Continue')
+        time.sleep(3)
+    ui = s.ui()
+    start = next(c for c in s.controls() if c['name'] == 'Start')
+    x, y = start['x'] + start['w'] // 2, start['y'] + start['h'] // 2
+    # A double click on Start. The second has to do nothing.
+    vm.click(x, y)
+    time.sleep(0.3)
+    vm.click(x, y)
+    time.sleep(1)
+    vm.shot('cancel-after-double-click')
+    print('after a double click:', s.names(), flush=True)
+    time.sleep(3)
+    print('a few seconds on:', s.names(), flush=True)
+    vm.shot('cancel-button-there')
+    # A real Cancel, during the first steps.
+    s.press('Cancel', limit=20)
+    for second in range(0, 120, 5):
+        time.sleep(5)
+        names = s.names()
+        print(f'{second}s: {names}', flush=True)
+        if 'Install' in names or 'Restart now' in names:
+            break
+    vm.shot('cancel-ended')
+    assert 'Restart now' not in s.names(), 'hop said ready after a Cancel'
+    s.facts('after Cancel: no state.json, and nothing on the disk changed')
+    s.hop_log()
+
+
 def scenario_biosbutton(bench):
     """A system that needs Secure Boot off, with it on: the button, its steps, and the restart into the firmware."""
     vm, s = bench.fresh()
