@@ -1438,6 +1438,49 @@ Describe 'Putting the installer first' {
     }
 }
 
+Describe 'What says Linux is installed' {
+    BeforeEach {
+        $state = [pscustomobject]@{ Copied = $true; BootNumber = 7; LoadersBefore = @('\EFI\old\shimx64.efi'); LinuxBefore = @(); DiskNumber = 0 }
+        Mock Read-State { $state }
+        Mock Get-HopPartitions { [pscustomobject]@{ Label = $InstallerLabels[0]; Letter = 'H'; Partition = [pscustomobject]@{} } }
+        Mock Get-FirmwareEntries { @() }
+        Mock Test-Path { $true } -ParameterFilter { $LiteralPath -like 'H:*' }
+        Mock Get-StateDisk { 0 }
+    }
+    It 'is a new boot loader' {
+        Mock Get-LinuxLoaders { [pscustomobject]@{ Path = '\EFI\ubuntu\shimx64.efi' } }
+        Get-InstallStatus | Should -Be 'installed'
+    }
+    It 'is not just a new partition, which a failed install has too' {
+        Mock Get-LinuxLoaders { @() }
+        Mock Test-LinuxInstalled { $true }
+        Get-InstallStatus | Should -Be 'unsure'
+    }
+    It 'is not an old boot loader' {
+        Mock Get-LinuxLoaders { [pscustomobject]@{ Path = '\EFI\old\shimx64.efi' } }
+        Mock Test-LinuxInstalled { $false }
+        Get-InstallStatus | Should -Be 'ready'
+    }
+}
+
+Describe 'Clean up saying what it could not do' {
+    It 'starts with nothing to report, and says so at the end' {
+        $Sync.CleanupProblems = $null
+        Mock Read-State { $null }
+        Mock Unregister-RunAfterRestart { }
+        Mock Get-HopPartitions { }
+        Mock Get-BcdEntries { }
+        Mock Get-FirmwareEntries { @() }
+        Mock Use-Esp { throw 'blocked' }
+        Mock Get-SpaceOwner { $null }
+        Mock Get-RecordedPartitions { }
+        Mock Test-Path { $false }
+        Invoke-Cleanup
+        @($Sync.CleanupProblems).Count | Should -Be 1
+        @($Sync.CleanupProblems)[0] | Should -BeLike '*EFI system partition*'
+    }
+}
+
 Describe 'Steps with no install behind them' {
     It 'refuses rather than make them up' {
         Mock Read-State { $null }

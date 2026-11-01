@@ -226,23 +226,27 @@ namespace Hop
                 Footer("Windows and your files stay.", null, primaryText, primaryAction);
         }
 
+        bool roomFailed;   // Make room restarted, then couldn't finish, and its settings have gone back
+
         bool MovingUnfinished => RoomMadeHere && engine.RoomUnfinished;
 
         Task MoveFilesAgainAsync() => WorkThenChooseAsync(new[] { new[] { Run.Black("Moving files"), Run.Gray("out of the way") } },
-            () => engine.CompleteMakeRoomAsync(), ex => ShowCouldntMakeRoom(ex));
+            async () => { if (!await engine.CompleteMakeRoomAsync()) { roomFailed = true; roomLetter = null; } }, ex => ShowCouldntMakeRoom(ex));
 
         string StuckNote(DriveChoice better)
         {
             int release = Math.Max(0, target.UsableGB);
+            if (roomFailed)
+                return "Make room couldn't move files after the restart, and hop put your settings back. You can try it again.";
             if (MovingUnfinished)
                 return $"Windows stopped before it finished moving files, so hop can use {release} GB for now. Moving them again may free more.";
             if (!RoomMadeHere)
                 return better == null
-                    ? $"{target.Title} has room, but Windows can't release it yet. hop can clear what's in the way."
-                    : $"{target.Title} has room, but Windows can't release it yet. Make room clears what's in the way, or use {better.InSentence}, which has {(better.Estimated ? "about " : "")}{better.UsableGB} GB to spare.";
+                    ? $"{target.Title} has room, but Windows can't release it yet. hop can try to clear what's in the way."
+                    : $"{target.Title} has room, but Windows can't release it yet. Make room tries to clear what's in the way, or use {better.InSentence}, which has {(better.Estimated ? "about " : "")}{better.UsableGB} GB to spare.";
             if (target.BlockerKind == "restore")
                 return $"hop can use {release} GB. Restore points on {target.InSentence} are stopping Windows releasing more.";
-            string blocker = target.BlockerKind == "ntfs" ? "Windows' own file system data, near the end of the drive," : target.ShrinkBlocker ?? "some system files";
+            string blocker = target.BlockerKind == "ntfs" ? "Windows' own file system data, near the end of the drive," : target.ShrinkBlocker ?? "Something on the drive";
             string instead = MaxLinuxGB >= MinLinuxGB ? "" : startup.Drives.Any(d => d.Id != target.Id) ? " Choose another drive." : " Windows can't shrink it past that, so Linux needs a second disk.";
             return $"hop made what room it could, and can use {release} GB. {blocker} limits the rest.{instead}";
         }
@@ -352,7 +356,7 @@ namespace Hop
             ConfigureDrive(DriveMode.Stuck, Current);
             steps.Set(plan.Steps, plan.Notes.Skip(1).ToArray());
             Arrange(new[] { new[] { Run.Black($"{target.StuckGB} GB"), Run.Gray($"is stuck on {title}") } },
-                $"Windows can only shrink {title} as far as the last file it can't move. hop can clear the way.", Secondary, drive, 24);
+                $"Windows can only shrink {title} as far as the last file it can't move. hop can try to clear the way.", Secondary, drive, 24);
             PlaceSteps(drive.Bottom + S(24));
             steps.Visible = true;
             Footer(plan.Notes.FirstOrDefault(), null, plan.Restart ? "Make room and restart" : "Make room", () => _ = MakeRoomAsync(), "Back", ShowChoose);
@@ -361,6 +365,7 @@ namespace Hop
         async Task MakeRoomAsync()
         {
             BeginWork(new[] { new[] { Run.Gray("Making"), Run.Black("room") } }, "Starting…");
+            roomFailed = false;
             roomLetter = null;   // the engine puts back any earlier run before it starts
             try
             {
@@ -519,7 +524,7 @@ namespace Hop
             int held = HoldScreen();
             string[] warnings;
             try { warnings = await engine.GetWarningsAsync(place); }
-            catch { warnings = new string[0]; }
+            catch (Exception ex) { warnings = new[] { $"**hop couldn't finish checking this PC.** {Describe(ex)}" }; }
             if (!ReleaseScreen(held)) return;
             if (warnings.Length == 0) { next(); return; }
 

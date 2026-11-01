@@ -39,7 +39,6 @@ function Get-StorageControllers {
 
 # Things hop can go ahead with, but that are worth checking first. ** marks emphasis.
 function Get-Warnings([string]$Target) {
-    Get-RoomGaveUpWarning
     $battery = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($battery -and $battery.BatteryStatus -eq 1) {
         "**Plug in the charger.** This PC is on battery ($($battery.EstimatedChargeRemaining)%), and losing power while the disk is changing could stop Windows starting."
@@ -73,6 +72,8 @@ function Get-Warnings([string]$Target) {
     if ($memory -and $memory -lt 4GB) {
         '**This PC has under 4 GB of memory.** The Linux installer may run slowly or fail. Lubuntu and Xubuntu need the least.'
     }
+    # Last, because it's only shown once, and a failure above would lose it.
+    Get-RoomGaveUpWarning
 }
 
 function Test-RestartPending {

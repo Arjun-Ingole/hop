@@ -23,6 +23,8 @@ namespace Hop
                     Footer("You can keep using your PC while this runs.", null, null, null);
                     if (await engine.CompleteMakeRoomAsync())
                         roomLetter = string.IsNullOrEmpty(startup.RoomLetter) ? WindowsLetter : startup.RoomLetter;
+                    else
+                        roomFailed = true;
                     startup = await engine.GetStartupInfoAsync();
                 }
                 else if (startup.RoomPhase == "restore")
@@ -50,13 +52,14 @@ namespace Hop
 
         async Task ShowStartScreenAsync()
         {
-            if (startup.Status == "ready" || startup.Status == "installed")
+            if (startup.Status == "ready" || startup.Status == "installed" || startup.Status == "unsure")
             {
                 prepared = catalog.FirstOrDefault(d => d.Id == startup.PreparedId) ?? new Distro
                 {
                     Name = string.IsNullOrWhiteSpace(startup.PreparedDistro) ? "Linux" : startup.PreparedDistro,
                 };
                 if (startup.Status == "installed") ShowInstalled();
+                else if (startup.Status == "unsure") ShowUnsure();
                 else await ShowReadyAsync();
             }
             else if (startup.Status == "leftover") ShowLeftover();
@@ -71,7 +74,7 @@ namespace Hop
             if (startup.StateDiskMissing) text = "It was using a drive that isn't connected now. If you unplugged it, plug it back in and open hop again. Otherwise, clean up deletes these to start fresh.";
             var items = startup.Leftovers ?? new string[0];
             if (items.Length > 0) steps.Set(items, null);
-            Arrange(new[] { new[] { Run.Gray("An earlier attempt"), Run.Black("didn't finish.") } }, text, Secondary, items.Length > 0 ? steps : null, 24);
+            Arrange(new[] { new[] { Run.Gray("An earlier attempt"), Run.Black("left something behind.") } }, text, Secondary, items.Length > 0 ? steps : null, 24);
             Footer(null, null, "Clean up", () => _ = CleanupAsync(false, afterwards: null));
         }
 
@@ -102,6 +105,16 @@ namespace Hop
                 return;
             }
             EndWork();
+            // Only the PC says it all went. With Linux staying, its partitions are meant to.
+            var problems = engine.CleanupProblems.ToList();
+            if (startup.Status != "none" && !installerOnly) problems.AddRange(startup.Leftovers ?? new string[0]);
+            if (problems.Count > 0)
+            {
+                steps.Set(problems.ToArray(), null);
+                Arrange(new[] { new[] { Run.Gray("Couldn't clean up"), Run.Black("everything") } }, "These are still here. Everything else is gone.", Danger, steps, 24);
+                Footer(ReportLink, () => _ = CopyReportAsync(), "Try again", () => _ = CleanupAsync(installerOnly, afterwards), "Close", Close);
+                return;
+            }
             if (afterwards != null) afterwards();
             else ShowChoose();
         }

@@ -19,6 +19,7 @@ function Get-ReturnedHelp {
     $entry = "$($state.Distro) installer $EntryMarker"
     $key = Get-BootMenuKey
     $tried = [bool]$state.InstallerFirst
+    $stillFirst = $tried -and (Test-InstallerStillFirst $state)
     $canPutFirst = $false
     if (Test-EntryDropped $state) {
         $steps = @(
@@ -31,7 +32,7 @@ function Get-ReturnedHelp {
         $canPutFirst = -not $tried
         $steps = if ($canPutFirst) { @(
             "This PC ignored hop's request to start the installer. Click **Try another way**, which restarts with the installer first in the startup order."
-            "To go back to Windows before Linux is installed, keep tapping **$key** as the PC powers on and choose **Windows Boot Manager**. Open hop there and restarts go to Windows again."
+            "To go back to Windows before Linux is installed, keep tapping **$key** as the PC powers on and choose **Windows Boot Manager**. Opening hop there puts Windows first again, and it says so if the PC refuses."
         ) } else { @(
             "This PC ignored hop's request to start the installer. Restart and keep tapping **$key** as the PC powers on, which opens its boot menu."
             "Choose **$entry**."
@@ -53,6 +54,7 @@ function Get-ReturnedHelp {
         if ($canPutFirst) { $steps += 'Or click **Try another way**, which puts the installer first in the startup order until you open hop again in Windows.' }
         $notes = @("If it isn't listed, this PC's firmware removed it. Click **Try again** and hop adds it back.")
     }
+    if ($stillFirst) { $notes = @("**This PC wouldn't let hop put Windows first again**, so restarts still start the installer. To reach Windows, keep tapping **$key** as the PC powers on, then use **Undo changes** or install Linux.") + @($notes) }
     [pscustomobject]@{ Steps = $steps; Notes = $notes; CanPutFirst = $canPutFirst }
 }
 
@@ -122,7 +124,7 @@ function Get-Steps($Distro, [int]$LinuxGB, $Place) {
         $steps = @('Pick your language and keyboard, then start the installer.')
         if ($otherDisk) {
             $steps += Get-OtherDiskSteps $Distro $LinuxGB "$($Place.DiskName) ($($Place.DiskGB) GB)"
-        } elseif ($Distro.Alongside -and $Place.AlongsideOk -ne $false) {
+        } elseif ($Distro.Alongside -and (-not $Place -or $Place.AlongsideOk -eq $true)) {
             $steps += "Choose **$($Distro.Alongside)**. It uses the $LinuxGB GB hop set aside."
             $steps += "If that option is missing, $manual"
         } else {

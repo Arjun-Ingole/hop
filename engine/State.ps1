@@ -76,6 +76,7 @@ function Get-BcdEntries {
 
 # 'ready'    an installer is in place and set up to start
 # 'installed' the installer is still here, and Linux has been installed from it
+# 'unsure'   the installer is still here, with a new Linux partition but no boot loader for it
 # 'leftover' something from an earlier attempt is left behind
 # 'none'     nothing from hop on this PC
 function Get-InstallStatus {
@@ -91,12 +92,20 @@ function Get-InstallStatus {
         # Windows doesn't always give the partition its letter back after a restart.
         $letter = if ($installer.Letter) { $installer.Letter } else { try { Get-DriveLetter $installer.Partition } catch { $null } }
         if ($letter -and (Test-Path -LiteralPath "$($letter):\EFI\BOOT\BOOTX64.EFI")) {
-            if (Test-LinuxInstalled $state) { return 'installed' }
+            # Only its boot loader says it finished. A partition is there from early in the installer, so a
+            # failed install has one too, and firmware can drop an entry from one that worked.
+            if (Test-NewLinuxLoader $state) { return 'installed' }
+            if (Test-LinuxInstalled $state) { return 'unsure' }
             return 'ready'
         }
     }
     if ($state -or $partitions.Count -or $entries.Count -or @(Get-BcdEntries).Count) { return 'leftover' }
     'none'
+}
+
+function Test-NewLinuxLoader($State) {
+    if ($State.PSObject.Properties.Name -notcontains 'LoadersBefore') { return $false }
+    @(Get-LinuxLoaders (Get-StateDisk $State) | Where-Object { $_.Path -notin @($State.LoadersBefore) }).Count -gt 0
 }
 
 # A Linux boot loader or partition that wasn't there when the install began. Partitions

@@ -83,9 +83,12 @@ namespace Hop
                 poll.Stop();
                 busy = installing = false;
                 // The engine can end with nothing thrown, so only what's on the PC says it worked.
-                if (reread && startup.Status != "ready" && startup.Status != "installed")
+                if (!reread || (startup.Status != "ready" && startup.Status != "installed"))
                 {
-                    await ShowFailureAsync($"hop stopped before {system.Name} was ready, and nothing was installed. {engine.LastError ?? "Use the report below to tell us."}");
+                    string what = !reread ? "hop can't tell whether it finished, so it won't say it's ready."
+                        : startup.Status == "none" ? "Your disk wasn't changed."
+                        : "It left some changes behind, which Clean up removes.";
+                    await ShowFailureAsync($"hop stopped before {system.Name} was ready. {what} {engine.LastError}".Trim());
                     return;
                 }
                 prepared = system;
@@ -166,7 +169,8 @@ namespace Hop
             var system = Current;
             SyncLog();
             int held = HoldScreen();
-            bool changed = false;
+            // Not being able to look isn't the same as nothing being there, and Clean up is safe either way.
+            bool changed = true;
             try
             {
                 await ReloadAsync();

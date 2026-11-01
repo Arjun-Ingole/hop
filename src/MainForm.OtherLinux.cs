@@ -30,57 +30,75 @@ namespace Hop
 
         async Task RemoveOtherAsync()
         {
-            string name = startup.OtherName;
+            string name = startup.OtherName, selection = startup.OtherSelection;
             int freed = startup.OtherGB;
             bool onWindowsDisk = startup.OtherOnWindowsDisk;
             string kept = KeptNote(startup.OtherKept);
             BeginWork(new[] { new[] { Run.Gray("Removing"), Run.Black(name) } }, "Starting…");
-            try
+            Exception failed = null;
+            try { await engine.RemoveOtherSystemAsync(selection); }
+            catch (Exception ex) { failed = ex; }
+            // Reading the PC again is its own step: failing at that says nothing about the removal.
+            bool looked = true;
+            try { await ReloadAsync(); }
+            catch (Exception) { looked = false; }
+            EndWork();
+
+            bool gone = looked && startup.OtherSelection != selection;
+            if (!gone)
             {
-                await engine.RemoveOtherSystemAsync(startup.OtherSelection);
-                await ReloadAsync();
-                EndWork();
-                if (onWindowsDisk)
-                {
-                    Arrange(new[] { new[] { Run.Black(name), Run.Gray("is gone.") } },
-                        $"{freed} GB is free now. Use it for Linux, or give it back to Windows.{kept}", Secondary, null, 0);
-                    target = startup.Drives.FirstOrDefault(d => d.IsWindows) ?? target;
-                    Footer(null, null, "Use it for Linux", ShowChoose, "Give it to Windows", () => _ = ExpandWindowsAsync());
-                }
-                else
-                {
-                    Arrange(new[] { new[] { Run.Black(name), Run.Gray("is gone.") } }, $"{freed} GB is free now on that drive.{kept}", Secondary, null, 0);
-                    Footer(null, null, "Done", ShowChoose);
-                }
+                string why = failed != null ? Describe(failed)
+                    : looked ? "The partitions are still there, and Windows gave no reason."
+                    : "hop can't tell whether they went. Open hop again to see.";
+                Arrange(new[] { new[] { Run.Gray("Couldn't remove"), Run.Black(name) } }, why, Danger, null, 0);
+                Footer("Back", ShowChoose, "Try again", looked && startup.OtherGB > 0 ? () => _ = RemoveOtherAsync() : (Action)null);
+                return;
             }
-            catch (Exception ex)
+            string partly = failed == null ? "" : $" Its partitions are gone, but hop couldn't finish tidying up: {Describe(failed)}";
+            var windows = startup.Drives.FirstOrDefault(d => d.IsWindows);
+            if (onWindowsDisk && windows != null && windows.TailFreeGB > 0)
             {
-                EndWork();
-                try { startup = await engine.GetStartupInfoAsync(); } catch { }
-                Arrange(new[] { new[] { Run.Gray("Couldn't remove"), Run.Black(name) } }, Describe(ex), Danger, null, 0);
-                Footer("Back", ShowChoose, "Try again", startup.OtherGB > 0 ? () => _ = RemoveOtherAsync() : (Action)null);
+                Arrange(new[] { new[] { Run.Black(name), Run.Gray("is gone.") } },
+                    $"{freed} GB is free now. Use it for Linux, or give it back to Windows.{kept}{partly}", Secondary, null, 0);
+                target = windows;
+                Footer(null, null, "Use it for Linux", ShowChoose, "Give it to Windows", () => _ = ExpandWindowsAsync());
+            }
+            else
+            {
+                Arrange(new[] { new[] { Run.Black(name), Run.Gray("is gone.") } }, $"{freed} GB is free now on that disk.{kept}{partly}", Secondary, null, 0);
+                // It isn't next to any drive, so Linux can only have it as free space.
+                var gap = startup.Drives.Where(d => d.IsFreeSpace).OrderByDescending(d => d.UsableGB).FirstOrDefault();
+                if (onWindowsDisk && gap != null) target = gap;
+                Footer(null, null, "Done", ShowChoose);
             }
         }
 
         async Task ExpandWindowsAsync()
         {
-            string owner = target.IsWindows ? "Windows" : target.InSentence;
+            string id = target.Id, title = target.Title, owner = target.IsWindows ? "Windows" : target.InSentence;
+            string heading = target.IsWindows ? "Windows" : target.Title;
+            int before = target.SizeGB;
             BeginWork(new[] { new[] { Run.Gray("Giving the space to"), Run.Black(owner) } }, "Starting…");
-            try
+            Exception failed = null;
+            try { await engine.ExpandWindowsAsync(id); }
+            catch (Exception ex) { failed = ex; }
+            bool looked = true;
+            try { await ReloadAsync(); }
+            catch (Exception) { looked = false; }
+            EndWork();
+
+            var row = looked ? startup.Drives.FirstOrDefault(d => d.Id == id) : null;
+            if (failed == null && row != null && row.SizeGB > before)
             {
-                await engine.ExpandWindowsAsync(target.Id);
-                await ReloadAsync();
-                EndWork();
-                Arrange(new[] { new[] { Run.Black(target.IsWindows ? "Windows" : target.Title), Run.Gray("has the space back.") } },
-                    $"{target.Title} is {target.SizeGB} GB now.", Secondary, null, 0);
+                Arrange(new[] { new[] { Run.Black(heading), Run.Gray("has the space back.") } }, $"{title} is {row.SizeGB} GB now.", Secondary, null, 0);
                 Footer("Start over", ShowChoose, "Close", Close);
+                return;
             }
-            catch (Exception ex)
-            {
-                EndWork();
-                Arrange(new[] { new[] { Run.Gray("Couldn't give the space to"), Run.Black(owner) } }, Describe(ex), Danger, null, 0);
-                Footer(null, null, "Use it for Linux", ShowChoose, "Try again", () => _ = ExpandWindowsAsync());
-            }
+            string why = failed != null ? Describe(failed)
+                : row != null ? $"{title} is still {row.SizeGB} GB, and Windows gave no reason."
+                : "hop can't tell whether it worked. Open hop again to see.";
+            Arrange(new[] { new[] { Run.Gray("Couldn't give the space to"), Run.Black(owner) } }, why, Danger, null, 0);
+            Footer(null, null, "Use it for Linux", ShowChoose, "Try again", () => _ = ExpandWindowsAsync());
         }
     }
 }

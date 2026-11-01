@@ -224,7 +224,7 @@ namespace Hop
 
             // Legend for the installer strip.
             float legendTop = bar.Bottom + F(LegendGap);
-            string legend = Legend ?? $"Installer · {InstallerGB} GB, removable once Linux is set up";
+            string legend = Legend ?? $"Installer · about {InstallerGB} GB, removable once Linux is set up";
             float legendWidth = TextKit.Width(legend, small);
             float lx = Width - legendWidth;
             FillRounded(g, Mix(Color.White, Brand, 0.42f), new RectangleF(lx - F(16), legendTop + F(4), F(8), F(8)), F(2));

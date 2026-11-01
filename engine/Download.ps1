@@ -148,7 +148,7 @@ function Resolve-Download($Distro) {
 
 function Test-Sha256([string]$Path, [string]$Expected) {
     Set-Stage 2
-    Set-Status 'Checking the download is genuine (takes a minute)...'
+    Set-Status 'Checking the download against the official checksum (takes a minute)...'
     (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -eq $Expected.ToUpperInvariant()
 }
 

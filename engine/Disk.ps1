@@ -57,7 +57,7 @@ function Get-StuckGB([int64]$FreeBytes, $Space, [int64]$Reserve = $WindowsReserv
     [int][math]::Max(0, $spareGB - [math]::Max(0, $shrinkGB))
 }
 
-$ShrinkAdvice = "open hop again and click Make room, which clears what's in the way."
+$ShrinkAdvice = "open hop again and click Make room, which tries to clear what's in the way."
 
 # $LiveGB is the second partition, straight after the installer, for a system whose live image FAT32 can't hold.
 function Get-Plan([int]$LinuxGB, [int]$InstallerGB, [string]$Target, [int]$LiveGB = 0) {

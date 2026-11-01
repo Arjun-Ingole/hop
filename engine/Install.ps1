@@ -145,6 +145,8 @@ function Get-StartupInfo {
         # C: on its own, for when the drives can't be listed.
         WindowsFallback = [pscustomobject]@{
             Id = ''; Kind = 'volume'; Letter = $env:SystemDrive.TrimEnd(':'); Title = "Drive $env:SystemDrive"; OnWindowsDisk = $true
+            # With no figures, it has to say it couldn't measure, not that the drive is full.
+            Estimated = -not $space
             DiskName  = Get-DiskLabel $disk
             SizeGB    = [int][math]::Floor($space.Partition.Size / 1GB)
             UsedGB    = [int][math]::Ceiling(($volume.Size - $volume.SizeRemaining) / 1GB)
@@ -207,6 +209,10 @@ function Restart-IntoInstallerFirst {
     Save-State $state
     Write-Log ('Boot{0:X4} now starts first, until hop opens again.' -f [int]$state.BootNumber)
     Invoke-InstallerRestart '/r', '/t', '0'
+}
+
+function Test-InstallerStillFirst($State) {
+    try { @([Hop.Firmware]::BootOrderNumbers())[0] -eq [int]$State.BootNumber } catch { $false }
 }
 
 function Move-InstallerInOrder([int]$Number, [switch]$First) {
@@ -292,9 +298,14 @@ function Get-SpaceOwner($State, $HopPartitions) {
 # Removes what hop made: its startup entries and partitions, found by their
 # description and labels, so this also works when an earlier attempt failed half way.
 # With -InstallerOnly, Linux and its partitions stay.
+function Get-DriveBytes([string]$Letter) { [int64](Get-Partition -DriveLetter $Letter.TrimEnd(':') -ErrorAction Stop).Size }
+
 function Invoke-Cleanup([switch]$InstallerOnly) {
     $state = Read-State
     $Sync.SpaceNote = $null
+    # What it can't do doesn't stop the rest, but it does stop it saying it all went.
+    $problems = New-Object Collections.ArrayList
+    $Sync.CleanupProblems = $problems
     # While Make room's settings are off, its safety net is what brings them back.
     if (-not (Test-Path -LiteralPath $RoomPath)) { Unregister-RunAfterRestart }
     # Choosing "Linux isn't installed yet" by mistake must not take its boot partition with it.
@@ -304,14 +315,17 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
     }
     Set-Status 'Removing hop from the startup menu...'
     foreach ($id in @(Get-BcdEntries)) {
-        try { Invoke-Bcdedit /delete $id | Out-Null; Write-Log "Removed startup entry $id." } catch { Write-Log "Could not remove $id." }
+        try { Invoke-Bcdedit /delete $id | Out-Null; Write-Log "Removed startup entry $id." } catch { Write-Log "Could not remove $id."; [void]$problems.Add("hop's startup entry $id is still in the startup menu.") }
     }
     foreach ($number in @(Get-FirmwareEntries)) {
         # One the firmware refuses must not stop the rest. It still has hop's name, so it can be found later.
         try {
             Remove-FirmwareEntry $number
             Write-Log ('Removed startup entry Boot{0:X4}.' -f $number)
-        } catch { Write-Log ('Could not remove startup entry Boot{0:X4}: {1}' -f $number, $_.Exception.Message) }
+        } catch {
+            Write-Log ('Could not remove startup entry Boot{0:X4}: {1}' -f $number, $_.Exception.Message)
+            [void]$problems.Add(('hop''s startup entry Boot{0:X4} is still in the startup menu. The firmware refused to remove it.' -f $number))
+        }
     }
     try {
         Use-Esp {
@@ -321,7 +335,10 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
                 if (Test-Path -LiteralPath $folder) { Remove-Item -LiteralPath $folder -Recurse -Force; Write-Log "Removed \$name." }
             }
         }
-    } catch { Write-Log "Could not tidy the EFI system partition: $($_.Exception.Message)" }
+    } catch {
+        Write-Log "Could not tidy the EFI system partition: $($_.Exception.Message)"
+        [void]$problems.Add('hop''s startup files may still be on the EFI system partition. They do no harm.')
+    }
 
     $labels = if ($InstallerOnly) { $InstallerLabels + $LiveLabel } else { $InstallerLabels + $LiveLabel, $RootLabel, $BootLabel }
     # An installer may keep the boot partition, but one that left it empty never will use it.
@@ -384,10 +401,10 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
 
     # Only without Linux: Fast Startup stays off for a dual boot, because it locks the Windows drive.
     if (-not $InstallerOnly) {
-        if ($state.FastStartupWasOn) { try { Restore-FastStartup } catch { Write-Log "Could not turn Fast Startup back on: $($_.Exception.Message)" } }
+        if ($state.FastStartupWasOn) { try { Restore-FastStartup } catch { Write-Log "Could not turn Fast Startup back on: $($_.Exception.Message)"; [void]$problems.Add('Fast Startup is still off. You can turn it on again in Windows'' power settings.') } }
         if ($state.BitLockerPaused) { try { Resume-BitLockerAfterUndo } catch { Write-Log "Could not turn BitLocker back on: $($_.Exception.Message)" } }
     }
 
     foreach ($path in @($StatePath, $LegacyStatePath)) { if (Test-Path $path) { Remove-Item -LiteralPath $path -Force } }
-    Set-Status 'hop changes removed.' 100
+    Set-Status $(if ($problems.Count) { 'hop couldn''t remove everything.' } else { 'hop changes removed.' }) 100
 }

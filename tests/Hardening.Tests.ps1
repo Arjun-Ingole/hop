@@ -747,7 +747,7 @@ Describe 'Make room''s steps' {
         $steps.Restart | Should -BeFalse
         $steps.Steps | Should -Be @(
             'On drive Y: clears the **change journal**.'
-            'Moves files out of the way, for up to 15 minutes.'
+            'Moves files out of the way, which can take 15 minutes or more.'
             'Turns everything back on once Linux has its space, or when you close hop.')
         $steps.Notes | Should -Be @('Your files aren''t touched, and this PC doesn''t restart.')
     }

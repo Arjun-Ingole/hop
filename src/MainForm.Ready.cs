@@ -30,7 +30,7 @@ namespace Hop
             {
                 new[] { new Run { Text = prepared.Name, Color = Ink, Logo = Logo(prepared.Logo) }, Run.Gray("is ready.") },
             }, installSteps.FullDisk
-                ? "Nothing has been erased yet. Restart to open its installer, which erases the disk when you choose that. Until then, Undo changes puts everything back."
+                ? "Nothing has been erased yet. Restart to open its installer, which erases the disk when you choose that. Until then, Undo changes removes what hop added."
                 : "Restart to open its installer. These are the choices to make there.", Secondary, steps, installSteps.Notes.Length > 1 ? 24 : 40);
             Footer("Undo changes", () => ShowUndo(() => _ = ShowReadyAsync()), "Restart now", () => _ = RestartIntoInstallerAsync(),
                 "Later", Close, Secondary);
@@ -109,6 +109,16 @@ namespace Hop
             Footer(null, null, "Remove the installer", () => RemoveChanges(true), "Later", Close);
         }
 
+        /// <summary>A partition can come from an install that failed, and a good install can lose its startup entry, so hop doesn't guess.</summary>
+        void ShowUnsure()
+        {
+            Arrange(new[]
+            {
+                new[] { new Run { Text = prepared.Name, Color = Ink, Logo = Logo(prepared.Logo) }, Run.Gray("may not be finished.") },
+            }, "hop found a new Linux partition, but no startup entry for it. If the installer finished, choose Remove the installer. If it didn't, click Try again.", Secondary, null, 0);
+            Footer("Undo changes", () => ShowUndo(ShowUnsure), "Try again", () => _ = RestartIntoInstallerAsync(), "Remove the installer", () => RemoveChanges(true), Secondary);
+        }
+
         // --- Undo ----------------------------------------------------------------------------
 
         void ShowUndo(Action goBack)
@@ -129,24 +139,26 @@ namespace Hop
             onPrimary = () => RemoveChanges(installerOnly);
         }
 
-        /// <summary>Remembers the size of the drive the space came from, because hop forgets which one it was.</summary>
-        void RemoveChanges(bool installerOnly)
+        /// <summary>Measures the drive the space came from now and afterwards, because hop forgets which one it was.</summary>
+        void RemoveChanges(bool installerOnly) => _ = RemoveChangesAsync(installerOnly);
+
+        async Task RemoveChangesAsync(bool installerOnly)
         {
-            string letter = startup.StateLetter;
-            int before = SizeOfDrive(letter);
-            _ = CleanupAsync(installerOnly, () => ShowRemoved(installerOnly, letter, before));
+            string letter = startup.StateLetter, iso = startup.IsoPath;
+            long? before = await engine.GetDriveBytesAsync(letter);
+            await CleanupAsync(installerOnly, () => _ = ShowRemovedAsync(installerOnly, letter, before, iso));
         }
 
-        int SizeOfDrive(string letter) => startup.Drives.FirstOrDefault(d => d.Letter == letter)?.SizeGB ?? 0;
-
         /// <summary>Says what actually happened: the drive may have grown, or the space may just be free.</summary>
-        void ShowRemoved(bool installerOnly, string letter, int sizeBefore)
+        async Task ShowRemovedAsync(bool installerOnly, string letter, long? before, string iso)
         {
-            int grew = SizeOfDrive(letter) - sizeBefore;
+            long? after = await engine.GetDriveBytesAsync(letter);
+            long grew = before != null && after != null ? (after.Value - before.Value) / (1024L * 1024 * 1024) : 0;
             string result = grew > 0 ? $"Drive {letter}: is {grew} GB bigger."
                 : engine.SpaceNote != null ? engine.SpaceNote
                 : installerOnly ? "The space it used is free, but Windows can't reach it from here."
-                : "The space is free on this drive.";
+                : "The space it used is free on this disk.";
+            if (!string.IsNullOrEmpty(iso)) result += $" The ISO is still at {iso}. Delete it if you don't need it.";
             Arrange(new[] { new[] { Run.Black("Changes removed.") } }, result, Secondary, null, 0);
             Footer("Start over", ShowChoose, "Close", Close);
         }

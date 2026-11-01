@@ -536,7 +536,7 @@ try {
     # What a Linux installer leaves: a Linux partition in the space hop set aside.
     $linuxPart = New-Partition -DiskNumber $b -Offset ([int64]$inst.Partition.Offset + [int64]$inst.Partition.Size) -Size 5GB -GptType '{0fc63daf-8483-4772-8e79-3d69d8477de4}'
     Check 'hop sees Linux on the second disk' (Test-LinuxInstalled $state) ''
-    Check 'status is installed' ((Get-InstallStatus) -eq 'installed') (Get-InstallStatus)
+    Check 'with no boot loader, hop is unsure' ((Get-InstallStatus) -eq 'unsure') (Get-InstallStatus)
     Check 'Linux on this disk is not offered before it has been kept' ($null -eq (Get-OtherSystem)) ''
     Invoke-Cleanup
     Check 'clean-up noticed and only took the installer' ($null -ne (Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$linuxPart.Offset })) ''

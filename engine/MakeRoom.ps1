@@ -169,7 +169,7 @@ function Get-MakeRoomSteps([string]$Drive) {
     $steps = @(if ($isWindows) { "On drive $room turns off **hibernation** and clears the **change journal**." } else { "On drive $room clears the **change journal**." })
     if ($pagingOff) { $steps += "On drive $room turns off the **paging file**." }
     $byItself = Test-OpensAgainByItself
-    $steps += if ($restart -and -not $byItself) { 'Restarts this PC. Open hop again within 20 minutes, and it moves what''s left out of the way.' } elseif ($restart) { 'Restarts this PC, opens again, and moves what''s left out of the way.' } else { 'Moves files out of the way, for up to 15 minutes.' }
+    $steps += if ($restart -and -not $byItself) { 'Restarts this PC. Open hop again within 20 minutes, and it moves what''s left out of the way.' } elseif ($restart) { 'Restarts this PC, opens again, and moves what''s left out of the way.' } else { 'Moves files out of the way, which can take 15 minutes or more.' }
     $steps += 'Turns everything back on once Linux has its space, or when you close hop.'
     $note = if ($restart) { 'Save your work first. Your files aren''t touched.' } else { 'Your files aren''t touched, and this PC doesn''t restart.' }
     $notes = @($note)
@@ -381,7 +381,7 @@ function Invoke-Defrag([string]$Drive) {
     }
     if ($cancelled -eq $DefragTries) { Write-Log "Windows cancelled moving files all $DefragTries times, so nothing moved." }
     # What's left may well move, so this mustn't read as the most that could be done.
-    $Sync.RoomUnfinished = $null -eq $code -or $code -eq $DefragCancelled
+    $Sync.RoomUnfinished = $code -ne 0
     # Windows can't work out the limit for a moment after that.
     $c = Get-Partition -DriveLetter $room.TrimEnd(':')
     Wait-ShrinkLimit $c $deadline

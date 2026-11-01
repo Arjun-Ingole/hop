@@ -94,9 +94,10 @@ namespace Hop
         public string StateLetter;      // the drive a setup took its space from, if it took any
         public bool StateDiskMissing;   // that setup's disk isn't connected
         public string[] Leftovers;      // what Clean up would delete, in words
-        public string Status;           // "ready", "leftover" (from an attempt that didn't finish) or "none"
+        public string Status;           // "ready", "installed", "unsure" (a new Linux partition, but no boot loader), "leftover" or "none"
         public string PreparedDistro;   // set when an installer is ready
         public string PreparedId;
+        public string IsoPath;          // the ISO an install used, which stays when it's undone
         public bool CameBack;           // restarted for the installer, and Windows started instead
         public bool SecureBoot;
         public string BootKey;          // the key that opens this PC's boot menu
@@ -314,6 +315,7 @@ namespace Hop
                 StateDiskMissing = Get<bool>(info, "StateDiskMissing"),
                 PreparedDistro = state == null ? null : Get<string>(state, "Distro"),
                 PreparedId = state == null ? null : Get<string>(state, "DistroId"),
+                IsoPath = state == null ? null : Get<string>(state, "IsoPath"),
                 CameBack = Get<bool>(info, "CameBack"),
                 SecureBoot = Get<bool>(info, "SecureBoot"),
                 BootKey = Get<string>(info, "BootKey"),
@@ -383,6 +385,17 @@ namespace Hop
         public Task<InstallSteps> GetReturnedHelpAsync() => GetStepsFromAsync("Get-ReturnedHelp");
 
         public Task<InstallSteps> GetSecureBootStepsAsync() => GetStepsFromAsync("Get-SecureBootSteps");
+
+        /// <summary>How big a drive is now, or null if that can't be read.</summary>
+        public async Task<long?> GetDriveBytesAsync(string letter)
+        {
+            if (string.IsNullOrEmpty(letter)) return null;
+            try { return (await InvokeAsync("Get-DriveBytes", new Hashtable { ["Letter"] = letter })).Items.Select(o => (long?)Convert.ToInt64(o.BaseObject)).LastOrDefault(); }
+            catch (Exception) { return null; }
+        }
+
+        /// <summary>What Clean up couldn't do, which it carries on past.</summary>
+        public string[] CleanupProblems => (Sync["CleanupProblems"] as IEnumerable)?.Cast<object>().Select(o => o.ToString()).ToArray() ?? new string[0];
 
         public Task RestartToBiosAsync() => InvokeAsync("Restart-ToBios");
 

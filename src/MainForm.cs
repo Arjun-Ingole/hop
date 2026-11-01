@@ -106,7 +106,7 @@ namespace Hop
             eraseWord.ForeColor = Ink;
             eraseWord.TextChanged += (s, e) => onEraseWord?.Invoke();
             removeAll = new OptionRow("Linux isn't installed yet",
-                "Remove everything hop made and give the space back.", width);
+                "Remove hop's partitions and startup entry, and free the space.", width);
             removeInstaller = new OptionRow("Linux is installed",
                 "Remove only the installer and its startup entry. Linux stays.", width);
             removeAll.Chosen += (s, e) => PickUndo(removeAll);
