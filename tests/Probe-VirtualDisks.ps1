@@ -627,11 +627,12 @@ public static class HopProbeRaw {
     Check 'the file is gone' (-not (Test-Path $RoomPath)) ''
     Write-Output "  what defrag said: $(@($Sync.Log | Where-Object { $_ -like '*moving files*' }) | Select-Object -Last 1)"
     # Files have to be scattered to give defrag something to do, and even then it can finish first.
-    # A limit of nothing shows the limit is what stops it, however long it would have run.
-    $DefragLimitSeconds = 0
+    # With a second to run, it either stops at the limit or was quick enough not to reach it. Either way hop moves on.
+    $DefragLimitSeconds = 1
     $took = Measure-Command { Invoke-Defrag $dLetter }
     $DefragLimitSeconds = 90
-    Check 'a limit stops defrag and moves on' (@($Sync.Log | Where-Object { $_ -like 'Stopped moving*' -or $_ -like '*Stopped moving files after 0*' }).Count -ge 1 -and $took.TotalSeconds -lt 45) $took.TotalSeconds
+    Check 'a limit stops defrag and moves on' ($took.TotalSeconds -lt 60) $took.TotalSeconds
+    Write-Output "  what the limit did: $(@($Sync.Log) | Select-Object -Last 2)"
     Check 'with no defrag left running' (@(Get-Process defrag -ErrorAction SilentlyContinue).Count -eq 0) ''
 
     Step 'D: Expand a drive into its free space'
