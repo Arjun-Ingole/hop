@@ -23,7 +23,9 @@ function Test-LooksLikeHops($Volume) {
 # so someone's own drive named LINUXBOOT isn't mistaken for hop's.
 function Get-HopPartitions {
     $windowsDisk = (Get-WindowsPartition).DiskNumber
-    $recorded = @((Read-State).Partitions | Where-Object { $_ })
+    $state = Read-State
+    $stateDisk = if ($state) { Get-StateDisk $state }
+    $recorded = @($state.Partitions | Where-Object { $_ })
     foreach ($disk in @(Get-HopDisks)) {
         foreach ($partition in @(Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue)) {
             $volume = try { $partition | Get-Volume -ErrorAction SilentlyContinue } catch { $null }
@@ -32,9 +34,12 @@ function Get-HopPartitions {
                 $format = if ($volume.FileSystemLabel -in $RootLabel, $LiveLabel) { 'exFAT' } else { 'FAT32' }
                 if ($volume.FileSystemType -ne $format) { continue }
             }
-            $isRecorded = @($recorded | Where-Object { [int64]$_.Offset -eq [int64]$partition.Offset -and [int64]$_.Size -eq [int64]$partition.Size }).Count -gt 0
+            $isRecorded = $null -ne $stateDisk -and $disk.Number -eq $stateDisk -and @($recorded | Where-Object {
+                [int64]$_.Offset -eq [int64]$partition.Offset -and [int64]$_.Size -eq [int64]$partition.Size -and
+                (-not $_.Guid -or $_.Guid -eq $partition.Guid)
+            }).Count -gt 0
             if (-not $isRecorded -and -not (Test-LooksLikeHops $volume)) { continue }
-            [pscustomobject]@{ Partition = $partition; Label = $volume.FileSystemLabel; Letter = $volume.DriveLetter }
+            [pscustomobject]@{ Partition = $partition; Label = $volume.FileSystemLabel; Letter = $volume.DriveLetter; Recorded = $isRecorded }
         }
     }
 }
@@ -161,7 +166,10 @@ function Get-RecordedPartitions($State, [string[]]$Roles) {
     $disk = Get-StateDisk $State
     if ($null -eq $disk) { return }
     foreach ($partition in @(Get-Partition -DiskNumber $disk -ErrorAction SilentlyContinue)) {
-        $match = $recorded | Where-Object { [int64]$_.Offset -eq [int64]$partition.Offset -and [int64]$_.Size -eq [int64]$partition.Size }
+        $match = $recorded | Where-Object {
+            [int64]$_.Offset -eq [int64]$partition.Offset -and [int64]$_.Size -eq [int64]$partition.Size -and
+            (-not $_.Guid -or $_.Guid -eq $partition.Guid)
+        }
         if (-not $match -or $partition.IsSystem -or $partition.IsBoot -or $partition.GptType -in $LinuxPartitionTypes) { continue }
         $volume = Get-VolumeOf $partition
         if ($volume -and $volume.FileSystemType -and $volume.FileSystemType -ne 'Unknown') { continue }
