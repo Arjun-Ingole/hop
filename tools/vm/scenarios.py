@@ -15,6 +15,8 @@ HOP = r'C:\Users\hop\Downloads\hop.exe'
 LINE_ONE_Y, LINE_TWO_Y = 96 + 23, 96 + 46 + 23
 # Rows in the drive picker, which opens 8 under the sentence's second line, with 6 of padding.
 DRIVE_ROW_Y, DRIVE_ROW_H = 96 + 46 + 49 + 8 + 6 + 21, 42
+# The same for the system picker, under the first line.
+SYSTEM_ROW_Y = 96 + 49 + 8 + 6 + 21
 
 UI_SCRIPT = r'''
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
@@ -45,9 +47,10 @@ $v = Get-Volume -DriveLetter C
 $s = Get-PartitionSupportedSize -DriveLetter C
 "can shrink to {0:N1} GB, so {1:N1} GB can be released" -f ($s.SizeMin/1GB), (($c.Size-$s.SizeMin)/1GB)
 "hibernation: HibernateEnabled=" + (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Power).HibernateEnabled
-"hiberfil.sys: " + $(if (Test-Path C:\hiberfil.sys) { '{0:N2} GB' -f ((Get-Item C:\hiberfil.sys -Force).Length/1GB) } else { 'none' })
+"HibernateEnabledDefault=" + (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Power).HibernateEnabledDefault
+"hiberfil.sys: " + $(if ($f = Get-Item C:\hiberfil.sys -Force -ErrorAction SilentlyContinue) { '{0:N2} GB' -f ($f.Length/1GB) } else { 'none' })
 "PagingFiles: " + ((Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management').PagingFiles -join ' | ')
-"pagefile.sys: " + $(if (Test-Path C:\pagefile.sys) { '{0:N2} GB' -f ((Get-Item C:\pagefile.sys -Force).Length/1GB) } else { 'none' })
+"pagefile.sys: " + $(if ($f = Get-Item C:\pagefile.sys -Force -ErrorAction SilentlyContinue) { '{0:N2} GB' -f ($f.Length/1GB) } else { 'none' })
 "journal: " + ((fsutil usn queryjournal C: 2>&1 | Select-String 'Usn Journal ID|Maximum Size|Allocation Delta|Error') -join ' ; ')
 "RunOnce: " + ((Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce -ErrorAction SilentlyContinue).hop)
 "make-room.json: " + $(if (Test-Path C:\ProgramData\hop\make-room.json) { Get-Content C:\ProgramData\hop\make-room.json -Raw } else { 'none' })
@@ -113,6 +116,8 @@ class Session:
 
     def open_as_a_person(self, name='elevation-prompt'):
         """Through the shell, not elevated, so Windows asks, and the answer goes in on the keyboard."""
+        self.vm.key('esc')    # Windows opens the Start menu on the first sign-in
+        time.sleep(1)
         self.vm.ps(f'Start-Process explorer.exe "{HOP}"', timeout=30)
         time.sleep(8)
         self.vm.shot(name)
@@ -239,7 +244,7 @@ def make_second_disk(vm):
     print(vm.ps(r"""
 $disk = Get-Disk | Where-Object { $_.PartitionStyle -eq 'RAW' } | Select-Object -First 1
 Initialize-Disk -Number $disk.Number -PartitionStyle GPT
-$p = New-Partition -DiskNumber $disk.Number -Size 40GB -DriveLetter D
+$p = New-Partition -DiskNumber $disk.Number -Size 40GB -AssignDriveLetter
 Format-Volume -Partition $p -FileSystem NTFS -NewFileSystemLabel Data -Confirm:$false | Out-Null
 Get-Disk | Format-Table Number, FriendlyName, BusType, PartitionStyle, @{n='GB';e={[int]($_.Size/1GB)}} -Auto
 foreach ($d in Get-CimInstance Win32_DiskDrive) { "$($d.Index) $($d.PNPDeviceID) removal policy " + (Get-PnpDeviceProperty -InstanceId $d.PNPDeviceID -KeyName DEVPKEY_Device_RemovalPolicy).Data }
@@ -247,25 +252,23 @@ foreach ($d in Get-CimInstance Win32_DiskDrive) { "$($d.Index) $($d.PNPDeviceID)
 
 
 def make_space_stuck(vm):
-    """Puts hibernation's file and the paging file near the end of C:, with plenty free, as on the PCs in
-    issues #4 and #6. It takes them both away, fills the disk so they can only come back at the end,
-    then frees it all again. What it fills it with isn't written, so the VM's disk doesn't grow."""
+    """Puts the paging file near the end of C:, with plenty free, as on the PCs in issues #4 and #6. It takes
+    it away, fills the disk so it can only come back at the end, then frees it all again. What it fills it
+    with isn't written, so the VM's disk doesn't grow. Hibernation stays exactly as Windows set it."""
     print(vm.ps(r"""
 $key = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management'
 (Get-ItemProperty $key).PagingFiles | Set-Content C:\probe\paging-before.txt
-powercfg /h off
 New-ItemProperty -Path $key -Name PagingFiles -PropertyType MultiString -Value ([string[]]@()) -Force | Out-Null
-"paging off, hibernation off"
+"paging off"
 """), flush=True)
     restart_and_wait(vm)
     print(vm.ps(r"""
 $key = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management'
 $free = (Get-Volume -DriveLetter C).SizeRemaining
 # Windows puts each file in the smallest gap it fits, so the big file takes the start of the big gap.
-$size = [int64]($free - 14GB)
+$size = [int64]($free - 10GB)
 fsutil file createnew C:\probe\filler.bin $size
 fsutil file setvaliddata C:\probe\filler.bin $size
-powercfg /h on
 New-ItemProperty -Path $key -Name PagingFiles -PropertyType MultiString -Value ([string[]]@(Get-Content C:\probe\paging-before.txt)) -Force | Out-Null
 "filler {0:N1} GB, then {1:N1} GB free" -f ($size/1GB), ((Get-Volume -DriveLetter C).SizeRemaining/1GB)
 """), flush=True)
@@ -373,14 +376,8 @@ def scenario_screens(bench):
     s.hop_log()
 
 
-def scenario_stuck(bench):
-    """Make room, for real. The one that had only ever been mocked."""
-    vm, s = bench.fresh()
-    s.desktop()
-    s.facts('as installed')
-    make_space_stuck(vm)
-    s.facts('after moving the files to the end')
-    s.get_hop()
+def make_room(vm, s):
+    """From a stuck C:, through the restart, until hop has moved the files and shows what's next."""
     s.open_as_a_person('stuck-elevation-prompt')
     s.settle()
     vm.shot('stuck-choose')
@@ -390,18 +387,174 @@ def scenario_stuck(bench):
     vm.shot('stuck-make-room')
     before = vm.agent_boot.get('user')
     s.press('Make room and restart', limit=30)
-    for second in range(0, 40, 2):
+    for second in range(0, 24, 2):
         vm.shot(f'stuck-restarting-{second:02}s')
         time.sleep(2)
     vm.wait_agent('user', limit=600, not_boot=before)
     vm.shot('stuck-signed-in-again')
-    # Does hop come back by itself, and is anything asked?
-    for second in range(0, 240, 10):
+    s.facts('just after signing in')
+    # Does hop come back by itself? It needs the elevation prompt answered, as a person would.
+    for second in range(0, 180, 10):
         vm.shot(f'stuck-after-restart-{second:03}s')
         ui = s.ui()
-        print(f'{second}s: hop window: {ui.get("found")}, {[c["name"] for c in ui.get("controls", []) if c.get("name")]}', flush=True)
-        if ui.get('found') and second >= 20:
+        print(f'{second}s: hop window: {ui.get("found")}', flush=True)
+        if ui.get('found'):
             break
+        if second >= 30:
+            vm.key('alt', 'y')
         time.sleep(10)
-    s.facts('just after the restart')
+    vm.shot('stuck-hop-back')
+    for minute in range(40):
+        names = s.names()
+        print(f'{minute}: {names}', flush=True)
+        vm.shot(f'stuck-moving-{minute:02}')
+        if any(n in ('Install', 'Close', 'Make room') or n.startswith('Use ') for n in names):
+            break
+        time.sleep(30)
+    time.sleep(2)
+    vm.shot('stuck-space-made')
+    s.facts('after moving files')
     s.hop_log()
+
+
+def scenario_stuck(bench):
+    """Make room, for real, then closing hop. The one that had only ever been mocked."""
+    vm, s = bench.fresh()
+    s.desktop()
+    s.facts('as installed')
+    make_space_stuck(vm)
+    s.facts('after moving the paging file to the end')
+    s.get_hop()
+    make_room(vm, s)
+    # Closing hop is what puts everything back, when no install has.
+    ui = s.ui()
+    vm.click(ui['right'] - 24, ui['top'] + 22)
+    time.sleep(15)
+    vm.shot('stuck-closed')
+    s.facts('after closing hop')
+    restart_and_wait(vm)
+    vm.shot('stuck-restarted-again')
+    s.facts('after one more restart: are hibernation, the paging file and the journal back?')
+    s.hop_log()
+
+
+def install(vm, s, system_row=1, tag='install'):
+    """Install, from hop's first screen until it says it's ready."""
+    s.click_hop(236, LINE_ONE_Y)
+    time.sleep(1.5)
+    vm.shot(f'{tag}-system-picker')
+    s.click_hop(236, SYSTEM_ROW_Y + DRIVE_ROW_H * system_row)
+    time.sleep(3)
+    vm.shot(f'{tag}-choose')
+    s.press('Install', limit=30)
+    time.sleep(4)
+    vm.shot(f'{tag}-asked')
+    if 'Continue' in s.names():
+        s.press('Continue')
+        time.sleep(3)
+        vm.shot(f'{tag}-confirm')
+    s.press('Start', limit=30)
+    for minute in range(60):
+        time.sleep(30)
+        vm.shot(f'{tag}-progress-{minute:02}')
+        names = s.names()
+        print(f'{minute}: {names}', flush=True)
+        if 'Restart now' in names or 'Try again' in names or 'Clean up' in names:
+            break
+    time.sleep(2)
+    vm.shot(f'{tag}-ended')
+    s.facts(f'{tag} ended')
+    print(vm.ps('bcdedit /enum firmware; mountvol S: /s; Get-ChildItem S:\\EFI -Recurse -Depth 1 | Select-Object FullName; mountvol S: /d', timeout=60), flush=True)
+    s.hop_log()
+
+
+LIVE_REPORT = ("sudo bash -c '(efibootmgr -v; mokutil --sb-state; cat /proc/cmdline; "
+               "lsblk -o NAME,SIZE,TYPE,FSTYPE,LABEL,PARTTYPENAME,MOUNTPOINT; df -h; dmesg | grep -i -E \"secure ?boot|lockdown\"; cat /cdrom/.disk/info) > /tmp/r 2>&1'; "
+               "python3 -c \"import urllib.request as u;u.urlopen('http://10.0.2.2:8765/post?name=live',open('/tmp/r','rb').read())\"\n")
+
+
+def restart_into_linux(vm, s, tag='linux', wait_seconds=420):
+    """Restart now, and what the firmware does next. The screen is how to tell."""
+    before = vm.agent_boot.get('user')
+    s.press('Restart now', limit=30)
+    for second in range(0, wait_seconds, 15):
+        time.sleep(15)
+        vm.shot(f'{tag}-{second:03}s')
+    return before
+
+
+def scenario_install(bench):
+    """A real Ubuntu, downloaded, shrunk, copied and started, with Windows' recovery partition ending the disk."""
+    vm, s = bench.fresh()
+    s.desktop()
+    s.facts('as installed')
+    s.get_hop()
+    s.open_as_a_person('install-elevation-prompt')
+    s.settle()
+    install(vm, s)
+    before = restart_into_linux(vm, s)
+    vm.key('ctrl', 'alt', 't')
+    time.sleep(10)
+    vm.shot('linux-terminal')
+    vm.type(LIVE_REPORT)
+    time.sleep(10)
+    vm.shot('linux-report')
+    time.sleep(5)
+    vm.type('sudo reboot\n')
+    undo_after_linux(vm, s, before)
+
+
+def undo_after_linux(vm, s, before):
+    """Back in Windows from the live system: hop's Undo, and whether it all went back."""
+    for second in range(0, 240, 20):
+        time.sleep(20)
+        vm.shot(f'back-{second:03}s')
+        if vm.agent_boot.get('user') != before:
+            break
+    vm.wait_agent('user', limit=600, not_boot=before)
+    vm.shot('back-in-windows')
+    s.facts('back in Windows')
+    print(vm.ps('bcdedit /enum firmware', timeout=60), flush=True)
+    s.open_as_a_person('undo-elevation-prompt')
+    s.settle()
+    vm.shot('undo-hop-opens')
+    print(s.controls(), flush=True)
+    s.press('Undo changes', limit=30)
+    time.sleep(2)
+    vm.shot('undo-options')
+    print(s.controls(), flush=True)
+    # The first row: "Linux isn't installed yet".
+    s.click_hop(300, 240)
+    time.sleep(1)
+    vm.shot('undo-chosen')
+    s.press('Remove', limit=30)
+    for minute in range(20):
+        time.sleep(30)
+        vm.shot(f'undo-progress-{minute:02}')
+        if 'Close' in s.names() or 'Try again' in s.names():
+            break
+    vm.shot('undo-ended')
+    s.facts('after Undo')
+    print(vm.ps('bcdedit /enum firmware; mountvol S: /s; Get-ChildItem S:\\EFI | Select-Object Name; mountvol S: /d', timeout=60), flush=True)
+    s.hop_log()
+    ui = s.ui()
+    vm.click(ui['right'] - 24, ui['top'] + 22)
+    before = vm.agent_boot.get('user')
+    restart_and_wait(vm)
+    vm.shot('undo-windows-still-starts')
+    s.facts('after Undo and a restart')
+
+
+def scenario_stuckinstall(bench):
+    """Make room, then the install it was for. Installing is what should put the settings back."""
+    vm, s = bench.fresh()
+    s.desktop()
+    s.facts('as installed')
+    make_space_stuck(vm)
+    s.facts('after moving the paging file to the end')
+    s.get_hop()
+    make_room(vm, s)
+    install(vm, s, tag='room-install')
+    restart_and_wait(vm)
+    vm.shot('room-install-restarted')
+    s.facts('installed after Make room, restarted: are they all back?')
