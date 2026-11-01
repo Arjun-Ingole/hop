@@ -28,7 +28,8 @@ own PC. **Running hop itself is not**: try changes in a virtual machine first, s
 
 Most additions are one line in `Get-Catalog` in `engine/Catalog.ps1`, plus a logo:
 
-1. Check the ISO qualifies: no file of 4 GB or more, and either Ubuntu-based, with a `casper` folder
+1. Check the ISO qualifies: no file of 4 GB or more, unless the entry's `LiveFiles` puts it on a second
+   partition as Omarchy's does, and either Ubuntu-based, with a `casper` folder
    and `.disk/info`, or a live system whose boot menu can name the installer partition. hop checks this
    at runtime too. Fedora-style and Arch-style systems can start from `Get-DracutBoot` and
    `Get-ArchisoBoot`.
@@ -39,7 +40,8 @@ Most additions are one line in `Get-Catalog` in `engine/Catalog.ps1`, plus a log
    `assets/logos/SOURCES.md`.
 4. Run the installer once and write down exactly what its screens say, because `Get-Steps` in
    `engine/Steps.ps1` shows those words to people. Use `Strategy = 'prepared'` if its easy mode
-   can't use free space.
+   can't use free space. `FullDisk` and `SecondDisk` each need a real run too: set them only once the system
+   has been seen doing that, because they're what offers it to people.
 
 ## Rules for code that touches a PC
 
@@ -55,8 +57,8 @@ Most additions are one line in `Get-Catalog` in `engine/Catalog.ps1`, plus a log
 
 ## Commits and pull requests
 
-Keep commits to one change, with a subject that says what it does in the imperative ("Check the EFI
-partition has room") and a body that says why. Branch from `main` and open a pull request. CI must
+Keep commits to one change, with a subject in the form `[TYPE] domain: description`, where the description
+is imperative and at most 40 characters (`[FIX] boot: check the EFI partition has room`), and a body that says why. Branch from `main` and open a pull request. CI must
 pass. If the change touches disks, boot entries or the installer, say how you tested it for real.
 
 Add a line to `CHANGELOG.md` under Unreleased for anything people would notice.

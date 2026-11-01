@@ -34,6 +34,19 @@
 
 ### Fixed
 
+- **The Ready screen could hide its buttons.** Omarchy's and Arch's steps ran over Undo changes, Restart now and Later, so they couldn't be seen or clicked. Long lists now stop above the buttons and scroll, with the wheel, the keyboard or a thin bar.
+- Clicking something while hop was checking the PC could start two things at once, and let hop be closed in the middle of changing the disk. Nothing can be clicked during those checks now.
+- After a failed install, Choose and Make room kept showing the old log in place of the drive.
+- If Windows didn't restart when asked, the buttons stayed greyed out for good. After a minute hop now says so and they come back.
+- Cancel could stop an unrelated program, if it had been given the number the finished download had.
+- "Choose another drive" could crash hop on a PC with one drive. It's gone when there's no other drive.
+- hop refused to close during checks that only read the PC, saying it was changing the disk. It closes now. When it really is changing the disk, that message stays on screen.
+- Labels in the drive bar were cut to "1 GB used ·…", "Wind…" or vanished on big drives, and the stuck bar's mark could land on them. The mark was also in the wrong place when there was free space after the drive.
+- Long disk names and restore-point file names ran over each other or off the screen.
+- The bar always drew an 8 GB installer even for your own ISO, and on a very small space its labels went off the left edge.
+- The window could be taller than the screen, as at 1920×1080 with 200% scaling, which put its buttons out of reach.
+- Holding Enter on Install went straight through the confirmation and started.
+- A stuck drive said "Windows can release 0 GB" when Windows could release a little and hop's reserve took it. It now says what hop can use.
 - Removing Omarchy left its `Limine` startup entry and its EFI partition behind, because hop didn't count its boot loader as a Linux one.
 - **Make room asked for permission at sign-in, with No already chosen.** hop came back through an elevation prompt after its
   restart, from an unknown publisher. Clicking No left hibernation and the paging file off until hop was next opened. hop now

@@ -15,7 +15,7 @@ Undo extends C: over all of it. Older builds put the installer after Linux, wher
 
 The same layout works next to any drive, or at the end of free space. See [Where Linux can go](#where-linux-can-go).
 
-Three things limit what it can install:
+Four things limit what it can install:
 
 - **FAT32 can't hold a file of 4 GB or more,** which rules out Kubuntu's ISO. Omarchy's has the same problem,
   with a 6.1 GB `airootfs.sfs`, and gets a second partition. See [Omarchy](#omarchy).
@@ -32,7 +32,7 @@ Three things limit what it can install:
 
 | | |
 | --- | --- |
-| `src/` (C#, WinForms on .NET Framework 4.8) | The window, plus what PowerShell can't do well: UEFI variables (`Firmware.cs`) and raw disk reads (`DiskProbe.cs`) |
+| `src/` (C#, WinForms on .NET Framework 4.8) | The window, plus what PowerShell can't do well: UEFI variables (`Firmware.cs`) and raw disk reads (`DiskProbe.cs`), and the copy of hop that comes back after a restart (`RestartCopy.cs`) |
 | `engine/` (Windows PowerShell 5.1) | Everything that happens to the PC. Embedded in the exe and run in-process, because the Storage cmdlets are the supported way to resize partitions |
 
 Both ship with Windows 10 and 11, so `hop.exe` needs nothing installed. `Engine.cs` hosts the scripts
@@ -87,6 +87,9 @@ A failure in steps 4 to 6 runs `Invoke-Cleanup`, which puts everything back.
 | ISO | Downloads, or `\hop` on another drive | Named in the log |
 | State and logs | `C:\ProgramData\hop` | Fixed path |
 | Which disks hold Linux hop put there | `C:\ProgramData\hop\linux-disks.json` | Fixed path |
+| What Make room changed, until it's put back | `C:\ProgramData\hop\make-room.json` | Fixed path |
+| Scheduled tasks, while Make room is under way | `hop resume`, to come back after its restart, and `hop restore settings`, in case hop doesn't open again | Fixed names |
+| The copy of hop those tasks start | `%ProgramData%\hop-restart-*`, which it removes itself | Fixed pattern |
 | Casper's partition, only from builds up to 0.2.0 | The end of the disk | See [Casper and the free space](#casper-and-the-free-space) |
 
 Clean-up works from these, not just the state file, so it works after a crash. It looks for labels on
@@ -322,7 +325,6 @@ off and on goes back to Windows. hop warns about this, and it's in Troubleshooti
 | Linux Mint ([partman-efi](https://github.com/linuxmint/ubiquity/blob/master/d-i/source/partman-efi/fstab.d/efi), [bug](https://bugs.launchpad.net/bugs/1396379)) | The first one it finds, whatever the list says. Usually Windows' | Leave the list alone |
 | Lubuntu (Calamares) | The existing one it's told to use | Its existing step, which is Windows' |
 | elementary OS, Pop!_OS ([distinst](https://github.com/pop-os/distinst/blob/master/src/installer/steps/bootloader.rs)) | Whichever is mounted at `/boot/efi`, which is hop's `LINUXBOOT` on the target disk. The startup entry points at it | The same steps as ever |
-
 | Omarchy | Its own new one, on the disk it's given, in that disk's largest free space. Seen in a virtual PC: see [Testing](TESTING.md) | Choose the second disk, and expect it to say more than hop set aside |
 | Fedora, Ultramarine | Their own new one, on the one drive selected, with a new `/boot` and root in its largest free space. Seen with a kickstart: see [Testing](TESTING.md) | Select only the second disk. The usual warning about Windows' small EFI partition doesn't apply |
 | Arch (archinstall) | The existing one it's told to use, on any disk it was told about. Seen with a config file: see [Testing](TESTING.md) | Choose both disks, and use Windows' |
@@ -335,8 +337,8 @@ whose only partition is the running installer. Mint's takes the biggest free spa
 disk hop still suggests it, unless other free space is as big as Linux's, which `Test-AlongsideFindsLinux`
 checks once the partitions exist.
 
-None of this has been started on real hardware. It comes from reading those installers' source. See
-[Testing](TESTING.md).
+None of this has been started on real hardware. Omarchy, Fedora, Ultramarine and Arch were seen in a virtual PC, as their
+rows say. The rest comes from reading those installers' source. See [Testing](TESTING.md).
 
 ## Replacing Windows
 
