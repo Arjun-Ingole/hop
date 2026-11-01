@@ -44,8 +44,8 @@ namespace Hop
             steps.Set(help.Steps, help.Notes);
             Arrange(new[]
             {
-                new[] { new Run { Text = prepared.Name, Color = Ink, Logo = Logo(prepared.Logo) }, Run.Gray("didn't start.") },
-            }, "The PC came back to Windows instead of the installer. Your setup is still here.", Secondary, steps, 32);
+                new[] { new Run { Text = prepared.Name, Color = Ink, Logo = Logo(prepared.Logo) }, Run.Gray("isn't installed yet.") },
+            }, "The PC is back in Windows, and your setup is still here. If the installer opened and you left it, click Try again. If it didn't open:", Secondary, steps, 32);
             Footer("Undo changes", () => ShowUndo(() => _ = ShowReadyAsync()), "Try again", () => _ = RestartAsync(),
                 "Open BIOS", () => _ = OpenBiosAsync(), Secondary);
         }

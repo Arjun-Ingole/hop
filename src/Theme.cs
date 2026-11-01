@@ -89,12 +89,15 @@ namespace Hop
 
         // --- Drawing -----------------------------------------------------------------
 
+        // Grid fitting closes up the gaps between words at small sizes: "Movingfiles" at 100%, seen on a real Windows.
+        public const TextRenderingHint TextHint = TextRenderingHint.AntiAlias;
+
         public static void Prepare(Graphics g)
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            g.TextRenderingHint = TextHint;
         }
 
         public static GraphicsPath RoundedRect(RectangleF r, float radius)

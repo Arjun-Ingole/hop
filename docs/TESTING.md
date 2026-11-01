@@ -55,7 +55,7 @@ minutes, which is why hop refuses it.
 
 The installer's choices weren't clicked by a person. Unattended settings stand in for them, except on Debian and Omarchy,
 and the words in the steps come from the installer's own strings or source. The installers were also shown fewer disks or
-choices than a PC would give them. **No real PC has done this,** and the screens in hop have never been opened.
+choices than a PC would give them. **No real PC has done this.** hop's screens for it have been seen on a real Windows, as below, but only up to the ERASE screen.
 
 **Secure Boot and BitLocker:** Fedora, Ultramarine, elementary OS and the Ubuntu flavours above erased the disk and then
 started with Secure Boot on, through their own `shimx64.efi`. Omarchy needs it off. The other runs before these left it off.
@@ -121,7 +121,7 @@ In all four, the NTFS, `HOPINSTALL` and `HOPLIVE` partitions came through byte f
 Windows' EFI files were unchanged. Each check is from the disk image or the installed system's journal, not the job's result.
 
 **What this doesn't show:** `HOPLIVE` was made by `mkfs.exfat`, not Windows. `tests/Probe-VirtualDisks.ps1` shows that Windows makes it and copies to it, but
-no Linux has mounted one made by Windows. There's no real Windows, so `limine-scan` wasn't run, and neither was Windows started afterwards. BitLocker's refusal is
+no Linux has mounted one made by Windows. There's no real Windows here, so `limine-scan` wasn't run, and neither was Windows started afterwards. BitLocker's refusal is
 only tested by unit tests, and Secure Boot wasn't turned on. hop's own screens and Undo after this install haven't been run either.
 
 ## A second disk, in a virtual PC
@@ -150,6 +150,35 @@ The same, with one 130 GB disk: EFI partition, reserved partition, C:, `HOPINSTA
 | System | Driven by | Went where | Started from disk | Windows' EFI files, and the partitions |
 | --- | --- | --- | --- | --- |
 | Arch 2026.10.01 | The same config, as `archinstall --silent` | hop's 60 GB, as ext4, with `/boot/efi` on the existing EFI partition | Yes: `Boot0009 "GRUB"` first in `BootOrder`, root on the new partition, `Windows Boot Manager` next | Unchanged. MSR, C: and recovery byte for byte, and `HOPINSTALL` apart from `loader/random-seed` |
+
+## On a real Windows, in a virtual PC
+
+`.github/workflows/windows-vm.yml`, started by hand, runs the real `hop.exe` on a real Windows: the Windows 11 Enterprise 24H2 evaluation, installed
+unattended by `tools/vm/` into QEMU with OVMF, with Microsoft's Secure Boot keys and a software TPM. It's signed in as an ordinary administrator with
+UAC on. The disk is 128 GB NVMe, laid out as Setup lays out a PC: EFI, MSR, C:, then the recovery partition at the end. Each scenario starts from a thin copy of
+the same disk image. Keys and the mouse go in through QEMU, so they reach the elevation prompt too, and each step saves a screen.
+
+**Green proves nothing here. Look at the screens and read the log.** The image is about 7 GB in `actions/cache`, which a repository shares up to 10 GB, so other big caches can evict it. Installing it again takes about 15 minutes.
+QEMU's NVMe disks need nothing special: Windows reports the bus as NVMe, with removal policy 1, so hop accepts them, including as a second disk.
+
+| Scenario | What it does | What was seen, November 2026 |
+| --- | --- | --- |
+| `screens` | Every screen that doesn't change the disk | Start, both pickers, a second disk, Install's confirmation, Replace Windows and ERASE. Replace Windows lists C: as going and the second disk as staying. Its button stays off for an empty box and for `ERAS`, and comes on for `ERASE` |
+| `scales` | Those with most text at 100% and 125% | No clipping or overlap. Word gaps were wrong at 100% until text stopped using grid fitting |
+| `stuck` | Forces the paging file to the end of C:, then Make room, then closes hop | 105 GB free and 1.4 GB releasable, with Windows naming `\pagefile.sys`. No "preventing restart" screen. hop came back by itself with no prompt, from the protected copy. 111 GB releasable afterwards. On closing hop, hibernation, the paging setting and a new change journal of the same size were back, and the tasks and copy had gone |
+| `stuckinstall` | The same, then a real Ubuntu install in place of closing hop | The settings came back as the disk finished changing, not when hop closed. The copy had gone after the next restart. `defrag` gave up with 1223, and worked when tried again |
+| `abandon` | Make room, hop killed once it's back, then a restart with nobody opening hop | Nothing changed for 18 minutes after that restart. By 21 minutes the settings were back, and the tasks, copy and state file had gone |
+| `abandonfast` | The same, with the task started by hand | The same result in under a minute |
+| `install` | A real Ubuntu 26.04.1 from its real download, with Secure Boot on, then back to Windows and Undo | See below |
+
+**Install, with the recovery partition ending the disk.** C: went from 127 GB to 60 GB, with a 7 GB `HOPINSTALL` and 60 GB free after it, and the recovery partition where it was. On **Restart now**, Linux's own `efibootmgr` said `BootCurrent: 0007`, hop's
+`Ubuntu installer (hop)` at `\EFI\hop\BOOTX64.EFI`, with `BootOrder` still starting with Windows. `mokutil` said `SecureBoot enabled`, and the kernel said it was locked down by Secure Boot. `/cdrom` was the installer partition and the kernel's line had
+`nopersistent`. Ubuntu's installer opened.
+
+**Undo.** Restarting from the live system started Windows, because `BootNext` had been used. hop's Undo took C: back to 127 GB, removed the entry, `\EFI\hop` and the partition, turned Fast Startup back on, and said "Drive C: is 67 GB bigger." Windows started again afterwards.
+
+**What this doesn't show:** no Linux was installed next to this Windows, so booting Windows from GRUB wasn't seen. The partitions after a real install, Undo with Linux installed, and restarting into the installer after Make room weren't run.
+Omarchy's `HOPLIVE` made by Windows wasn't started. It's one virtual PC with one evaluation Windows, so firmwares, drivers and security software elsewhere may differ. A standard user who typed an administrator's password wasn't tried, and neither was a task failing to register on a real Windows, which only the unit tests cover.
 
 ## Testing for real
 
@@ -188,6 +217,7 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] Close the window during the download, then reopen
 - [ ] After Make room, close the window during the download: hibernation and the paging file are back on straight away
 - [ ] Make room on C:, with another app blocking the restart: hop isn't listed as blocking it, Cancel leaves a "didn't restart" screen after a minute, and both of its buttons work
+- [ ] Make room on C: with a standard user who typed an administrator's password: hop comes back for that administrator, or the settings come back by themselves
 - [ ] Make room on a second drive with its own paging file, and unplug that drive during the restart: hop opens, with the settings back
 - [ ] Turn the VM off during the copy, then reopen: "didn't finish", and Clean up restores everything
 - [ ] Fill C: until there isn't room: the window says how much to free

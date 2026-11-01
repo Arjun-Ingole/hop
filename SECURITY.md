@@ -15,5 +15,7 @@ to remove.
 - Downloads use HTTPS from each project's own server, and are checked against the SHA256 checksum the
   project publishes. **elementary OS publishes no checksum**, so that download relies on HTTPS alone.
 - ISO files you pick yourself aren't verified. Only use ones you trust.
+- During Make room, two scheduled tasks start hop elevated without asking. They run a copy in a new folder under `%ProgramData%` that
+  only administrators and SYSTEM can write to, with fixed arguments, and both the tasks and the copy are removed afterwards.
 - `hop.exe` isn't code-signed yet, which is why Windows SmartScreen warns about it. Each release
   publishes a SHA256 checksum, and the build runs in public on GitHub Actions.

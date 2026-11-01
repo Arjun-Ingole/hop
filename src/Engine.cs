@@ -389,6 +389,8 @@ namespace Hop
 
         public void RestoreRoomSettings() => Invoke("Restore-RoomSettings");
 
+        public void RestoreRoomFromTask() => Invoke("Restore-RoomFromTask");
+
         async Task<InstallSteps> GetStepsFromAsync(string command, IDictionary parameters = null)
         {
             var steps = (await InvokeAsync(command, parameters)).Single;

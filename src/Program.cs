@@ -10,14 +10,25 @@ namespace Hop
     static class Program
     {
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
+            bool restoring = args.Length == 1 && args[0] == RestoreArgument;
+            AppDomain.CurrentDomain.ProcessExit += (s, e) => RestartCopy.RemoveOwnAfterExit();
+
             // Two copies changing the same disk would be a disaster.
             using (var mutex = new Mutex(true, @"Global\hop-installer", out bool first))
             {
                 if (!first)
                 {
+                    // Make room's safety net, while hop is open and still needs the settings off. It tries again later.
+                    if (restoring) return;
                     MessageBox.Show("hop is already running.", "hop", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                if (restoring)
+                {
+                    RestoreRoom();
                     return;
                 }
 
@@ -33,6 +44,15 @@ namespace Hop
                 Theme.LoadFonts();
                 Application.Run(new MainForm());
             }
+        }
+
+        /// <summary>The argument Make room's safety-net task runs hop with. No window: nobody may be there to see it.</summary>
+        const string RestoreArgument = "--restore-room";
+
+        static void RestoreRoom()
+        {
+            try { new Engine().RestoreRoomFromTask(); }
+            catch (Exception ex) { LogCrash(ex); }
         }
 
         static void ReportCrash(Exception ex)
