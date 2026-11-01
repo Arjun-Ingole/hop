@@ -48,7 +48,7 @@ $s = Get-PartitionSupportedSize -DriveLetter C
 "can shrink to {0:N1} GB, so {1:N1} GB can be released" -f ($s.SizeMin/1GB), (($c.Size-$s.SizeMin)/1GB)
 "hibernation: HibernateEnabled=" + (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Power).HibernateEnabled
 "HibernateEnabledDefault=" + (Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\Power).HibernateEnabledDefault
-"tasks: " + ((Get-ScheduledTask 'hop *' -ErrorAction SilentlyContinue | ForEach-Object { "$($_.TaskName) -> $($_.Actions.Execute) $($_.Actions.Arguments)" }) -join ' ; ')
+"tasks: " + ((Get-ScheduledTask 'hop *' -ErrorAction SilentlyContinue | Where-Object TaskName -notlike 'hop probe*' | ForEach-Object { "$($_.TaskName) -> $($_.Actions.Execute) $($_.Actions.Arguments)" }) -join ' ; ')
 "copies: " + ((Get-ChildItem C:\ProgramData -Directory -Filter 'hop-restart-*' -Force -ErrorAction SilentlyContinue).FullName -join ' ; ')
 cmd /c dir /a C:\*.sys | Select-String '\.sys'
 "PagingFiles: " + ((Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management').PagingFiles -join ' | ')
@@ -67,7 +67,7 @@ $p = Get-Process hop | Select-Object -First 1
 "hop running from: " + $p.Path
 icacls (Split-Path $p.Path -Parent)
 icacls $p.Path
-Get-ScheduledTask 'hop *' | ForEach-Object { "$($_.TaskName) [$($_.State)] -> $($_.Actions.Execute) $($_.Actions.Arguments) as $($_.Principal.UserId) $($_.Principal.RunLevel)" }
+Get-ScheduledTask 'hop *' | Where-Object TaskName -notlike 'hop probe*' | ForEach-Object { "$($_.TaskName) [$($_.State)] -> $($_.Actions.Execute) $($_.Actions.Arguments) as $($_.Principal.UserId) $($_.Principal.RunLevel)" }
 '''
 
 LOGS_SCRIPT = r'''
@@ -516,9 +516,7 @@ def install(vm, s, system_row=1, tag='install'):
     s.hop_log()
 
 
-LIVE_REPORT = ("sudo bash -c '(efibootmgr -v; mokutil --sb-state; cat /proc/cmdline; "
-               "lsblk -o NAME,SIZE,TYPE,FSTYPE,LABEL,PARTTYPENAME,MOUNTPOINT; df -h; dmesg | grep -i -E \"secure ?boot|lockdown\"; cat /cdrom/.disk/info) > /tmp/r 2>&1'; "
-               "python3 -c \"import urllib.request as u;u.urlopen('http://10.0.2.2:8765/post?name=live',open('/tmp/r','rb').read())\"\n")
+LIVE_REPORT = 'wget -qO- 10.0.2.2:8765/file/live-report.sh | sudo sh\n'
 
 
 def restart_into_linux(vm, s, tag='linux', wait_seconds=420):
