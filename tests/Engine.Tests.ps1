@@ -32,7 +32,7 @@ Describe 'Catalog' {
             $distro.Note | Should -Not -BeNullOrEmpty
             $distro.Color | Should -Match '^#[0-9A-Fa-f]{6}$'
             $distro.Strategy | Should -BeIn @('freespace', 'prepared')
-            $distro.Kind | Should -BeIn @('ubuntu', 'mint', 'pop', 'elementary', 'zorin', 'debian', 'fedora', 'ultramarine', 'cachyos', 'arch', 'omarchy')
+            $distro.Kind | Should -BeIn @('ubuntu', 'mint', 'lmde', 'pop', 'elementary', 'zorin', 'debian', 'fedora', 'ultramarine', 'cachyos', 'arch', 'omarchy')
         }
     }
     It 'has a logo file for every system' {

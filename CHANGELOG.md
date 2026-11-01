@@ -4,6 +4,7 @@
 
 ### Added
 
+- Linux Mint Debian Edition (LMDE). Official download and checksum verification from the Linux Mint mirror at kernel.org, using Debian's live system with Mint's Cinnamon desktop.
 - **Replace Windows, where hop has seen it work.** For Ubuntu, Xubuntu, Ubuntu Budgie, Ubuntu Cinnamon, Edubuntu, Ubuntu Studio, Zorin OS, Fedora Workstation, Ultramarine,
   elementary OS, Debian, Arch and Omarchy, hop can set up an installer
   that erases the whole disk Windows is on. It's the last row of the drive list, is never chosen for you, and shows the disk,
@@ -34,6 +35,10 @@
 
 ### Fixed
 
+- **Make room: allow 8 GB PCs to disable the paging file.** Systems with 8 GB of RAM have hardware and GPU reserved memory (reporting ~7.2-7.8 GB), which caused Make room to leave the paging file active at the end of C:.
+- **Make room: defragmentation priority and resilience.** Runs defragmentation at normal priority (`/H`) to avoid background throttling and timeouts, and guards against null drive partitions.
+- **Preemptively check minimum volume size.** `Get-Plan` now verifies that the shrunk Windows volume stays above Windows' minimum supported size before starting the install or changing state.
+- **Friendly names for system file blockers.** Replaces raw NTFS stream paths (such as `\$Extend\$UsnJrnl:$J:$DATA`) with readable names like "change journal".
 - Removing Omarchy left its `Limine` startup entry and its EFI partition behind, because hop didn't count its boot loader as a Linux one.
 - **Make room asked for permission at sign-in, with No already chosen.** hop came back through an elevation prompt after its
   restart, from an unknown publisher. Clicking No left hibernation and the paging file off until hop was next opened. hop now
