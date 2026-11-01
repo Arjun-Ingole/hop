@@ -1646,10 +1646,38 @@ Describe 'Assert-SystemFitsSpace' {
 }
 
 Describe 'Systems whose installer can''t use free space on its own disk' {
-    It 'refuses <id> next to Windows and on a second disk, with the reason' -ForEach @(@{ id = 'zorin' }, @{ id = 'mint-cinnamon' }, @{ id = 'mint-xfce' }, @{ id = 'mint-mate' }) {
-        $distro = Get-Catalog | Where-Object Id -eq $id
-        { Assert-SystemFitsDrive $distro '' } | Should -Throw "*$($distro.Name)*won't make a partition on the disk it starts from*"
-        { Assert-SystemFitsDrive $distro 'gap:{disk-1}:1048576' } | Should -Throw '*next to Windows or on a second disk*'
+    BeforeAll { $ubiquity = @('zorin', 'mint-cinnamon', 'mint-xfce', 'mint-mate') }
+    It 'refuses every one not seen to the end, next to Windows and on a second disk, with the reason' {
+        foreach ($id in $ubiquity | Where-Object { $_ -notin $UbiquityProven }) {
+            $distro = Get-Catalog | Where-Object Id -eq $id
+            { Assert-SystemFitsDrive $distro '' } | Should -Throw "*$($distro.Name)*won't make a partition on the disk it starts from*"
+            { Assert-SystemFitsDrive $distro 'gap:{disk-1}:1048576' } | Should -Throw '*next to Windows or on a second disk*'
+        }
+    }
+    It 'offers one seen to the end on the disk Windows is on, through hop''s own partition' {
+        foreach ($id in $UbiquityProven) {
+            $distro = Get-Catalog | Where-Object Id -eq $id
+            $distro.Refused | Should -BeNullOrEmpty
+            $distro.Strategy | Should -Be 'prepared'
+            Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } }
+            Mock Resolve-Target { [pscustomobject]@{ Partition = [pscustomobject]@{ DiskNumber = 0 } } }
+            { Assert-SystemFitsDrive $distro '' } | Should -Not -Throw
+        }
+    }
+    It 'still refuses one seen to the end on a second disk, which hasn''t been' {
+        Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } }
+        Mock Resolve-Target { [pscustomobject]@{ Partition = [pscustomobject]@{ DiskNumber = 1 } } }
+        foreach ($id in $UbiquityProven) {
+            { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Throw "hop hasn't got * to finish on a second disk yet*"
+        }
+    }
+    It 'gives the steps in the installer''s words, with the size it shows, and says what starts next' {
+        foreach ($id in $UbiquityProven) {
+            $result = Get-Steps (Get-Catalog | Where-Object Id -eq $id) 60 ([pscustomobject]@{ OnWindowsDisk = $true })
+            ($result.Steps -join ' ') | Should -BeLike '*Installation type*63350 MB*Change...*Ext4 journaling file system*Format the partition*Mount point***/***Device for boot loader installation*Install Now*Continue*'
+            ($result.Steps -join ' ') | Should -Not -Match '\{(GB|ROOTMB|DISK)\}'
+            ($result.Notes -join ' ') | Should -BeLike '*starts*first*Windows Boot Manager*bootx64.efi*'
+        }
     }
     It 'still offers replacing Windows with Zorin OS, where that erase was seen' {
         (Get-Catalog | Where-Object Id -eq 'zorin').FullDisk | Should -Not -BeNullOrEmpty
@@ -1657,7 +1685,8 @@ Describe 'Systems whose installer can''t use free space on its own disk' {
     It 'tells the window, and refuses nothing else' {
         $engine = New-Object Hop.Engine
         try {
-            @($engine.GetCatalog() | Where-Object Refused | ForEach-Object { $_.Id } | Sort-Object) | Should -Be @('mint-cinnamon', 'mint-mate', 'mint-xfce', 'zorin')
+            @($engine.GetCatalog() | Where-Object Refused | ForEach-Object { $_.Id } | Sort-Object) | Should -Be @($ubiquity | Where-Object { $_ -notin $UbiquityProven } | Sort-Object)
+            @($engine.GetCatalog() | Where-Object WindowsDiskOnly | ForEach-Object { $_.Id } | Sort-Object) | Should -Be @(@('cachyos', 'debian') + $UbiquityProven | Sort-Object)
         } finally { $engine.Dispose() }
     }
 }
@@ -1742,12 +1771,6 @@ Describe 'Assert-SystemFitsDrive' {
     }
     It 'lets <id> onto a second disk, having seen it install there' -ForEach @(@{ id = 'omarchy' }, @{ id = 'fedora' }, @{ id = 'ultramarine' }, @{ id = 'arch' }) {
         { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Not -Throw
-    }
-    It 'tells the window which systems this is' {
-        $engine = New-Object Hop.Engine
-        try {
-            @($engine.GetCatalog() | Where-Object WindowsDiskOnly | ForEach-Object { $_.Id } | Sort-Object) | Should -Be @('cachyos', 'debian')
-        } finally { $engine.Dispose() }
     }
 }
 

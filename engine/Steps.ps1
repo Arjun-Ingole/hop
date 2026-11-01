@@ -101,7 +101,7 @@ function Get-Steps($Distro, [int]$LinuxGB, $Place) {
     $otherDisk = $Place.OnWindowsDisk -eq $false
     $own = if ($otherDisk -and $Distro.SecondDisk) { $Distro.SecondDisk } else { $Distro }
     if ($Distro.Steps) {
-        $steps = @($own.Steps | ForEach-Object { $_ -replace '\{GB\}', $LinuxGB -replace '\{DISK\}', "$($Place.DiskName) ($($Place.DiskGB) GB)" })
+        $steps = @($own.Steps | ForEach-Object { $_ -replace '\{GB\}', $LinuxGB -replace '\{ROOTMB\}', [int64](([int64]$LinuxGB - 1) * 1GB / 1000000) -replace '\{DISK\}', "$($Place.DiskName) ($($Place.DiskGB) GB)" })
     } elseif ($Distro.Strategy -eq 'prepared') {
         $steps = @(
             "Pick your language and keyboard, then choose **$($Distro.Mode)**."

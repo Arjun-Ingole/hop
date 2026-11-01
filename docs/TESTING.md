@@ -201,6 +201,16 @@ QEMU's NVMe disks need nothing special: Windows reports the bus as NVMe, with re
 **What this doesn't show:** no Linux was installed next to this Windows, so booting Windows from GRUB wasn't seen. The partitions after a real install, Undo with Linux installed, and restarting into the installer after Make room weren't run.
 Omarchy's `HOPLIVE` made by Windows wasn't started. It's one virtual PC with one evaluation Windows, so firmwares, drivers and security software elsewhere may differ. A standard user who typed an administrator's password wasn't tried, and neither was a task failing to register on a real Windows, which only the unit tests cover.
 
+## Linux Mint and Zorin OS through hop's own partition, in a virtual PC
+
+The same 130 GB disk, plus hop's real `prepared` partitions: 1 GB FAT32 `LINUXBOOT` and 59 GB exFAT `LINUXROOT`, the latter made by `mkfs.exfat`. Ubiquity's real screens, under a small X server, with a script reading and clicking them, with updates and third-party software unticked. The test put a marker in the installed system before restarting. It didn't press **Restart Now**, which it couldn't read: it waited for Ubiquity's startup entry and `Reverting lockdown` in its log, then forced a restart.
+
+| System | Result | Started from disk | Windows' EFI files, and the partitions |
+| --- | --- | --- | --- |
+| Linux Mint Xfce 22.3 | **Pass.** `partition #7` as ext4, with `/boot/efi` on the existing EFI partition, and `LINUXBOOT` left alone | `Boot0009 "Ubuntu"` first in `BootOrder`, then `Windows Boot Manager`. The marker says root on `/dev/nvme0n1p7`, efi on `/dev/nvme0n1p1`, `graphical.target` active and a `lightdm` session on seat0. Its menu has `Windows Boot Manager (on /dev/nvme0n1p1)` | `\EFI\Microsoft` unchanged. **`\EFI\Boot\bootx64.efi` replaced**, and `fbx64.efi` and `mmx64.efi` added. MSR, C:, recovery and `HOPINSTALL` byte for byte, after the install and the restart |
+
+**What this doesn't show:** no real PC, so no real Windows was started afterwards, and nobody logged in. `\EFI\Boot\bootx64.efi` is what a firmware starts when it has no entries, so on such a PC that's Linux now. hop's Undo doesn't put it back.
+
 ## Testing for real
 
 Use a virtual machine, not a PC you care about. It has to use UEFI:
