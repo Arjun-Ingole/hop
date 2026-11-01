@@ -32,7 +32,7 @@ function Get-CasperBoot {
 # hop's own partition gets round that: its manual screen can still use an existing one. So those seen to the end, by id, use
 # Strategy 'prepared' and these steps. {ROOTMB} is that partition's size in the MB it shows. Its loader goes on the existing
 # EFI partition by itself, and hop's 1 GB LINUXBOOT is left alone. A second disk hasn't been seen to the end, so it's refused.
-$UbiquityProven = @('mint-xfce')
+$UbiquityProven = @('mint-xfce', 'zorin')
 
 function Get-UbiquityRoute([string]$Id, [string]$Name) {
     if ($Id -notin $UbiquityProven) { return @{ Refused = (Get-UbiquityRefusal $Name) } }

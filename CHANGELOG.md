@@ -35,7 +35,7 @@
 
 ### Fixed
 
-- **Linux Mint Xfce is back next to Windows, through a partition hop makes first,** after a full install and restart in a virtual PC. It stays refused on a second disk. Its installer replaces the fallback loader `\EFI\Boot\bootx64.efi` on Windows' EFI partition.
+- **Linux Mint Xfce and Zorin OS are back next to Windows, through a partition hop makes first,** after a full install and restart in a virtual PC for each. They stay refused on a second disk. Its installer replaces the fallback loader `\EFI\Boot\bootx64.efi` on Windows' EFI partition.
 - **Zorin OS and Linux Mint are refused next to Windows and on a second disk, for now.** Their installer, started from the disk it's installing to, says it can't make partitions there and doesn't offer to install alongside Windows, so hop's steps were wrong. No other route has been seen to the end yet. Replacing Windows with Zorin OS still works, as it starts from memory.
 - **The Ready screen could hide its buttons.** Omarchy's and Arch's steps ran over Undo changes, Restart now and Later, so they couldn't be seen or clicked. Long lists now stop above the buttons and scroll, with the wheel, the keyboard or a thin bar.
 - Clicking something while hop was checking the PC could start two things at once, and let hop be closed in the middle of changing the disk. Nothing can be clicked during those checks now.

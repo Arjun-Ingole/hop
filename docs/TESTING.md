@@ -208,6 +208,7 @@ The same 130 GB disk, plus hop's real `prepared` partitions: 1 GB FAT32 `LINUXBO
 | System | Result | Started from disk | Windows' EFI files, and the partitions |
 | --- | --- | --- | --- |
 | Linux Mint Xfce 22.3 | **Pass.** `partition #7` as ext4, with `/boot/efi` on the existing EFI partition, and `LINUXBOOT` left alone | `Boot0009 "Ubuntu"` first in `BootOrder`, then `Windows Boot Manager`. The marker says root on `/dev/nvme0n1p7`, efi on `/dev/nvme0n1p1`, `graphical.target` active and a `lightdm` session on seat0. Its menu has `Windows Boot Manager (on /dev/nvme0n1p1)` | `\EFI\Microsoft` unchanged. **`\EFI\Boot\bootx64.efi` replaced**, and `fbx64.efi` and `mmx64.efi` added. MSR, C:, recovery and `HOPINSTALL` byte for byte, after the install and the restart |
+| Zorin OS 18.1 | **Pass.** The same, `partition #7` | `Boot0009 "Zorin OS"` first in `BootOrder`, then `Windows Boot Manager`. The marker says root on `/dev/nvme0n1p7`, efi on `/dev/nvme0n1p1`, `gdm active` with a session on seat0. Its menu has `Windows Boot Manager (on /dev/nvme0n1p1)` | The same |
 
 **What this doesn't show:** no real PC, so no real Windows was started afterwards, and nobody logged in. `\EFI\Boot\bootx64.efi` is what a firmware starts when it has no entries, so on such a PC that's Linux now. hop's Undo doesn't put it back.
 
