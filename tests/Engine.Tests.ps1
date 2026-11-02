@@ -889,7 +889,7 @@ Describe 'Read-Iso' {
         }
         It 'puts 4.5''s root image next to its live image, where its installer looks, and the kernel on FAT32' {
             New-IsoFiles @{ 'EFI\BOOT\BOOTX64.EFI' = 'x'; 'arch\x86_64\airootfs.sfs' = 'x'; 'arch\x86_64\airootfs.sha512' = 'x'; 'arch\x86_64\omarchy-root.img.zst' = 'x' * 2000
-                'arch\x86_64\omarchy-root.img.zst.sha256' = 'x'; 'arch\boot\x86_64\vmlinuz-linux-omarchy' = 'x'; 'arch\pkglist.x86_64.txt' = 'x'; 'boot\grub\grub.cfg' = $menu }
+                'arch\x86_64\omarchy-root.img.zst.sha256' = 'x'; 'arch\boot\x86_64\vmlinuz-linux-t2' = 'x'; 'arch\pkglist.x86_64.txt' = 'x'; 'boot\grub\grub.cfg' = $menu }
             $iso = Read-Iso 'a.iso' $omarchy
             @($iso.LiveFiles.Name | Sort-Object) | Should -Be @('airootfs.sfs', 'airootfs.sha512', 'omarchy-root.img.zst', 'omarchy-root.img.zst.sha256')
             $iso.LiveBytes | Should -BeGreaterThan 2000
