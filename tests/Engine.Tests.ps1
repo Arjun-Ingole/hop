@@ -2092,8 +2092,7 @@ Describe 'Systems whose installer can''t use free space on its own disk' {
         Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } }
         Mock Resolve-Target { [pscustomobject]@{ Partition = [pscustomobject]@{ DiskNumber = 1 } } }
         foreach ($id in $UbiquityProven) {
-            # Refused anywhere but replacing Windows, for now, so that's the reason given.
-        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Throw "*can't install * yet*"
+            { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Throw "hop hasn't got * to finish on a second disk yet*"
         }
     }
     It 'gives the steps in the installer''s words, with the size it shows, and says what starts next' {
