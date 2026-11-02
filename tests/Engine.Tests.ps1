@@ -1623,7 +1623,8 @@ Describe 'Naming the EFI partition the way installers show it' {
         $place = [pscustomobject]@{ OnWindowsDisk = $true; Partitions = @([pscustomobject]@{ Role = 'installer'; Size = [int64]4GB }) }
         foreach ($distro in Get-Catalog) {
             $text = ((Get-Steps $distro 60 $place).Steps -join ' ')
-            $text | Should -Not -Match '\.\.(?!\.)' -Because $distro.Id
+            # Exactly two: a button can be called Change..., with three.
+            $text | Should -Not -Match '(?<!\.)\.\.(?!\.)' -Because $distro.Id
             $text | Should -Not -BeLike '*{ESP}*' -Because $distro.Id
         }
     }
