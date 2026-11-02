@@ -895,6 +895,14 @@ Describe 'Read-Iso' {
             $iso.LiveBytes | Should -BeGreaterThan 2000
             $iso.Bytes | Should -BeLessThan 1000
         }
+        It 'sizes the partitions for the real ISOs as the virtual PC had them' {
+            # 4.5.0-rc3: 249 MB for FAT32, and its live and root images, 6.3 GB, for exFAT. 4.0.6: 294 MB and 6.1 GB.
+            Get-InstallerGB 249367835 | Should -Be 4
+            Get-LiveGB 6262326139 | Should -Be 7
+            Get-InstallerGB 293878842 | Should -Be 4
+            Get-LiveGB 6129025167 | Should -Be 7
+            Get-LiveGB 0 | Should -Be 0
+        }
         It 'refuses 4.5 for replacing Windows and for a second disk, which hop has only tried with 4.0' {
             New-IsoFiles @{ 'arch\x86_64\omarchy-root.img.zst' = 'x' }
             $iso = [pscustomobject]@{ Letter = 'HOPISO' }
@@ -2107,6 +2115,8 @@ Describe 'Omarchy''s steps' {
     It 'warns off the option that erases Windows, and says how to get back to it' {
         $steps = Get-Steps (Get-Catalog | Where-Object Id -eq 'omarchy') 60 ([pscustomobject]@{ OnWindowsDisk = $true })
         ($steps.Steps -join ' ') | Should -BeLike '*Free space install*Full disk install*erases Windows*60 GB*Reboot Now*'
+        # 4.5 asks for a language before the keyboard, and a timezone with the account.
+        ($steps.Steps -join ' ') | Should -BeLike '*language if it asks*keyboard*timezone*Yes*Select install disk*'
         ($steps.Notes -join ' ') | Should -BeLike '*limine-scan*'
     }
     It 'on a second disk, names it, warns off the Windows disk and says the space may be more than hop''s' {

@@ -255,9 +255,10 @@ function Get-Catalog {
                 Notes = @("Afterwards this PC starts Arch's GRUB from Windows' EFI partition, and Arch itself from {DISK}. Windows stays in your PC's boot menu.")
             } })
         New-Entry 'omarchy' 'Omarchy' 'Hyprland, ready to go' 'omarchy.org' '#9ECE6A' 'omarchy' ((Get-OmarchyBoot) + @{
+            # The same words in 4.0.6 and 4.5.0-rc3, which also asks for a language first and a timezone with the account.
             Kind = 'omarchy'; Manual = 'Free space install'; SecureBootOff = $true; NoBitLocker = $true; MinGB = 33; Steps = @(
-                'Press **Return** to start, then choose your keyboard.'
-                'Make your account. Your password also unlocks the disk if Omarchy encrypts it. Name, email and hostname can be left empty.'
+                'Press **Return** to start. Choose your language if it asks, then your keyboard.'
+                'Make your account. Your password also unlocks the disk if Omarchy encrypts it. If it asks for your timezone, type your city to find it. Name, email and hostname can be left empty. Then choose **Yes**.'
                 'Under **Select install disk**, choose the disk Windows is on.'
                 "Under **Select installation mode**, press Down to reach **Free space install (alongside existing data)**, then Return. **Don't choose Full disk install**, where the cursor starts: it erases Windows."
                 'It should say **Install Omarchy in the {GB} GB of free space**, or close to that. Choose **Yes, install**. To install without encryption, press **Ctrl+C** first.'
