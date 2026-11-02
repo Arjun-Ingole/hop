@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Make room now also moves an ordinary file that limits the shrink, such as a game's data file, which Windows' defrag leaves where it is. If it can't, hop names the file and says what to do.
+- When an ordinary file limits the shrink, Make room tries to move it too. Something usually keeps a file like that in place, such as the app using it, so this may not work. If it doesn't, hop now names the full path and says what to do.
 
 ## 0.3.2 - 2026-11-02
 

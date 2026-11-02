@@ -32,20 +32,16 @@ try {
     # Something for the disk check to find changed.
     1..2000 | ForEach-Object { Set-Content "$room\file$_.txt" "contents $_" }
 
-    # An ordinary file, as a game's data file can be.
+    # An ordinary file, as a game's data file can be. Windows moves a file like this itself when it shrinks, so one
+    # only limits a shrink when something keeps it where it is. What this shows is that hop moving one is safe.
     $data = "$room\Games\content.bin"
     New-Item -ItemType Directory "$room\Games" -Force | Out-Null
     $bytes = New-Object byte[] (200MB); (New-Object Random 7).NextBytes($bytes); [IO.File]::WriteAllBytes($data, $bytes)
     $dataHash = (Get-FileHash $data -Algorithm SHA256).Hash
     $up = [Hop.NtfsMove]::MoveToEnd($letter, '\Games\content.bin', 0.97)
     Check 'the file moved to the end of the drive' ($up -gt 0) $up
-    $blocker = Get-ShrinkBlocker $partition
-    Write-Output "Windows names: $blocker"
-    Check 'Windows names the file' ($blocker -like '*content.bin*') $blocker
-    Check 'hop moves the file' ([bool](Move-SystemFiles $room $partition)) (($Sync.Log | Select-Object -Last 3) -join ' / ')
-    $after = (Get-PartitionSupportedSize -DriveLetter $letter).SizeMin
-    Write-Output "Can shrink to $([math]::Round($after / 1GB, 2)) GB afterwards."
-    Check 'the drive can shrink past it' ($after -lt $partition.Size * 0.5) $after
+    $down = [Hop.NtfsMove]::MoveDown($letter, '\Games\content.bin', 0.5, 60)
+    Check 'hop moves it back down' ($down -ge $up) "$down of $up"
     Check 'the file is the same' ((Get-FileHash $data -Algorithm SHA256).Hash -eq $dataHash) ''
 
     $sizeBefore = (Get-PartitionSupportedSize -DriveLetter $letter).SizeMin
