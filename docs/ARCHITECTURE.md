@@ -234,6 +234,8 @@ it. So for 4.5:
   It's read straight from the partition, so **it needs no more memory than 4.0.6 did.** 4.5.0-rc3 installed with 4 GB.
 - **One `systemd.run=` per command.** systemd runs them in order and stops at the first that fails. A `sh -c '...'` doesn't work: GRUB
   passes a quote inside quotes on as `\'`, and the shell then fails with `unexpected EOF`.
+- **Its menu names the kernel through a variable,** `vmlinuz-${live_kernel}`, set to `linux-omarchy` first and to `linux-t2` only on a
+  Mac. `Read-Iso` checks the kernel is there, and would have refused the ISO, so `Get-IsoKernelPath` now fills in what the menu sets first.
 
 The other ways round it were worse. Copying the image to a tmpfs at the same path needs its 3.9 GB in memory on top of everything else,
 and `copytoram` copies the 2.3 GB live image too and still leaves the installer without its image. Keeping the medium mounted isn't
@@ -356,7 +358,7 @@ off and on goes back to Windows. hop warns about this, and it's in Troubleshooti
 | Linux Mint, Zorin OS: **refused on a second disk**, see [Testing](TESTING.md) ([partman-efi](https://github.com/linuxmint/ubiquity/blob/master/d-i/source/partman-efi/fstab.d/efi), [bug](https://bugs.launchpad.net/bugs/1396379)) | The first one it finds, whatever the list says. Usually Windows' | Leave the list alone |
 | Lubuntu (Calamares) | The existing one it's told to use | Its existing step, which is Windows' |
 | elementary OS, Pop!_OS ([distinst](https://github.com/pop-os/distinst/blob/master/src/installer/steps/bootloader.rs)) | Whichever is mounted at `/boot/efi`, which is hop's `LINUXBOOT` on the target disk. The startup entry points at it | The same steps as ever |
-| Omarchy | Its own new one, on the disk it's given, in that disk's largest free space. Seen in a virtual PC: see [Testing](TESTING.md) | Choose the second disk, and expect it to say more than hop set aside |
+| Omarchy | Its own new one, on the disk it's given, in that disk's largest free space. Seen in a virtual PC with 4.0.6: see [Testing](TESTING.md). 4.5 is refused on a second disk until it's tried | Choose the second disk, and expect it to say more than hop set aside |
 | Fedora, Ultramarine | Their own new one, on the one drive selected, with a new `/boot` and root in its largest free space. Seen with a kickstart: see [Testing](TESTING.md) | Select only the second disk. The usual warning about Windows' small EFI partition doesn't apply |
 | Arch (archinstall) | The existing one it's told to use, on any disk it was told about. Seen with a config file: see [Testing](TESTING.md) | Choose both disks, and use Windows' |
 | Debian, CachyOS | Not known | **Refused** by `Assert-SystemFitsDrive`. Their steps are written for Windows' disk, and name its EFI partition or the drive with the free space. Not yet shown on a second disk |
