@@ -1618,6 +1618,15 @@ Describe 'Naming the EFI partition the way installers show it' {
         Mock Get-WindowsEsp { throw 'no' }
         Get-EspWords $null | Should -BeLike '*FAT32*EFI*'
     }
+    It 'reads as sentences in every system''s steps, with no doubled full stops' {
+        Mock Get-WindowsEsp { [pscustomobject]@{ Size = [int64]200MB } }
+        $place = [pscustomobject]@{ OnWindowsDisk = $true; Partitions = @([pscustomobject]@{ Role = 'installer'; Size = [int64]4GB }) }
+        foreach ($distro in Get-Catalog) {
+            $text = ((Get-Steps $distro 60 $place).Steps -join ' ')
+            $text | Should -Not -Match '\.\.(?!\.)' -Because $distro.Id
+            $text | Should -Not -BeLike '*{ESP}*' -Because $distro.Id
+        }
+    }
     It 'leaves no placeholder in CachyOS''s steps' {
         Mock Get-WindowsEsp { [pscustomobject]@{ Size = [int64]200MB } }
         $text = (Get-Steps (Get-Catalog | Where-Object Id -eq 'cachyos') 350 ([pscustomobject]@{ OnWindowsDisk = $true })).Steps -join ' '
