@@ -3,8 +3,6 @@ name: Omarchy VM
 # Installs Omarchy next to a stand-in Windows, on a disk laid out by hop's rules, in QEMU with OVMF. Runs on a push to a
 # probe/omarchy branch, or by hand. Green proves nothing by itself: read report.txt and look at the screens. See docs/TESTING.md.
 on:
-  push:
-    branches: ['probe/omarchy*']
   workflow_dispatch:
 
 permissions:
