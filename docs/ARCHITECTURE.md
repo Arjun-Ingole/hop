@@ -17,8 +17,8 @@ The same layout works next to any drive, or at the end of free space. See [Where
 
 Four things limit what it can install:
 
-- **FAT32 can't hold a file of 4 GB or more,** which rules out Kubuntu's ISO. Omarchy's has the same problem,
-  with a 6.1 GB `airootfs.sfs`, and gets a second partition. See [Omarchy](#omarchy).
+- **FAT32 can't hold a file of 4 GB or more,** which rules out Kubuntu's ISO. Omarchy 4.0's has the same problem,
+  with a 6.1 GB `airootfs.sfs`, and gets a second partition. 4.5's 3.9 GB root image goes there too. See [Omarchy](#omarchy).
 - **The firmware has to start it.** Many firmwares only start files from the EFI system partition, so
   the ISO's signed boot loader is copied to `\EFI\hop` there. It then has to find the installer partition,
   and how it does that depends on the system.
@@ -131,7 +131,7 @@ Other systems differ in steps 2, 3 and 5. The catalog holds what differs (`Live`
 | Fedora 44, Ultramarine 44 | shim and GRUB, Microsoft and Fedora | `grub.cfg` next to GRUB, by label | `root=live:LABEL=HOPINSTALL` |
 | CachyOS | GRUB, unsigned | Its own built-in config, by a marker file | `archisolabel=HOPINSTALL` |
 | Arch Linux | systemd-boot, unsigned | See below | `archisolabel=HOPINSTALL` |
-| Omarchy 4.0 | GRUB, unsigned | Its own built-in config, by a marker file | `archisolabel=HOPLIVE`. See [Omarchy](#omarchy) |
+| Omarchy 4.0, 4.5.0-rc3 | GRUB, unsigned | Its own built-in config, by a marker file | `archisolabel=HOPLIVE`. See [Omarchy](#omarchy) |
 
 Fedora's and Ultramarine's installer, Anaconda, protects the whole disk behind `/run/initramfs/live`,
 and so refuses the disk holding the installer partition. So `Get-DracutBoot` adds kernel arguments that
@@ -194,7 +194,8 @@ this worked:
 | Memory | Worked at 8 GB | Copies 5.8 GB to a tmpfs limited to 75% of memory. Worked at 12 GB |
 | Disk busy | Yes, the image is still read from `HOPLIVE` | No: `blockdev --rereadpt` works |
 
-hop uses the first, as it does for Fedora, because the second would rule out PCs with 8 GB. Omarchy adds its partitions
+hop uses the first, as it does for Fedora, because the second would rule out PCs with 8 GB. Since 4.5 it also puts back a folder
+afterwards: see [Omarchy 4.5](#omarchy-45). Omarchy adds its partitions
 one at a time, which a busy disk allows. So **hop has taken away what stopped Full disk install reaching this disk.** It's where
 the cursor starts on that screen, so the steps warn about it, and it still asks for confirmation. With this route it's also
 erasing the image it's running from, unless it was copied to memory. So replacing Windows with Omarchy adds `copytoram` to the same
@@ -212,11 +213,43 @@ own partition and comes first in the firmware's boot order. Two things to know:
   firmware's boot menu. The note under the steps says so, since hop's own cleanup is in Windows.
 - **Starting it writes one thing to Windows' EFI partition.** `\loader\random-seed`, 32 bytes, appeared there on the first start. Nothing in the
   journal mounted that partition, so it looks to come from before the kernel, though what wrote it wasn't pinned down. Windows' own files were
-  unchanged. Undo doesn't remove it.
+  unchanged. Undo doesn't remove it. In the later runs, with 4.0.6 and 4.5.0-rc3, it was on Omarchy's own EFI partition instead, and nothing
+  on Windows' changed.
 
-**4.5 will need looking at again.** Omarchy's source after 4.0.6 installs from `arch/x86_64/omarchy-root.img.zst`, under `/run/archiso/bootmnt`,
-which neither route above leaves there. So `Resolve-Download` only takes 4.0 and `Read-Iso` refuses an ISO with that file. **When omarchy.org
-moves on, hop stops offering a download until it's tried again**, which the weekly catalog check will show.
+### Omarchy 4.5
+
+Read in the 4.5.0-rc3 ISO and in `omacom/omarchy-iso`. Its new installer, which Omarchy calls F1, doesn't install about 940 packages one
+by one. It writes a prebuilt root image, `arch/x86_64/omarchy-root.img.zst` (3.9 GB), onto the new root partition, then adds a few
+packages from the ISO's own mirror. It reads that image from `/run/archiso/bootmnt/arch/x86_64/` (`ROOT_IMAGE` in `phases_impl.py`), and
+`omarchy-root-image-verify.service` checks its sha256 as the live system starts. `umount -l` alone takes the image away with the disk, and
+by its source the install would then stop with `root image missing`. `copytoram` does the same, and its message says to start without
+it. So for 4.5:
+
+- **The image goes on `HOPLIVE`.** `LiveFiles` is now everything in `arch\x86_64`, where archiso looks. In 4.0.6 that folder only has
+  `airootfs.sfs` and `airootfs.sha512`, so nothing changes there. Nothing in 4.5.0-rc3 is 4 GB or more: its live image is 2.3 GB.
+  The partitions come out the same size as for 4.0.6: 4 GB `HOPINSTALL` and 7 GB `HOPLIVE`.
+- **The folder is put back where it was.** As it starts, systemd binds `arch` from the partition to `/run/hop`, lets go of
+  `/run/archiso/bootmnt` with `umount -l` as before, then binds it back at `/run/archiso/bootmnt/arch`. `disk_form` asks `findmnt` what's
+  mounted at `/run/archiso/bootmnt` itself, which is now nothing, so the disk is offered, and the image is where the installer looks.
+  It's read straight from the partition, so **it needs no more memory than 4.0.6 did.** 4.5.0-rc3 installed with 4 GB.
+- **One `systemd.run=` per command.** systemd runs them in order and stops at the first that fails. A `sh -c '...'` doesn't work: GRUB
+  passes a quote inside quotes on as `\'`, and the shell then fails with `unexpected EOF`.
+- **Its menu names the kernel through a variable,** `vmlinuz-${live_kernel}`, set to `linux-omarchy` first and to `linux-t2` only on a
+  Mac. `Read-Iso` checks the kernel is there, and would have refused the ISO, so `Get-IsoKernelPath` now fills in what the menu sets first.
+
+The other ways round it were worse. Copying the image to a tmpfs at the same path needs its 3.9 GB in memory on top of everything else,
+and `copytoram` copies the 2.3 GB live image too and still leaves the installer without its image. Keeping the medium mounted isn't
+possible, because that's exactly what `disk_form` leaves out.
+
+**Only what was seen is offered.** `Resolve-Download` takes 4.0.x and 4.5.0-rc3, in `$OmarchyTried`, and refuses anything else, which the
+weekly catalog check will show. omarchy.org still offers 4.0.6, so downloads haven't changed: 4.5.0-rc3 has to be picked as an ISO file,
+and `Get-KnownIso` knows its name, `omarchy-4.5.0-rc3-x86.iso`. From 4.5 the name ends in `-x86`, next to an `-aarch64` one, and the
+download's pattern allows for that.
+
+**4.5 isn't offered for replacing Windows or for a second disk.** Neither was tried. For replacing Windows it wouldn't work as it is:
+its menu has `copytoram=n` after hop's `copytoram`, which wins, and its installer would read the image from the disk it's erasing.
+`Assert-IsoTriedThere` refuses both once the ISO is open, before the disk changes, by the catalog's `FullDisk.UntriedFile` and
+`SecondDisk.UntriedFile`.
 
 **Installing Arch first, then Omarchy, isn't an option.** Its online installer was removed in June 2026. `omarchy.org/install` now prints that
 it installs from its ISO.
@@ -325,7 +358,7 @@ off and on goes back to Windows. hop warns about this, and it's in Troubleshooti
 | Linux Mint, Zorin OS: **refused on a second disk**, see [Testing](TESTING.md) ([partman-efi](https://github.com/linuxmint/ubiquity/blob/master/d-i/source/partman-efi/fstab.d/efi), [bug](https://bugs.launchpad.net/bugs/1396379)) | The first one it finds, whatever the list says. Usually Windows' | Leave the list alone |
 | Lubuntu (Calamares) | The existing one it's told to use | Its existing step, which is Windows' |
 | elementary OS, Pop!_OS ([distinst](https://github.com/pop-os/distinst/blob/master/src/installer/steps/bootloader.rs)) | Whichever is mounted at `/boot/efi`, which is hop's `LINUXBOOT` on the target disk. The startup entry points at it | The same steps as ever |
-| Omarchy | Its own new one, on the disk it's given, in that disk's largest free space. Seen in a virtual PC: see [Testing](TESTING.md) | Choose the second disk, and expect it to say more than hop set aside |
+| Omarchy | Its own new one, on the disk it's given, in that disk's largest free space. Seen in a virtual PC with 4.0.6: see [Testing](TESTING.md). 4.5 is refused on a second disk until it's tried | Choose the second disk, and expect it to say more than hop set aside |
 | Fedora, Ultramarine | Their own new one, on the one drive selected, with a new `/boot` and root in its largest free space. Seen with a kickstart: see [Testing](TESTING.md) | Select only the second disk. The usual warning about Windows' small EFI partition doesn't apply |
 | Arch (archinstall) | The existing one it's told to use, on any disk it was told about. Seen with a config file: see [Testing](TESTING.md) | Choose both disks, and use Windows' |
 | Debian, CachyOS | Not known | **Refused** by `Assert-SystemFitsDrive`. Their steps are written for Windows' disk, and name its EFI partition or the drive with the free space. Not yet shown on a second disk |
