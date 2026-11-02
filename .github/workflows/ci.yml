@@ -97,3 +97,7 @@ jobs:
       - name: Moving system files, on a real NTFS volume
         shell: powershell
         run: powershell -File tests\Probe-SystemFiles.ps1
+
+      - name: GPT numbers when a partition goes
+        shell: powershell
+        run: powershell -File tests\Probe-GptNumbers.ps1

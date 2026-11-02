@@ -50,6 +50,14 @@ function Get-UbiquityRoute([string]$Id, [string]$Name) {
     }
 }
 
+# Calamares's systems, whose steps next to Windows nobody has followed to a working install. A user who did got GRUB's
+# rescue prompt. Replacing Windows is separate, and is offered where it was seen working.
+$CalamaresProven = @()
+
+function Get-CalamaresRefusal([string]$Name) {
+    "hop can't install $Name next to Windows yet, because it hasn't seen it start afterwards. Pick another system$(if ($Name -eq 'Debian') { ', or replace Windows with it' })."
+}
+
 function Get-UbiquityRefusal([string]$Name) {
     "hop can't install $Name next to Windows or on a second disk yet. Its installer won't make a partition on the disk it starts from, and hop hasn't got it to finish another way."
 }
@@ -215,7 +223,7 @@ function Get-Catalog {
             FullDisk = (Get-FullDiskBoot 'dracut') + @{ IsoGB = 3; Steps = $AnacondaErase }
             SecondDisk = @{ EspLinuxMB = 0; Steps = $AnacondaSecondDisk; Notes = @("Afterwards this PC starts Fedora, from that disk. Its menu lists Windows too.") } })
         New-Entry 'debian' 'Debian' 'Rock solid' 'cdimage.debian.org' '#A80030' 'debian' @{
-            Kind = 'debian'; Live = 'live/filesystem.squashfs'; EspLinuxMB = 25; Manual = 'Manual partitioning'; ManualExtra = $EspExtra
+            Kind = 'debian'; Live = 'live/filesystem.squashfs'; EspLinuxMB = 25; Refused = $(if ('debian' -notin $CalamaresProven) { Get-CalamaresRefusal 'Debian' }); Manual = 'Manual partitioning'; ManualExtra = $EspExtra
             FullDisk = (Get-FullDiskBoot 'liveboot') + @{ IsoGB = 3; Steps = @(
                 'At the menu that appears after restarting, press Enter on **Live system**. It waits until you do, then takes a few minutes to copy itself to memory.'
                 'On the desktop, open **Install Debian**, then pick your language and keyboard.'
@@ -225,7 +233,7 @@ function Get-Catalog {
                 'At the menu that appears after restarting, press Enter on **Live system**. It waits until you do.'
                 'On the desktop, open **Install Debian**, then pick your language and keyboard.') + $CalamaresSteps }
         New-Entry 'cachyos' 'CachyOS' 'Fast, for gaming' 'cachyos.org' '#008066' 'cachyos' ((Get-ArchisoBoot @('boot/grub/grub.cfg')) + @{
-            Kind = 'cachyos'; SecureBootOff = $true; EspLinuxMB = 25; GrubDir = 'boot/grub'; Manual = 'Manual partitioning'; ManualExtra = $EspExtra
+            Kind = 'cachyos'; SecureBootOff = $true; EspLinuxMB = 25; Refused = $(if ('cachyos' -notin $CalamaresProven) { Get-CalamaresRefusal 'CachyOS' }); GrubDir = 'boot/grub'; Manual = 'Manual partitioning'; ManualExtra = $EspExtra
             # Its other boot loaders keep kernels on the EFI partition, which Windows made too small for them.
             Steps = @('In the CachyOS Hello window, click **Launch installer**, then pick your language and keyboard.', 'On the **Bootloader** screen, choose **GRUB**.') + $CalamaresSteps })
         New-Entry 'arch' 'Arch Linux' 'Do it yourself' 'geo.mirror.pkgbuild.com' '#1793D1' 'arch' ((Get-ArchisoBoot @('loader/entries/*.conf')) + @{

@@ -2112,7 +2112,7 @@ Describe 'Systems whose installer can''t use free space on its own disk' {
     It 'tells the window, and refuses nothing else' {
         $engine = New-Object Hop.Engine
         try {
-            (@($engine.GetCatalog() | Where-Object Refused | ForEach-Object { $_.Id } | Sort-Object) -join ',') | Should -Be (@($ubiquity | Where-Object { $_ -notin $UbiquityProven } | Sort-Object) -join ',')
+            (@($engine.GetCatalog() | Where-Object Refused | ForEach-Object { $_.Id } | Sort-Object) -join ',') | Should -Be (@(@($ubiquity | Where-Object { $_ -notin $UbiquityProven }) + @('cachyos', 'debian' | Where-Object { $_ -notin $CalamaresProven }) | Sort-Object) -join ',')
             @($engine.GetCatalog() | Where-Object WindowsDiskOnly | ForEach-Object { $_.Id } | Sort-Object) | Should -Be @(@('cachyos', 'debian') + $UbiquityProven | Sort-Object)
         } finally { $engine.Dispose() }
     }
@@ -2187,13 +2187,13 @@ Describe 'Assert-SystemFitsDrive' {
     ) {
         { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Throw "hop hasn't got * to finish on a second disk yet*"
     }
-    It 'lets them on another drive on the disk Windows is on' {
-        Mock Resolve-Target { [pscustomobject]@{ Partition = [pscustomobject]@{ DiskNumber = 0 } } }
-        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq 'debian') 'volume:{disk-0}:1048576' } | Should -Not -Throw
+    It 'refuses <id> next to Windows too, until it has been seen starting afterwards' -ForEach @(
+        @{ id = 'debian' }, @{ id = 'cachyos' }
+    ) {
+        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) '' } | Should -Throw "*next to Windows yet*"
     }
-    It 'lets them on C: without looking anything up' {
-        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq 'debian') '' } | Should -Not -Throw
-        Should -Invoke Resolve-Target -Times 0
+    It 'still offers Debian for replacing Windows, where it was seen working' {
+        (Get-Catalog | Where-Object Id -eq 'debian').FullDisk | Should -Not -BeNullOrEmpty
     }
     It 'leaves systems with steps for a second disk alone' {
         { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq 'ubuntu') 'gap:{disk-1}:1048576' } | Should -Not -Throw
