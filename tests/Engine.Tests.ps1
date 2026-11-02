@@ -1344,6 +1344,11 @@ Describe 'Moving system files Windows left in the way' {
     It 'leaves the rest alone' -ForEach @(
         @{ file = '\$MFTMirr' }, @{ file = '\$LogFile' }, @{ file = '\$Bitmap' }, @{ file = '\$BadClus' }, @{ file = '\$Extend\$UsnJrnl:$J:$DATA' }, @{ file = '\pagefile.sys' }, @{ file = '' }
     ) { Test-MovableSystemFile $file | Should -BeFalse }
+    It 'moves an ordinary file too, but not the ones Make room handles its own way' {
+        Test-MovableFile '\Users\a\Games\content.bin' | Should -BeTrue
+        Test-MovableFile '\$Mft::$BITMAP' | Should -BeTrue
+        foreach ($file in '\pagefile.sys', '\hiberfil.sys', '\System Volume Information\{a}', '\$Extend\$UsnJrnl:$J:$DATA', '\$LogFile', '') { Test-MovableFile $file | Should -BeFalse }
+    }
     It 'carries on when Windows has nothing movable to name' {
         Mock Get-ShrinkBlocker { '\pagefile.sys' }
         Move-SystemFiles 'C:' ([pscustomobject]@{}) | Should -BeFalse

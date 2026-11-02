@@ -246,6 +246,8 @@ namespace Hop
                     : $"{target.Title} has room, but Windows can't release it yet. Make room tries to clear what's in the way, or use {better.InSentence}, which has {(better.Estimated ? "about " : "")}{better.UsableGB} GB to spare.";
             if (target.BlockerKind == "restore")
                 return $"hop can use {release} GB. Restore points on {target.InSentence} are stopping Windows releasing more.";
+            if (target.BlockerKind == "file" && target.ShrinkBlocker != null)
+                return $"hop can use {release} GB. It couldn't move {target.Letter}:{target.ShrinkBlocker}, which is near the end of the drive. If a game or app uses it, close that or move it to another drive, then click Make room again.";
             string blocker = target.BlockerKind == "ntfs" ? "Windows' own file system data, near the end of the drive," : target.ShrinkBlocker ?? "Something on the drive";
             string bitLocker = target.IsWindows && startup.BitLockerOn ? " BitLocker is on for this drive." : "";
             string instead = MaxLinuxGB >= MinLinuxGB ? "" : startup.Drives.Any(d => d.Id != target.Id) ? " Choose another drive." : " Windows can't shrink it past that, so Linux needs a second disk.";

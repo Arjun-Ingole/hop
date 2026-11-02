@@ -431,6 +431,13 @@ function Test-MovableSystemFile([string]$File) {
     $File -and (Get-BlockerKind $File) -eq 'ntfs' -and $File -match '^\\\$(mft|attrdef|secure|upcase|extend)(?![a-z])'
 }
 
+# An ordinary file in the way, such as a game's big data file, which defrag leaves where it is. Moving it is what defrag
+# itself does with it, and it stays the same file, in the same folder. The paging, hibernation and restore point files
+# have ways of their own.
+function Test-MovableFile([string]$File) {
+    (Test-MovableSystemFile $File) -or ($File -and (Get-BlockerKind $File) -eq 'file')
+}
+
 # defrag can leave one of these near the end of a drive, $Mft::$BITMAP most of all. Moves whichever
 # Windows names, until it names something else. Says whether any moved. A failure here costs nothing:
 # NTFS turns down a move it won't make, and hop carries on with the room it has.
@@ -442,9 +449,10 @@ function Move-SystemFiles([string]$Room, $Partition, [datetime]$Deadline = [date
     for ($i = 0; $i -lt 6; $i++) {
         if ((Get-Date) -ge $Deadline) { break }
         $file = Get-ShrinkBlocker $Partition
-        if (-not (Test-MovableSystemFile $file) -or $moved[$file]) { break }
-        Set-Status 'Moving a Windows system file out of the way...'
-        try { $clusters = [Hop.NtfsMove]::MoveDown($Room, $file, $above) } catch {
+        if (-not (Test-MovableFile $file) -or $moved[$file]) { break }
+        Set-Status "Moving $(Split-Path $file -Leaf) out of the way..."
+        $seconds = [int][math]::Max(1, [math]::Min(600, ($Deadline - (Get-Date)).TotalSeconds))
+        try { $clusters = [Hop.NtfsMove]::MoveDown($Room, $file, $above, $seconds) } catch {
             Write-Log "Could not move $file`: $($_.Exception.Message)"
             break
         }

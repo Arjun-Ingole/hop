@@ -21,21 +21,28 @@ namespace Hop
         const int MaxFailedMoves = 64;   // a cluster that looked free can be taken by the time it's asked for
 
         /// <summary>Moves each part of the stream past a fraction of the drive to the lowest free space before it. Says how many clusters moved.</summary>
-        public static long MoveDown(string letter, string stream, double aboveFraction)
+        public static long MoveDown(string letter, string stream, double aboveFraction) => MoveDown(letter, stream, aboveFraction, 0);
+
+        /// <summary>The same, stopping after so many seconds, 0 for none. What moved before then stays moved.</summary>
+        public static long MoveDown(string letter, string stream, double aboveFraction, int seconds)
         {
             using (var volume = OpenVolume(letter))
-                return Move(letter, stream, -1, (long)(TotalClusters(volume) * aboveFraction));
+                return Move(letter, stream, -1, (long)(TotalClusters(volume) * aboveFraction), seconds);
         }
 
         /// <summary>Moves the stream into the last part of the drive, for testing MoveDown. Says how many clusters moved.</summary>
         public static long MoveToEnd(string letter, string stream, double fromFraction)
         {
             using (var volume = OpenVolume(letter))
-                return Move(letter, stream, (long)(TotalClusters(volume) * fromFraction), 0);
+                return Move(letter, stream, (long)(TotalClusters(volume) * fromFraction), 0, 0);
         }
 
-        static long Move(string letter, string stream, long low, long above)
+        // Moves of up to this many clusters at a time, so a big file can stop at the time limit.
+        const int MovePieceClusters = 16384;
+
+        static long Move(string letter, string stream, long low, long above, int seconds)
         {
+            var deadline = seconds > 0 ? DateTime.UtcNow.AddSeconds(seconds) : DateTime.MaxValue;
             using (var volume = OpenVolume(letter))
             using (var file = OpenStream(letter, stream))
             {
@@ -47,10 +54,10 @@ namespace Hop
                 {
                     if (low >= 0 ? extent.Lcn >= low : extent.Lcn + extent.Clusters <= above) continue;
                     long vcn = extent.Vcn, left = extent.Clusters, from = Math.Max(low, 0), before = low >= 0 ? total : extent.Lcn;
-                    while (left > 0 && failed < MaxFailedMoves)
+                    while (left > 0 && failed < MaxFailedMoves && DateTime.UtcNow < deadline)
                     {
                         if (!FindFree(volume, from, before, left, out long start, out long length)) break;
-                        int count = (int)Math.Min(Math.Min(left, length), int.MaxValue);
+                        int count = (int)Math.Min(Math.Min(left, length), MovePieceClusters);
                         if (MoveClusters(volume, file, vcn, start, count))
                         {
                             moved += count; vcn += count; left -= count; from = start + count;
