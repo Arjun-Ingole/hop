@@ -555,13 +555,17 @@ try {
     Check 'Linux on this disk is not offered before it has been kept' ($null -eq (Get-OtherSystem)) ''
     Invoke-Cleanup
     Check 'clean-up noticed and only took the installer' ($null -ne (Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$linuxPart.Offset })) ''
-    Check 'the installer is gone' (@(Get-HopPartitions).Count -eq 0) ''
+    # Linux came after the installer, so removing it would have renumbered Linux's partition, which stops GRUB.
+    Check 'the installer stays, because removing it would renumber Linux' (@(Get-HopPartitions | Where-Object Label -eq $InstallerLabel).Count -eq 1) ''
+    Check 'and hop says why' ((@($Sync.CleanupProblems) -join ' ') -like '*renumber*') (@($Sync.CleanupProblems) -join ' / ')
     Check 'X: never gave anything up, so it keeps its size' ((Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$x.Offset }).Size -eq $x.Size) ''
     Check 'the disk is remembered' (@(Get-LinuxDisks) -contains $vdiskB.Guid) (@(Get-LinuxDisks) -join ',')
     $other = Get-OtherSystem
     Check 'and that Linux is now offered for removal' ($null -ne $other -and -not $other.OnWindowsDisk) ''
     Check 'the disk is refused while it has Linux on it' ((Get-DriveBlocker (Get-Disk -Number $b) $null) -like '*already has Linux*') ''
     Remove-OtherSystem (Get-OtherSystem).Selection
+    # With no Linux after it now, the installer can go too.
+    foreach ($left in @(Get-HopPartitions)) { Remove-PartitionAt $left.Partition.DiskNumber $left.Partition.Offset }
     Check 'removing it gives the disk back as it was' ((Get-Layout $b) -eq $beforeLinux) "$(Get-Layout $b) vs $beforeLinux"
     Check 'and forgets the disk' (@(Get-LinuxDisks).Count -eq 0) ''
     Check 'data survived' ((Get-TestHash $xLetter) -eq $xHash) ''
