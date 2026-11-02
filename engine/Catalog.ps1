@@ -93,14 +93,26 @@ function Get-ArchisoBoot([string[]]$Configs) {
     }
 }
 
-# Omarchy's live image is over 4 GB, so it goes on a second partition, as exFAT, which its initramfs can read. The
-# boot loader and kernel stay on the FAT32 one, and archisolabel= names the second. Its installer hides the disk behind
-# /run/archiso/bootmnt, so systemd takes that mount point away as it starts, as for Fedora. It all goes in one edit, because
-# Register-Installer runs them again. The image is still read from the partition, so 8 GB of memory is enough.
+# Omarchy's live image can be over 4 GB, so it goes on a second partition, as exFAT, which its initramfs can read. From 4.5
+# its installer also reads a root image from the same folder, so that whole folder goes there. The boot loader and kernel
+# stay on the FAT32 one, and archisolabel= names the second. Its installer hides the disk behind /run/archiso/bootmnt, so
+# systemd takes that mount point away as it starts, as for Fedora, then puts the folder back where it was, straight from the
+# partition, so 4.5's installer still finds its image. Then that path isn't a mount point, which is all the installer
+# checks. It all goes in one edit, because Register-Installer runs them again. Nothing is copied to memory: 4.0.6 installed
+# with 8 GB, and 4.5.0-rc3 with 4 GB.
+$OmarchyRootImage = 'arch\x86_64\omarchy-root.img.zst'   # what 4.5's installer unpacks, which 4.0 didn't have
+
 function Get-OmarchyBoot {
-    $release = '"systemd.run=umount -l /run/archiso/bootmnt" systemd.run_success_action=none systemd.run_failure_action=none systemd.unit=multi-user.target systemd.wants=kernel-command-line.service'
+    # One command each, run in this order, and the rest skipped if one fails. GRUB escapes quotes inside quotes, so no shell.
+    $commands = @(
+        'mkdir -p /run/hop'
+        'mount --bind /run/archiso/bootmnt/arch /run/hop'
+        'umount -l /run/archiso/bootmnt'
+        'mkdir -p /run/archiso/bootmnt/arch'
+        'mount --bind /run/hop /run/archiso/bootmnt/arch')
+    $release = (@($commands | ForEach-Object { "`"systemd.run=$_`"" }) -join ' ') + ' systemd.run_success_action=none systemd.run_failure_action=none systemd.unit=multi-user.target systemd.wants=kernel-command-line.service'
     @{
-        Live = 'arch/x86_64/airootfs.sfs'; LiveFiles = 'arch\x86_64\airootfs.*'; GrubDir = 'boot/grub'; BootConfigs = @('boot/grub/grub.cfg')
+        Live = 'arch/x86_64/airootfs.sfs'; LiveFiles = 'arch\x86_64\*'; GrubDir = 'boot/grub'; BootConfigs = @('boot/grub/grub.cfg')
         BootEdits = [ordered]@{ 'archisosearchuuid=\S+' = "archisolabel=$LiveLabel $release" }
     }
 }
@@ -124,7 +136,8 @@ function Get-FullDiskBoot([string]$Family) {
 # SecureBootOff: its boot loader or kernel isn't signed, as in Pop!_OS 24.04's ISO, so it can't start with Secure Boot on.
 # Live: a file its ISO must have, for systems that aren't Ubuntu-style. Empty means casper, which Read-Iso checks for.
 # LiveFiles: what goes on a second, exFAT partition because it's too big for FAT32, as a path pattern on the ISO.
-# UntriedFile: a file that means this ISO installs in a way hop hasn't tried. See Read-Iso.
+# UntriedFile: a file that means this ISO installs in a way hop hasn't tried. See Read-Iso. FullDisk and SecondDisk can have
+#   their own, for an ISO tried next to Windows but not there. See Assert-IsoTriedThere.
 # NoBitLocker: its installer refuses a disk with BitLocker on it, even paused. See Assert-NoBitLocker.
 # MinGB: the least its installer accepts, if that's more than $MinLinuxGB.
 # Notes: anything more to say under its Steps.
@@ -243,15 +256,17 @@ function Get-Catalog {
                 Notes = @("Afterwards this PC starts Arch's GRUB from Windows' EFI partition, and Arch itself from {DISK}. Windows stays in your PC's boot menu.")
             } })
         New-Entry 'omarchy' 'Omarchy' 'Hyprland, ready to go' 'omarchy.org' '#9ECE6A' 'omarchy' ((Get-OmarchyBoot) + @{
-            Kind = 'omarchy'; Manual = 'Free space install'; SecureBootOff = $true; NoBitLocker = $true; MinGB = 33; UntriedFile = 'arch\x86_64\omarchy-root.img.zst'; Steps = @(
-                'Press **Return** to start, then choose your keyboard.'
-                'Make your account. Your password also unlocks the disk if Omarchy encrypts it. Name, email and hostname can be left empty.'
+            # The same words in 4.0.6 and 4.5.0-rc3, which also asks for a language first and a timezone with the account.
+            Kind = 'omarchy'; Manual = 'Free space install'; SecureBootOff = $true; NoBitLocker = $true; MinGB = 33; Steps = @(
+                'Press **Return** to start. Choose your language if it asks, then your keyboard.'
+                'Make your account. Your password also unlocks the disk if Omarchy encrypts it. If it asks for your timezone, type your city to find it. Name, email and hostname can be left empty. Then choose **Yes**.'
                 'Under **Select install disk**, choose the disk Windows is on.'
                 "Under **Select installation mode**, press Down to reach **Free space install (alongside existing data)**, then Return. **Don't choose Full disk install**, where the cursor starts: it erases Windows."
                 'It should say **Install Omarchy in the {GB} GB of free space**, or close to that. Choose **Yes, install**. To install without encryption, press **Ctrl+C** first.'
                 'When it has finished, choose **Reboot Now**.')
             Notes = @("Afterwards this PC starts Omarchy, and its menu doesn't list Windows. To get to Windows, use your PC's boot menu, or run **limine-scan** in Omarchy to add it to the menu.")
-            FullDisk = (Get-FullDiskBoot 'archiso') + @{ IsoGB = 7; Steps = @(
+            # Seen with 4.0.6 only. 4.5's menu keeps it from copying itself to memory, and its installer then reads the disk it erases.
+            FullDisk = (Get-FullDiskBoot 'archiso') + @{ IsoGB = 7; UntriedFile = $OmarchyRootImage; Steps = @(
                 'Press **Return** to start, then choose your keyboard.'
                 'Make your account. Your password also unlocks the disk if Omarchy encrypts it. Name, email and hostname can be left empty.'
                 'Under **Select install disk**, choose **{DISK}**. Leave any other drive alone.'
@@ -259,7 +274,9 @@ function Get-Catalog {
                 'At **Confirm overwriting**, choose **Yes, install**. To install without encryption, press **Ctrl+C** first.'
                 'When it has finished, choose **Reboot Now**.') }
             # It always makes its own EFI partition, in the largest free space on the disk it's given, which isn't always hop's.
+            # Seen with 4.0.6 only.
             SecondDisk = @{
+                UntriedFile = $OmarchyRootImage
                 Steps = @(
                     'Press **Return** to start, then choose your keyboard.'
                     'Make your account. Your password also unlocks the disk if Omarchy encrypts it. Name, email and hostname can be left empty.'

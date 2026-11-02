@@ -455,6 +455,20 @@ Describe 'Invoke-Install with -FullDisk' {
         { Invoke-Install 'ubuntu' 'C:\u.iso' 60 '' '' -FullDisk } | Should -Throw '*next to Windows*'
         Should -Invoke New-LinuxSpace -Times 0
     }
+    It 'asks whether this version has been tried for replacing Windows, before the disk changes' {
+        Mock Assert-IsoTriedThere { throw 'Not tried.' }
+        { Invoke-Install 'ubuntu' 'C:\u.iso' 60 '' '' -FullDisk } | Should -Throw 'Not tried.'
+        Should -Invoke Assert-IsoTriedThere -ParameterFilter { $FullDisk -and -not $SecondDisk }
+        Should -Invoke New-LinuxSpace -Times 0
+        Should -Invoke Invoke-Cleanup -Times 0
+    }
+    It 'asks the same for a second disk, once the plan says that''s where Linux goes' {
+        Mock Assert-IsoTriedThere { throw 'Not tried.' }
+        Mock Get-Plan { [pscustomobject]@{ DiskNumber = 1; Kind = 'gap'; Letter = $null; TargetOffset = [int64]1GB; LinuxGB = 60 } }
+        { Invoke-Install 'ubuntu' 'C:\u.iso' 60 '' '' } | Should -Throw 'Not tried.'
+        Should -Invoke Assert-IsoTriedThere -ParameterFilter { $SecondDisk -and -not $FullDisk }
+        Should -Invoke New-LinuxSpace -Times 0
+    }
     It 'undoes everything when the menu could not be changed' {
         Mock Test-FullDiskConfig { $false }
         { Invoke-Install 'ubuntu' 'C:\u.iso' 60 '' '' -FullDisk } | Should -Throw '*startup menu*'

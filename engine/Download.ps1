@@ -1,5 +1,8 @@
 # --- Official download sources -----------------------------------------
 
+# The Omarchy versions seen installing next to Windows in a virtual PC: see docs/TESTING.md.
+$OmarchyTried = @('4.0.*', '4.5.0-rc3')
+
 function Get-WebText([string]$Url) {
     for ($attempt = 1; ; $attempt++) {
         try {
@@ -126,10 +129,12 @@ function Resolve-Download($Distro) {
             throw "Could not find the CachyOS ISO on CachyOS's download servers."
         }
         'omarchy' {
-            $m = [regex]::Match((Get-WebText 'https://omarchy.org/'), 'https://iso\.omarchy\.org/omarchy-((\d+\.\d+)\.\d+)\.iso')
+            # From 4.5 the name ends in -x86, next to an -aarch64 one.
+            $m = [regex]::Match((Get-WebText 'https://omarchy.org/'), 'https://iso\.omarchy\.org/omarchy-(\d+\.\d+\.\d+(?:-rc\d+)?)(?:-x86)?\.iso')
             if (-not $m.Success) { throw 'Could not find the Omarchy ISO on omarchy.org.' }
-            # Later versions install from a separate image on the medium, which is gone by the time this one's installer looks.
-            if ($m.Groups[2].Value -ne '4.0') { throw "omarchy.org now offers version $($m.Groups[1].Value), and hop has only tried 4.0." }
+            # Each version has changed its installer, so only those seen installing next to Windows are taken.
+            $version = $m.Groups[1].Value
+            if (-not @($OmarchyTried | Where-Object { $version -like $_ }).Count) { throw "omarchy.org now offers version $version, and hop has only tried $(($OmarchyTried -replace '\.\*$') -join ' and ')." }
             $sum = [regex]::Match((Get-WebText "$($m.Value).sha256"), '^[0-9a-f]{64}')
             if (-not $sum.Success) { throw 'Could not find the checksum for the Omarchy ISO.' }
             return New-Download $m.Value $sum.Value 0
