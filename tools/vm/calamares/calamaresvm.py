@@ -571,6 +571,10 @@ def drive(vm, distro, state):
         if screen.has('All done') or (installing and screen.find('Done', exact=True, region=BOTTOM_RIGHT)):
             once('finished')
             return
+        if not installing and done.get('summary') and screen.has('Toggle log'):
+            # Debian's starts straight from Install, with no question first.
+            note('Installing, with no question first: ' + ' | '.join(screen.lines_with('%', 'Toggle')))
+            installing = started_install = time.time()
         if installing:
             if screen.has('Continue with installation', 'overview of what will happen') and time.time() - started_install > 90:
                 raise RuntimeError('The install never started:\n' + text)
