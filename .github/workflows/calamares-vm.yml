@@ -1,0 +1,70 @@
+name: Calamares VM
+
+# Installs Debian and CachyOS next to a stand-in Windows with their real Calamares, on a disk laid out by hop's rules, in
+# QEMU with OVMF. Then removes HOPINSTALL as Windows would and starts again. Runs on a push to a probe/calamares branch, or by
+# hand. Green proves nothing by itself: read report.txt and look at the screens. See docs/TESTING.md.
+on:
+  push:
+    branches: ['probe/calamares*']
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [debian, cachyos]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get ready to run a VM
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends qemu-system-x86 qemu-utils ovmf gdisk dosfstools ntfs-3g tesseract-ocr tesseract-ocr-eng python3-pil python3-pip binutils >/dev/null
+          sudo pip3 install --break-system-packages -q virt-firmware
+          sudo chmod 666 /dev/kvm
+          sudo mkdir -p /mnt/cvm/out
+          sudo chown "$(id -u):$(id -g)" /mnt/cvm
+          df -h / /mnt; nproc; free -g; pwsh -v; tesseract --version | head -n 1
+
+      # As engine/Download.ps1 finds it, with its official checksum.
+      - name: Download the ISO
+        run: |
+          pwsh -NoProfile -File tools/vm/calamares/prepare.ps1 resolve ${{ matrix.distro }} | tee /mnt/cvm/out/download.json
+          url=$(python3 -c "import json;print(json.load(open('/mnt/cvm/out/download.json'))['Url'])")
+          sha=$(python3 -c "import json;print(json.load(open('/mnt/cvm/out/download.json'))['Sha256'])")
+          curl -fL --retry 3 -o /mnt/cvm/linux.iso "$url"
+          echo "$sha  /mnt/cvm/linux.iso" | sha256sum -c - | tee /mnt/cvm/out/iso-checksum.txt
+
+      - name: Lay out the disk as hop does
+        run: sudo python3 tools/vm/calamares/calamaresvm.py prepare --distro ${{ matrix.distro }} --iso /mnt/cvm/linux.iso
+
+      - name: Install with Calamares and restart
+        id: install
+        run: sudo python3 tools/vm/calamares/calamaresvm.py install
+
+      - name: Check the disk afterwards
+        if: always()
+        run: sudo python3 tools/vm/calamares/calamaresvm.py check --stage installed
+
+      - name: Remove HOPINSTALL as Windows would, then start again
+        if: always() && steps.install.outcome == 'success'
+        run: |
+          sudo python3 tools/vm/calamares/calamaresvm.py renumber
+          sudo python3 tools/vm/calamares/calamaresvm.py boot --stage renumbered
+
+      - name: Check the disk again
+        if: always() && steps.install.outcome == 'success'
+        run: sudo python3 tools/vm/calamares/calamaresvm.py check --stage renumbered
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: calamares-${{ matrix.distro }}
+          path: /mnt/cvm/out
