@@ -368,9 +368,11 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
     # "no such partition". So they stay, which does no harm.
     $keepForLinux = $InstallerOnly -and (@($hopPartitions).Count -or $leftovers.Count) -and (Test-RemovalRenumbersLinux (@($hopPartitions | ForEach-Object { $_.Partition }) + $leftovers) ([int]@(@($hopPartitions | ForEach-Object { $_.Partition }) + $leftovers)[0].DiskNumber))
     if ($keepForLinux) {
-        $gb = [int][math]::Round((@(@($hopPartitions | ForEach-Object { $_.Partition }) + $leftovers) | Measure-Object -Property Size -Sum).Sum / 1GB)
+        $bytes = [int64]0
+        foreach ($partition in @(@($hopPartitions | ForEach-Object { $_.Partition }) + $leftovers)) { if ($partition.Size) { $bytes += [int64]$partition.Size } }
+        $gb = [int][math]::Round($bytes / 1GB)
         Write-Log 'Kept the installer partition: removing it would renumber the Linux partition after it.'
-        [void]$problems.Add("hop left its $gb GB installer partition, because Windows would renumber the Linux partition after it, and Linux wouldn't start. It does no harm, and Windows and Linux start as before.")
+        [void]$problems.Add("hop left its $(if ($gb) { "$gb GB " })installer partition, because Windows would renumber the Linux partition after it, and Linux wouldn't start. It does no harm, and Windows and Linux start as before.")
         $hopPartitions = @(); $leftovers = @()
     }
     foreach ($found in $hopPartitions) {
