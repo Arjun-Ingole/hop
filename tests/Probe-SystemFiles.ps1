@@ -32,6 +32,22 @@ try {
     # Something for the disk check to find changed.
     1..2000 | ForEach-Object { Set-Content "$room\file$_.txt" "contents $_" }
 
+    # An ordinary file, as a game's data file can be.
+    $data = "$room\Games\content.bin"
+    New-Item -ItemType Directory "$room\Games" -Force | Out-Null
+    $bytes = New-Object byte[] (200MB); (New-Object Random 7).NextBytes($bytes); [IO.File]::WriteAllBytes($data, $bytes)
+    $dataHash = (Get-FileHash $data -Algorithm SHA256).Hash
+    $up = [Hop.NtfsMove]::MoveToEnd($letter, '\Games\content.bin', 0.97)
+    Check 'the file moved to the end of the drive' ($up -gt 0) $up
+    $blocker = Get-ShrinkBlocker $partition
+    Write-Output "Windows names: $blocker"
+    Check 'Windows names the file' ($blocker -like '*content.bin*') $blocker
+    Check 'hop moves the file' ([bool](Move-SystemFiles $room $partition)) (($Sync.Log | Select-Object -Last 3) -join ' / ')
+    $after = (Get-PartitionSupportedSize -DriveLetter $letter).SizeMin
+    Write-Output "Can shrink to $([math]::Round($after / 1GB, 2)) GB afterwards."
+    Check 'the drive can shrink past it' ($after -lt $partition.Size * 0.5) $after
+    Check 'the file is the same' ((Get-FileHash $data -Algorithm SHA256).Hash -eq $dataHash) ''
+
     $sizeBefore = (Get-PartitionSupportedSize -DriveLetter $letter).SizeMin
     Write-Output "Can shrink to $([math]::Round($sizeBefore / 1GB, 2)) GB on a new volume."
     $up = [Hop.NtfsMove]::MoveToEnd($letter, $stream, 0.97)
@@ -51,23 +67,6 @@ try {
 
     Resize-Partition -DriveLetter $letter -Size ([int64]($after + 1GB))
     Check 'the drive really shrinks' ((Get-Partition -DriveLetter $letter).Size -lt $partition.Size * 0.6) (Get-Partition -DriveLetter $letter).Size
-
-    # An ordinary file, as a game's data file can be.
-    Resize-Partition -DriveLetter $letter -Size $partition.Size
-    $data = "$room\Games\content.bin"
-    New-Item -ItemType Directory "$room\Games" -Force | Out-Null
-    $bytes = New-Object byte[] (200MB); (New-Object Random 7).NextBytes($bytes); [IO.File]::WriteAllBytes($data, $bytes)
-    $dataHash = (Get-FileHash $data -Algorithm SHA256).Hash
-    $up = [Hop.NtfsMove]::MoveToEnd($letter, '\Games\content.bin', 0.97)
-    Check 'the file moved to the end of the drive' ($up -gt 0) $up
-    $blocker = Get-ShrinkBlocker $partition
-    Write-Output "Windows names: $blocker"
-    Check 'Windows names the file' ($blocker -like '*content.bin*') $blocker
-    Check 'hop moves the file' ([bool](Move-SystemFiles $room $partition)) (($Sync.Log | Select-Object -Last 3) -join ' / ')
-    $after = (Get-PartitionSupportedSize -DriveLetter $letter).SizeMin
-    Write-Output "Can shrink to $([math]::Round($after / 1GB, 2)) GB afterwards."
-    Check 'the drive can shrink past it' ($after -lt $partition.Size * 0.5) $after
-    Check 'the file is the same' ((Get-FileHash $data -Algorithm SHA256).Hash -eq $dataHash) ''
 
     $scan = Repair-Volume -DriveLetter $letter -Scan
     Write-Output "Disk check: $scan"
