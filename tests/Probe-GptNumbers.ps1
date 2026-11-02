@@ -24,12 +24,13 @@ try {
     1..4 | ForEach-Object { New-Partition -DiskNumber $disk -Size 300MB | Out-Null }
     # The last one stands in for a Linux root a Linux installer made after hop's installer.
     $linux = New-Partition -DiskNumber $disk -Size 300MB -GptType '{0fc63daf-8483-4772-8e79-3d69d8477de4}'
+    $afterLinux = New-Partition -DiskNumber $disk -Size 300MB
     $before = Get-GptNumbers $disk
     Write-Output ("Before: " + (($before.Keys | Sort-Object | ForEach-Object { "number $($before[$_]) at $_" }) -join ', '))
     Check 'hop reads every partition''s number' (@(Get-Partition -DiskNumber $disk | Where-Object { $before[[int64]$_.Offset] }).Count -eq @(Get-Partition -DiskNumber $disk).Count) ''
     $middle = @(Get-Partition -DiskNumber $disk | Sort-Object Offset)[2]
     Check 'hop sees that removing it would renumber Linux' ([bool](Test-RemovalRenumbersLinux @($middle) $disk)) ''
-    Check 'and that removing the last one wouldn''t' (-not (Test-RemovalRenumbersLinux @(@(Get-Partition -DiskNumber $disk | Where-Object { [int64]$_.Offset -ne [int64]$linux.Offset } | Sort-Object Offset)[-1]) $disk)) ''
+    Check 'and that removing one after Linux wouldn''t' (-not (Test-RemovalRenumbersLinux @($afterLinux) $disk)) ''
     Write-Output "Removing the partition at $($middle.Offset), as hop removes its installer"
     Remove-PartitionAt $disk ([int64]$middle.Offset)
     $after = Get-GptNumbers $disk
