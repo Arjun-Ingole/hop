@@ -38,6 +38,7 @@ jobs:
           sudo pip3 install --break-system-packages -q virt-firmware
           sudo chmod 666 /dev/kvm
           sudo mkdir -p /mnt/ovm/out
+          sudo chown "$(id -u):$(id -g)" /mnt/ovm
           df -h / /mnt; nproc; free -g; pwsh -v; ls /usr/share/OVMF/
 
       - name: Download the ISO
