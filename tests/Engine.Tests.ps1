@@ -2092,7 +2092,8 @@ Describe 'Systems whose installer can''t use free space on its own disk' {
         Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0 } }
         Mock Resolve-Target { [pscustomobject]@{ Partition = [pscustomobject]@{ DiskNumber = 1 } } }
         foreach ($id in $UbiquityProven) {
-            { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Throw "hop hasn't got * to finish on a second disk yet*"
+            # Refused anywhere but replacing Windows, for now, so that's the reason given.
+        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Throw "*can't install * yet*"
         }
     }
     It 'gives the steps in the installer''s words, with the size it shows, and says what starts next' {
@@ -2185,7 +2186,8 @@ Describe 'Assert-SystemFitsDrive' {
     It 'refuses <id> on a second disk, with the reason, and claims nothing it has not seen' -ForEach @(
         @{ id = 'debian' }, @{ id = 'cachyos' }
     ) {
-        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Throw "hop hasn't got * to finish on a second disk yet*"
+        # Refused anywhere but replacing Windows, for now, so that's the reason given.
+        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Throw "*can't install * yet*"
     }
     It 'refuses <id> next to Windows too, until it has been seen starting afterwards' -ForEach @(
         @{ id = 'debian' }, @{ id = 'cachyos' }
