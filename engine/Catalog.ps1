@@ -167,11 +167,12 @@ function Get-Catalog {
         'Open the install app from the dock, then pick your language.'
         'Select **{DISK}** and choose **Use entire disk**. Leave any other drive alone.'
         'On the last screen, check it names only **{DISK}**, then click **Erase data and install**.')
-    $EspExtra = 'Also click the existing **EFI System Partition**, choose Edit, set the mount point to **/boot/efi** and keep it unformatted.'
+    # Installers name it differently, so it's told apart by what they all show: its size and FAT32. See Get-EspWords.
+    $EspExtra = 'Also click {ESP}. Choose **Edit**, set the mount point to **/boot/efi** and keep its contents: don''t format it.'
     $CalamaresSteps = @(
         'When asked about partitions, choose **Manual partitioning**. If it lists several drives, pick the one with the {GB} GB of free space.'
         'Click the {GB} GB of **Free Space**, click **Create** and make an **ext4** partition mounted at **/**.'
-        'Click the existing **EFI System Partition**, click **Edit**, set the mount point to **/boot/efi** and keep its contents. If the installer then says this partition is small, click **OK**: there is room.'
+        'Click {ESP}. Click **Edit**, choose **Keep** so it isn''t formatted, and set the mount point to **/boot/efi**. If the installer then says this partition is small, click **OK**: hop checked there is room.'
         "Don't choose **Erase disk**. The installer is running from this drive.")
     $AnacondaSteps = @(
         'On the welcome screen, choose **Not Now**.'

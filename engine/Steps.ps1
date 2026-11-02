@@ -106,6 +106,18 @@ function Assert-NoBitLocker($Distro, [string]$Target) {
 # What to click in the Linux installer. The app shows Steps as a numbered list
 # and Notes underneath; text between ** is shown in a heavier weight. $Place is the
 # saved state, which says where Linux is going; without it, that's next to C:.
+# Windows' EFI partition as a Linux installer shows it: CachyOS's lists it as /dev/nvme0n1p1 and calls it Windows
+# Boot Manager, others EFI System Partition. Its size and FAT32 are what they all show. And the installer partition,
+# which is FAT32 too, so it doesn't get picked instead.
+function Get-EspWords($Place) {
+    $esp = try { Get-WindowsEsp } catch { $null }
+    $mb = if ($esp -and $esp.Size) { [int][math]::Round($esp.Size / 1MB) } else { $null }
+    $what = if ($mb) { "the **$mb MiB FAT32** partition" } else { "Windows' small **FAT32** EFI partition" }
+    $installer = @($Place.Partitions | Where-Object { $_ -and $_.Role -eq 'installer' } | Select-Object -First 1)
+    $not = if ($installer -and $installer[0].Size) { " Not the $([int][math]::Round($installer[0].Size / 1GB)) GB **$InstallerLabel** one, which the installer is running from." } else { " Not **$InstallerLabel**, which the installer is running from." }
+    "$what, usually first in the list. Some installers call it **EFI System Partition** or **Windows Boot Manager**.$not"
+}
+
 function Get-Steps($Distro, [int]$LinuxGB, $Place) {
     if ($Place.FullDisk) { return Get-FullDiskSteps $Distro $Place }
     $otherDisk = $Place.OnWindowsDisk -eq $false
@@ -133,6 +145,7 @@ function Get-Steps($Distro, [int]$LinuxGB, $Place) {
         if ($Distro.ManualExtra) { $steps += $Distro.ManualExtra }
         $steps += "Don't choose **Erase disk**. The installer is running from this drive."
     }
+    $steps = @($steps | ForEach-Object { $_ -replace '\{ESP\}', (Get-EspWords $Place) })
     $notes = @('If the PC starts Windows again or shows a security error, turn off Secure Boot in the BIOS, then open hop and restart again.')
     if ($own.Notes) { $notes += @($own.Notes | ForEach-Object { $_ -replace '\{DISK\}', "$($Place.DiskName) ($($Place.DiskGB) GB)" }) }
     if ($otherDisk) { $notes += 'If it stops at a **grub>** prompt, turn off **Fast Boot** in the BIOS, because it can hide a second drive. Hold the power button to get back to Windows.' }

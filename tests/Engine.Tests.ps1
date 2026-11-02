@@ -1600,6 +1600,24 @@ Describe 'Your own copy of a system hop knows' {
     }
 }
 
+Describe 'Naming the EFI partition the way installers show it' {
+    It 'gives its size and FAT32, and warns off the installer partition' {
+        Mock Get-WindowsEsp { [pscustomobject]@{ Size = [int64]200MB } }
+        $words = Get-EspWords ([pscustomobject]@{ Partitions = @([pscustomobject]@{ Role = 'installer'; Size = [int64]4GB }) })
+        $words | Should -BeLike '*200 MiB FAT32*Windows Boot Manager*Not the 4 GB*HOPINSTALL*'
+    }
+    It 'still says something useful when the size is unknown' {
+        Mock Get-WindowsEsp { throw 'no' }
+        Get-EspWords $null | Should -BeLike '*FAT32*EFI*'
+    }
+    It 'leaves no placeholder in CachyOS''s steps' {
+        Mock Get-WindowsEsp { [pscustomobject]@{ Size = [int64]200MB } }
+        $text = (Get-Steps (Get-Catalog | Where-Object Id -eq 'cachyos') 350 ([pscustomobject]@{ OnWindowsDisk = $true })).Steps -join ' '
+        $text | Should -BeLike '*200 MiB FAT32*Keep*/boot/efi*'
+        $text | Should -Not -BeLike '*{ESP}*'
+    }
+}
+
 Describe 'Steps with no install behind them' {
     It 'refuses rather than make them up' {
         Mock Read-State { $null }

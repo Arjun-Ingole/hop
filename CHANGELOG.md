@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- The steps for Debian, CachyOS and Arch now find Windows' EFI partition by its size and FAT32, as every installer shows it. CachyOS lists it as /dev/nvme0n1p1 or Windows Boot Manager, never "EFI System Partition", and HOPINSTALL is FAT32 too.
+
 - When an ordinary file limits the shrink, Make room tries to move it too. Something usually keeps a file like that in place, such as the app using it, so this may not work. If it doesn't, hop now names the full path and says what to do.
 
 ## 0.3.2 - 2026-11-02
