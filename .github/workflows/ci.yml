@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'probe/omarchy45-3']
     paths-ignore: ['**.md', 'docs/**', 'site/**', 'LICENSE']
   pull_request:
     paths-ignore: ['**.md', 'docs/**', 'site/**', 'LICENSE']
