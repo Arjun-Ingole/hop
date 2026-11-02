@@ -327,7 +327,7 @@ def read_words(path):
         out = subprocess.run(['tesseract', tmp, '-', '--psm', '11', 'tsv'], capture_output=True, text=True).stdout
         for row in out.splitlines()[1:]:
             cols = row.split('\t')
-            if len(cols) < 12 or not cols[11].strip() or float(cols[10]) < 35:
+            if len(cols) < 12 or not cols[11].strip() or float(cols[10]) < 20:
                 continue
             left, top, w, h = (int(c) / 2 for c in cols[6:10])
             word = Word(cols[11].strip(), left, top, w, h)
@@ -518,10 +518,16 @@ BOTTOM_RIGHT = (0.35, 0.6, 1.0, 1.0)
 
 def click_next(vm, screen, label='Next'):
     button = screen.find(label, exact=True, pick='right', region=BOTTOM_RIGHT)
-    if not button:
-        return False
-    vm.click_on(button, label)
-    return True
+    if button:
+        vm.click_on(button, label)
+        return True
+    # Tesseract doesn't always read it, with its underlined letter, but it's always between Back and Cancel.
+    back = screen.find('Back', exact=True, pick='right', region=BOTTOM_RIGHT)
+    cancel = screen.find('Cancel', exact=True, pick='right', region=BOTTOM_RIGHT)
+    if back and cancel and abs(back.y - cancel.y) < 10 and cancel.x - back.x > 100:
+        vm.click((back.x + cancel.x) / 2, cancel.y, f'between Back and Cancel, for {label}')
+        return True
+    return False
 
 
 def drive(vm, distro, state):
@@ -562,15 +568,24 @@ def drive(vm, distro, state):
             once('finished')
             return
         if installing:
+            if screen.has('Continue with installation', 'overview of what will happen') and time.time() - started_install > 90:
+                raise RuntimeError('The install never started:\n' + text)
             if time.time() - installing > 60 and same == 0:
                 note('Installing: ' + ' | '.join(screen.lines_with('%', 'Install', 'Running', 'Unpack', 'job', 'package')[:4]))
                 installing = time.time()
             time.sleep(10)
             continue
-        if screen.has('Install now') and not done.get('confirm'):
+        if screen.has('Install now', 'Continue with installation', 'about to make changes') and not done.get('confirm'):
             once('confirm')
-            vm.click_on(screen.find('Install now'), 'Install now')
-            installing = time.time()
+            button = screen.find('Install now') or screen.find('now', exact=True, pick='right')
+            if button:
+                vm.click_on(button, 'Install now')
+            else:
+                back = screen.find('Go back', pick='right')
+                if not back:
+                    raise RuntimeError('No Install now:\n' + text)
+                vm.click(back.left - 70, back.y, 'left of Go back, for Install now')
+            installing = started_install = time.time()
             continue
         if screen.has('smaller than recommended', 'may fail to start', 'configured incorrectly', 'must be at least') and done.get('manual') and not done.get('summary'):
             # Step: "If the installer then says this partition is small, click OK".
@@ -588,7 +603,7 @@ def drive(vm, distro, state):
             acted = time.time()
             time.sleep(3)
             continue
-        if screen.has('Summary') and screen.find('Install', exact=True, pick='right', region=BOTTOM_RIGHT) and done.get('users'):
+        if screen.has('overview of what will happen') and done.get('users') and not done.get('summary'):
             once('summary')
             vm.look('summary')
             click_next(vm, screen, 'Install')
