@@ -268,7 +268,7 @@ def tree_hashes_mounted(loop):
 # --- Running it ----------------------------------------------------------------------
 
 class Vm:
-    def __init__(self, memory_gb):
+    def __init__(self, memory_gb, extra=()):
         self.qmp_path = os.path.join(WORK, 'qmp.sock')
         self.serial_path = os.path.join(WORK, 'serial.sock')
         for path in (self.qmp_path, self.serial_path):
@@ -286,7 +286,7 @@ class Vm:
                 '-device', 'nvme,drive=os,serial=HOP0001',
                 '-chardev', f'socket,id=ser0,path={self.serial_path},server=on,wait=off,logfile={OUT}/serial.log,logappend=on',
                 '-serial', 'chardev:ser0',
-                '-qmp', f'unix:{self.qmp_path},server=on,wait=off']
+                '-qmp', f'unix:{self.qmp_path},server=on,wait=off', *extra]
         log('$ ' + ' '.join(argv))
         self.qemu = subprocess.Popen(argv)
         for _ in range(100):
