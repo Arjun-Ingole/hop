@@ -679,6 +679,26 @@ Describe 'Get-IsoKernelPath' {
         Set-Content "$iso\boot\grub2\grub.cfg" "menuentry 'a' {`n`tlinux (`$root)/boot/x86_64/loader/linux quiet`n}"
         Get-IsoKernelPath $iso | Should -Be "$iso\boot\x86_64\loader\linux"
     }
+    It 'reads Omarchy 4.5''s kernel through the variable its menu sets first, not the one for Macs' {
+        Set-Content "$iso\boot\grub\grub.cfg" @'
+set live_kernel=linux-omarchy
+if [ -f '/arch/boot/x86_64/vmlinuz-linux-t2' ]; then
+            if [ "${sys_vendor}" == 'Apple Inc.' ]; then
+                set live_kernel=linux-t2
+            fi
+fi
+menuentry "Omarchy (x86_64, ${archiso_platform})" --id 'archlinux' {
+    set gfxpayload=keep
+    linux /arch/boot/x86_64/vmlinuz-${live_kernel} archisobasedir=arch archisosearchuuid=2026-11-02-03-43-50-00 copytoram=n quiet splash
+    initrd /arch/boot/x86_64/initramfs-${live_kernel}.img
+}
+'@
+        Get-IsoKernelPath $iso | Should -Be "$iso\arch\boot\x86_64\vmlinuz-linux-omarchy"
+    }
+    It 'leaves a variable the menu never sets, so the kernel is not found' {
+        Set-Content "$iso\boot\grub\grub.cfg" 'linux /k-${unknown} quiet'
+        Get-IsoKernelPath $iso | Should -Be "$iso\k-`${unknown}"
+    }
 }
 
 Describe 'Boot config' {
@@ -888,8 +908,10 @@ Describe 'Read-Iso' {
             $iso.InstallerGB | Should -Be 4
         }
         It 'puts 4.5''s root image next to its live image, where its installer looks, and the kernel on FAT32' {
+            # Its menu names the kernel through a variable, as the real one does.
+            $menu45 = "set live_kernel=linux-omarchy`nmenuentry 'Omarchy' {`n    linux /arch/boot/x86_64/vmlinuz-`${live_kernel} archisobasedir=arch archisosearchuuid=2026-11-02-03-43-50-00 copytoram=n quiet`n}"
             New-IsoFiles @{ 'EFI\BOOT\BOOTX64.EFI' = 'x'; 'arch\x86_64\airootfs.sfs' = 'x'; 'arch\x86_64\airootfs.sha512' = 'x'; 'arch\x86_64\omarchy-root.img.zst' = 'x' * 2000
-                'arch\x86_64\omarchy-root.img.zst.sha256' = 'x'; 'arch\boot\x86_64\vmlinuz-linux-t2' = 'x'; 'arch\pkglist.x86_64.txt' = 'x'; 'boot\grub\grub.cfg' = $menu }
+                'arch\x86_64\omarchy-root.img.zst.sha256' = 'x'; 'arch\boot\x86_64\vmlinuz-linux-omarchy' = 'x'; 'arch\pkglist.x86_64.txt' = 'x'; 'boot\grub\grub.cfg' = $menu45 }
             $iso = Read-Iso 'a.iso' $omarchy
             @($iso.LiveFiles.Name | Sort-Object) | Should -Be @('airootfs.sfs', 'airootfs.sha512', 'omarchy-root.img.zst', 'omarchy-root.img.zst.sha256')
             $iso.LiveBytes | Should -BeGreaterThan 2000

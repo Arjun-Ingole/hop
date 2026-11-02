@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 
 $engine = Join-Path $PSScriptRoot '../../../engine'
 $Sync = [hashtable]::Synchronized(@{ Log = [Collections.ArrayList]::Synchronized((New-Object Collections.ArrayList)); Version = 'vm' })
-foreach ($name in 'Common', 'Catalog', 'Iso', 'Boot') { . (Join-Path $engine "$name.ps1") }
+foreach ($name in 'Common', 'Catalog', 'Iso', 'Boot', 'SecureBoot') { . (Join-Path $engine "$name.ps1") }
 $distro = Get-Distro 'omarchy' ''
 
 switch ($Action) {
@@ -23,6 +23,7 @@ switch ($Action) {
         }
         $bytes = [int64]($rest | Measure-Object -Property Length -Sum).Sum
         $liveBytes = [int64]($live | Measure-Object -Property Length -Sum).Sum
+        $kernel = Get-IsoKernelPath $root
         $untried = $distro.UntriedFile -and (Test-Path -LiteralPath (Join-Path $root ($distro.UntriedFile -replace '\\', '/')))
         [ordered]@{
             InstallerGB = Get-InstallerGB $bytes
@@ -33,6 +34,9 @@ switch ($Action) {
             TooBig      = @($rest | Where-Object Length -ge 4GB | ForEach-Object { $_.FullName.Substring($root.Length).TrimStart('/') })
             Untried     = [bool]$untried
             BootKnown   = Test-BootConfigKnown $distro $root
+            # Read-Iso refuses a menu whose kernel it can't find, as it would if the kernel were a link.
+            Kernel      = $kernel
+            KernelFound = [bool]($kernel -and (Test-Path -LiteralPath ($kernel -replace '\\', '/')))
             FullDiskUntried = [bool]($distro.FullDisk.UntriedFile -and (Test-Path -LiteralPath (Join-Path $root ($distro.FullDisk.UntriedFile -replace '\\', '/'))))
         } | ConvertTo-Json -Depth 3
     }

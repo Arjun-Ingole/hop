@@ -109,10 +109,59 @@ above without them, so that exact setup hasn't been repeated.
 
 ## Omarchy, in a virtual PC
 
-On a GitHub Actions runner, in QEMU with OVMF, on an 80 GB NVMe disk: a 100 MB EFI partition, an NTFS "C:", 1 GB FAT32 `HOPINSTALL`, 8 GB `HOPLIVE`, then
+### 4.5.0-rc3, and 4.0.6 again
+
+`.github/workflows/omarchy-vm.yml` runs `tools/vm/omarchy/omarchyvm.py` on a GitHub Actions runner when a `probe/omarchy` branch is pushed.
+In QEMU with OVMF and KVM, on an 80 GB NVMe disk: a 100 MB EFI partition with stand-ins for Windows' files, a 28 GB NTFS "C:", then
+`HOPINSTALL` and `HOPLIVE` sized by the engine's own `Get-InstallerGB` and `Get-LiveGB` and filled as `Copy-Installer` and `Copy-LiveFiles`
+fill them, then 40.9 GB free. The engine's real `Update-BootConfig` and `Copy-EspLoader` ran under pwsh. The firmware started `Boot0042`
+through `BootNext`, written as hop writes them, with a stand-in "Windows Boot Manager" first in `BootOrder`. The test then adds
+`systemd.debug_shell=ttyS0` to the live system's menu, after hop's edits, for a root shell on the serial port. Through it, a script read
+the real wizard on `tty1` from `/dev/vcsu1` and pressed keys in QEMU, choosing the disk, **Free space install** and the rest as the steps
+say. It's each ISO by its checksum. **Green proves nothing by itself: read `report.txt` and look at the screens.**
+
+| ISO | Partitions | Encrypted | Memory | Installed in, by its own count | First start |
+| --- | --- | --- | --- | --- | --- |
+| 4.5.0-rc3 | 4 GB `HOPINSTALL`, 7 GB `HOPLIVE` with the 2.3 GB live image and the 3.9 GB root image | No | 8 GB | 29 and 24 seconds | Login screen, `Reached target Graphical Interface` |
+| 4.5.0-rc3 | The same | Yes, with the password typed at its prompt | 8 GB | 32 and 26 seconds | Omarchy's desktop, which logs in by itself after that password, `session opened for user hop` |
+| 4.5.0-rc3 | The same | No | 4 GB | 27 and 21 seconds | Login screen, `Reached target Graphical Interface` |
+| 4.0.6 | 4 GB `HOPINSTALL`, 7 GB `HOPLIVE` | No | 8 GB | 2 minutes 5 seconds, and 2 minutes 3 | Login screen, `Reached target Graphical Interface` |
+
+Each ran twice, with the same results. In all eight, with hop's menu as it is now:
+
+- **The disk was offered.** The service hop's arguments make ran its five commands and finished. `findmnt` found nothing at
+  `/run/archiso/bootmnt`, and `HOPLIVE` was at `/run/archiso/bootmnt/arch`. The disk list said
+  `/dev/nvme0n1 (  80G) - QEMU NVMe Ctrl [vfat, ntfs, vfat, exfat(/run/archiso/bootmnt/arch)]`, and its screen said
+  `Install Omarchy in the 40.9GB of free space.`
+- **4.5 found its image there.** Its log said `writing root image (3743 MiB from /run/archiso/bootmnt/arch/x86_64/omarchy-root.img.zst)`,
+  and its two checks of the medium were `active` before the install.
+- **It started from the disk.** After **Reboot Now**, the firmware said `BdsDxe: loading Boot0008 "Limine"`, from Omarchy's own new 2 GB EFI
+  partition, which `BootOrder` had first. The installed system's journal shows the rest, with `VERSION_ID="4.5.0rc3"` or `"4.0.6"`, and its
+  kernel's line had none of hop's or the test's words.
+- **Nothing else changed.** The NTFS, `HOPINSTALL` and `HOPLIVE` partitions were byte for byte the same after the restart. Windows' EFI files
+  and `\EFI\hop` were unchanged, and nothing new was on that partition.
+
+Each check is from the serial log, the disk image or the installed system's journal, not the job's result. The runs are
+[41448482545](https://github.com/Arjun-Ingole/hop/actions/runs/41448482545) and
+[41450898216](https://github.com/Arjun-Ingole/hop/actions/runs/41450898216). An earlier one,
+[41446241418](https://github.com/Arjun-Ingole/hop/actions/runs/41446241418), installed 4.5.0-rc3 unencrypted and 4.0.6 the same way.
+
+**What hop's first try showed:** with `systemd.run=/bin/sh -c '...'`, GRUB passed the quotes on as `\'`, the shell stopped at
+`unexpected EOF`, the disk stayed behind `/run/archiso/bootmnt`, and the disk list was empty: `no options provided`. So each command has its
+own `systemd.run=`.
+
+**What this doesn't show:** 4.5.0-rc3 is a release candidate, and the final 4.5 hasn't been tried, so hop refuses it until it has. Replacing
+Windows and a second disk weren't tried with 4.5, and hop refuses both for it. The test's root shell is the one thing in the live system hop
+doesn't put there. The power button didn't turn the installed system off, so the test stopped it after seven minutes. A screenshot of the
+encrypted run's desktop six minutes later was black, and what turned the screen off wasn't checked. Otherwise the same as below:
+`HOPLIVE` made by `mkfs.exfat`, no real Windows, no `limine-scan`, Secure Boot off, and hop's own screens and Undo not run.
+
+### 4.0.6, October 2026
+
+The harness for these runs was lost. On a GitHub Actions runner, in QEMU with OVMF, on an 80 GB NVMe disk: a 100 MB EFI partition, an NTFS "C:", 1 GB FAT32 `HOPINSTALL`, 8 GB `HOPLIVE`, then
 free space. The menu went through the engine's `Update-BootConfig`, and started through `Boot0042` and `BootNext` as hop writes them. It's the
 real 4.0.6 ISO, by its checksum, and its real wizard on `tty1`: a script pressed keys and read `/dev/vcs1` back over the serial port. It chose the disk,
-**Free space install** and the rest, as the steps say.
+**Free space install** and the rest, as the steps say. hop's menu then only had `umount -l`.
 
 | Second partition | Letting go of the disk | Encrypted | Memory | Installed in | First start |
 | --- | --- | --- | --- | --- | --- |

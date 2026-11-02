@@ -160,8 +160,10 @@ def prepare(args):
     log(json.dumps(sizes, indent=1))
     note(f'ISO {os.path.basename(args.iso)}: HOPINSTALL {sizes["InstallerGB"]} GB for {sizes["Bytes"]} bytes, '
          f'HOPLIVE {sizes["LiveGB"]} GB for {sizes["LiveBytes"]} bytes: {", ".join(sizes["LiveFiles"])}')
-    if sizes['TooBig'] or sizes['Untried'] or not sizes['BootKnown']:
-        note(f'hop would refuse this ISO: too big {sizes["TooBig"]}, untried {sizes["Untried"]}, boot known {sizes["BootKnown"]}')
+    note(f'The kernel its menu starts, as Read-Iso finds it: {sizes["Kernel"]}, there: {sizes["KernelFound"]}')
+    # No kernel at all means pwsh couldn't read the menu here, which says nothing about Windows.
+    if sizes['TooBig'] or sizes['Untried'] or not sizes['BootKnown'] or (sizes['Kernel'] and not sizes['KernelFound']):
+        note(f'hop would refuse this ISO: too big {sizes["TooBig"]}, untried {sizes["Untried"]}, boot known {sizes["BootKnown"]}, kernel found {sizes["KernelFound"]}')
         sys.exit(1)
     note(f'Replacing Windows with this ISO would be refused as untried: {sizes["FullDiskUntried"]}')
     if args.full_disk and sizes['FullDiskUntried']:
