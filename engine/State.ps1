@@ -175,7 +175,8 @@ function Read-PartitionHead($Partition) { [Hop.DiskProbe]::ReadHead($Partition.D
 function Get-RecordedPartitions($State, [string[]]$Roles) {
     $recorded = @($State.Partitions | Where-Object { $_.Role -in $Roles })
     if (-not $recorded.Count) { return }
-    $neverStarted = -not $State.Copied -and -not $State.RestartedAt -and $null -eq $State.BootNumber
+    # Only when the record says so: missing from an older file doesn't count.
+    $neverStarted = $State.Copied -eq $false -and -not $State.RestartedAt -and $null -eq $State.BootNumber
     $disk = Get-StateDisk $State
     if ($null -eq $disk) { return }
     foreach ($partition in @(Get-Partition -DiskNumber $disk -ErrorAction SilentlyContinue)) {
