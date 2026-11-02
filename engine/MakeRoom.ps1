@@ -78,6 +78,28 @@ function Get-RoomGaveUpWarning {
     "**Make room couldn't turn $what back on.** Turn it on again in Windows' settings. Your files aren't affected."
 }
 
+# What a person needs to hear about Make room as hop opens, or nothing. A damaged record can't be acted on, so the task
+# that would keep reopening hop for it goes now, and the record stays until they've read this.
+function Get-RoomNotice {
+    if (Test-RoomFileDamaged) {
+        Unregister-ResumeTask
+        return "hop can't read what Make room turned off. Check that hibernation and the paging file are how you want them in Windows' settings."
+    }
+    $file = "$RoomPath.gave-up"
+    if (Test-Path -LiteralPath $file) {
+        "Make room couldn't turn $((Get-Content -LiteralPath $file -Raw).Trim()) back on. Turn it on again in Windows' settings. Your files aren't affected."
+    }
+}
+
+# Once it's been read.
+function Clear-RoomNotice {
+    if (Test-RoomFileDamaged) {
+        Unregister-RunAfterRestart
+        Remove-Item -LiteralPath $RoomPath -Force -ErrorAction SilentlyContinue
+    }
+    Remove-Item -LiteralPath "$RoomPath.gave-up" -Force -ErrorAction SilentlyContinue
+}
+
 function Get-RoomPhase {
     $state = Read-RoomState
     if (-not $state) { return }
@@ -277,7 +299,7 @@ function Set-RoomTasks([string]$Exe) {
     Register-ScheduledTask -TaskName $RestoreTaskName -Force -Settings $settings `
         -Action (New-ScheduledTaskAction -Execute $Exe -Argument $RestoreArgument) `
         -Trigger $trigger `
-        -Principal (New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest) | Out-Null
+        -Principal (New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -LogonType ServiceAccount -RunLevel Highest) | Out-Null
 }
 
 function Remove-RoomTask([string]$Name) {

@@ -32,6 +32,13 @@ namespace Hop
                     reading = false;
                     await engine.RestoreRoomSettingsAsync();
                 }
+                if (startup.RoomNotice != null)
+                {
+                    EndWork();
+                    Arrange(new[] { new[] { Run.Gray("Make room"), Run.Black("needs a look.") } }, startup.RoomNotice, Secondary, null, 0);
+                    Footer(null, null, "Continue", () => _ = AfterRoomNoticeAsync());
+                    return;
+                }
                 reading = true;
                 await ChooseFirstTargetAsync();
             }
@@ -48,6 +55,21 @@ namespace Hop
             linuxGB = Math.Max(MinLinuxGB, Math.Min(max, Math.Max(60, (max / 2) / 10 * 10)));
 
             await ShowStartScreenAsync();
+        }
+
+        async Task AfterRoomNoticeAsync()
+        {
+            BeginReading(new[] { new[] { Run.Gray("Checking"), Run.Black("this PC") } }, "Looking at the drive and the startup menu.");
+            try
+            {
+                await engine.ClearRoomNoticeAsync();
+                await ChooseFirstTargetAsync();
+            }
+            catch (Exception ex)
+            {
+                EndWork();
+                ShowBlocked(Describe(ex));
+            }
         }
 
         async Task ShowStartScreenAsync()

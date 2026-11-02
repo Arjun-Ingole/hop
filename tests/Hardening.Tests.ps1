@@ -388,6 +388,32 @@ Describe 'Putting Make room back' {
     }
 }
 
+Describe 'Telling someone about Make room as hop opens' {
+    BeforeEach {
+        $script:RoomPath = Join-Path $TestDrive 'notice.json'
+        Remove-Item "$script:RoomPath*" -ErrorAction SilentlyContinue
+        Mock Unregister-ResumeTask { }
+        Mock Unregister-RunAfterRestart { }
+    }
+    It 'says nothing when all is well' {
+        Get-RoomNotice | Should -BeNullOrEmpty
+    }
+    It 'stops reopening hop for a damaged record, and says so' {
+        Set-Content -LiteralPath $RoomPath -Value 'null'
+        Get-RoomNotice | Should -BeLike "*can't read what Make room turned off*"
+        Should -Invoke Unregister-ResumeTask -Times 1
+        Clear-RoomNotice
+        Test-Path -LiteralPath $RoomPath | Should -BeFalse
+    }
+    It 'says what it couldn''t turn back on, until it has been read' {
+        Set-Content -LiteralPath "$RoomPath.gave-up" 'hibernation'
+        Get-RoomNotice | Should -BeLike "*couldn't turn hibernation back on*"
+        Get-RoomNotice | Should -BeLike "*hibernation*"
+        Clear-RoomNotice
+        Get-RoomNotice | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'Undo with Make room''s settings still off' {
     BeforeAll { $RoomPath = Join-Path $TestDrive 'make-room.json' }
     BeforeEach {
@@ -563,9 +589,9 @@ Describe 'diskpart' {
         Mock Start-Sleep { }
         Mock Remove-Partition { throw 'protected' }
         $script:piped = @()
-        Mock Invoke-Diskpart { $script:piped = $Commands; 'its output' }
+        Mock Invoke-Diskpart { $script:piped = $Commands; if ($Commands -contains 'detail partition') { 'Offset in Bytes: 1048576' } else { 'its output' } }
         $script:looks = 0
-        $partition = [pscustomobject]@{ DiskNumber = 1; PartitionNumber = 2; Guid = '{esp}' }
+        $partition = [pscustomobject]@{ DiskNumber = 1; PartitionNumber = 2; Guid = '{esp}'; Offset = [int64]1048576 }
     }
     It 'gets its commands on its input, with no file' {
         Mock Get-Partition { if ($script:looks++ -eq 0) { $partition } }
@@ -573,6 +599,12 @@ Describe 'diskpart' {
         Mock New-TemporaryFile { throw 'no files' }
         Remove-PartitionByGuid '{esp}' 1
         $script:piped | Should -Be @('select disk 1', 'select partition 2', 'delete partition override', 'exit')
+    }
+    It 'deletes nothing when diskpart''s partition starts somewhere else' {
+        Mock Get-Partition { $partition }
+        Mock Invoke-Diskpart { $script:piped = $Commands; 'Offset in Bytes: 99999999999' }
+        { Remove-PartitionByGuid '{esp}' 1 } | Should -Throw '*deleted nothing*'
+        $script:piped | Should -Not -Contain 'delete partition override'
     }
     It 'reports failure when the partition is still there, whatever its exit code says' {
         Mock Get-Partition { $partition }
@@ -583,6 +615,10 @@ Describe 'diskpart' {
 Describe 'The real diskpart' {
     It 'reads commands from its input, here only listing disks' -Skip:(-not $elevated) {
         Invoke-Diskpart @('list disk', 'exit') | Should -Match 'Disk 0'
+    }
+    It 'shows where a partition starts, as hop checks before deleting with it' -Skip:(-not $elevated) {
+        $c = Get-Partition -DriveLetter $env:SystemDrive.TrimEnd(':')
+        Invoke-Diskpart @("select disk $($c.DiskNumber)", "select partition $($c.PartitionNumber)", 'detail partition', 'exit') | Should -Match "(?<![0-9])$([int64]$c.Offset)(?![0-9])"
     }
 }
 

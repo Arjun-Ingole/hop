@@ -2484,6 +2484,7 @@ Describe 'The copy the tasks run' {
         $resume.Trigger.UserId | Should -Be ([Security.Principal.WindowsIdentity]::GetCurrent().Name)
         $restore = $script:tasks[$RestoreTaskName]
         $restore.Action.Arguments | Should -Be '--restore-room'
-        $restore.Principal.UserId | Should -Be 'SYSTEM'
+        # By its SID, which reads the same in every language Windows comes in.
+        $restore.Principal.UserId | Should -Be 'S-1-5-18'
     }
 }

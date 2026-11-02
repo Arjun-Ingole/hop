@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Omarchy 4.5.0-rc3, from your own ISO with the name it's downloaded with. Its new installer reads a system image from the install media, which hop now keeps where it looks. Tested installing next to Windows in a virtual PC, with and without encryption.
+
+### Fixed
+
+- New partitions that start offline, as on some PCs, are brought online. Formatting them failed with "Invalid Parameter".
+- Undo after a failed install removes the partitions it just made, even over old data, and says if one is left.
+- Make room moves NTFS system files even when defrag used up its time.
+- Your own ISO of Omarchy, Arch, CachyOS, Fedora, Ultramarine or Debian is accepted, by its original name.
+- hop says when BitLocker is encrypting or decrypting C:, and when it's on for a drive that's short of room.
+- A damaged Make room record no longer reopens hop at every sign-in, and hop says so, and what Make room couldn't turn back on, as it opens.
+- hop checks which partition diskpart has selected before deleting with it.
+- Make room's safety task names SYSTEM by its SID, so it registers on Windows in any language.
+
 ## 0.3.1 - 2026-11-02
 
 ### Added

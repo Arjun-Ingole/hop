@@ -91,6 +91,7 @@ namespace Hop
         public List<DriveChoice> Drives;
         public List<DownloadDrive> DownloadDrives;
         public string RoomLetter;       // the drive Make room is working on
+        public string RoomNotice;       // something about Make room to say as hop opens, once
         public string StateLetter;      // the drive a setup took its space from, if it took any
         public bool StateDiskMissing;   // that setup's disk isn't connected
         public string[] Leftovers;      // what Clean up would delete, in words
@@ -314,6 +315,7 @@ namespace Hop
                     IsDefault = Get<bool>(o, "IsDefault"),
                 }).ToList(),
                 RoomLetter = Get<string>(info, "RoomLetter"),
+                RoomNotice = Get<string>(info, "RoomNotice"),
                 StateLetter = Get<string>(info, "StateLetter"),
                 StateDiskMissing = Get<bool>(info, "StateDiskMissing"),
                 PreparedDistro = state == null ? null : Get<string>(state, "Distro"),
@@ -418,6 +420,8 @@ namespace Hop
 
         public Task ClearRestorePointsAsync(string letter) =>
             InvokeAsync("Clear-RestorePoints", new Hashtable { ["Drive"] = letter ?? "" });
+
+        public Task ClearRoomNoticeAsync() => InvokeAsync("Clear-RoomNotice");
 
         public Task RestoreRoomSettingsAsync() => InvokeAsync("Restore-RoomSettings");
 

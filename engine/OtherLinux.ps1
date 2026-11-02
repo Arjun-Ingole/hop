@@ -172,6 +172,11 @@ function Remove-PartitionByGuid([string]$Guid, [int]$DiskNumber) {
     } catch { }
     # Windows protects EFI partitions; diskpart can still delete one that isn't Windows' own.
     # On its input, because a script in the temp folder could be changed by anything this user runs.
+    # diskpart numbers partitions its own way. Its details have to show where this one starts, or it isn't this one.
+    $detail = Invoke-Diskpart @("select disk $($partition.DiskNumber)", "select partition $($partition.PartitionNumber)", 'detail partition', 'exit')
+    if ($detail -notmatch "(?<![0-9])$([int64]$partition.Offset)(?![0-9])") {
+        throw "hop couldn't check which partition diskpart would delete, so it deleted nothing. Delete partition $($partition.PartitionNumber) in Disk Management if you're sure it isn't needed."
+    }
     $output = Invoke-Diskpart @("select disk $($partition.DiskNumber)", "select partition $($partition.PartitionNumber)", 'delete partition override', 'exit')
     # This way diskpart doesn't report failure in its exit code, so what counts is whether it's gone. Windows can take a moment to notice.
     for ($i = 0; $i -lt 5; $i++) {

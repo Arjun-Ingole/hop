@@ -158,6 +158,7 @@ function Get-StartupInfo {
             BlockerKind = Get-BlockerKind $blocker
         }
         RoomPhase = Get-RoomPhase
+        RoomNotice = try { Get-RoomNotice } catch { Write-Log "Could not check Make room's record: $($_.Exception.Message)"; $null }
         Other     = $other
         Status    = $status
         Leftovers = @(if ($status -ne 'none') { try { Get-LeftoverList | Select-Object -Unique } catch { Write-Log "Could not list what hop left: $($_.Exception.Message)" } })
