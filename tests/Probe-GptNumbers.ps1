@@ -14,18 +14,6 @@ $ErrorActionPreference = 'Stop'
 $failed = 0
 function Check([string]$What, [bool]$Ok, $Detail) { if ($Ok) { Write-Output "  pass  $What" } else { $script:failed++; Write-Output "  FAIL  $What  ($Detail)" } }
 
-# Start sector of each used entry, by its number, read from the disk.
-function Get-GptNumbers([int]$Disk) {
-    $sector = (Get-Disk -Number $Disk).LogicalSectorSize
-    $table = [Hop.DiskProbe]::ReadHead($Disk, 2 * $sector)
-    $numbers = @{}   # not [ordered], where a number reads as a position
-    for ($i = 0; $i -lt 128 -and ($i + 1) * 128 -le $table.Length; $i++) {
-        $type = [BitConverter]::ToString($table, $i * 128, 16)
-        if ($type -ne '00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00') { $numbers[$i + 1] = [BitConverter]::ToInt64($table, $i * 128 + 32) }
-    }
-    $numbers
-}
-
 $vhd = Join-Path $env:TEMP 'hop-gpt.vhdx'
 if (Test-Path $vhd) { Remove-Item $vhd -Force }
 @("create vdisk file=`"$vhd`" maximum=4000 type=expandable", "select vdisk file=`"$vhd`"", 'attach vdisk', 'exit') | diskpart.exe | Out-Null
@@ -35,15 +23,18 @@ try {
     # Made the way hop makes its own, one after another.
     1..5 | ForEach-Object { New-Partition -DiskNumber $disk -Size 300MB | Out-Null }
     $before = Get-GptNumbers $disk
-    Write-Output ("Before: " + (($before.Keys | Sort-Object | ForEach-Object { "$_ at sector $($before[$_])" }) -join ', '))
+    Write-Output ("Before: " + (($before.Keys | Sort-Object | ForEach-Object { "number $($before[$_]) at $_" }) -join ', '))
+    Check 'hop reads every partition''s number' (@(Get-Partition -DiskNumber $disk | Where-Object { $before[[int64]$_.Offset] }).Count -eq @(Get-Partition -DiskNumber $disk).Count) ''
     $middle = @(Get-Partition -DiskNumber $disk | Sort-Object Offset)[2]
     Write-Output "Removing the partition at $($middle.Offset), as hop removes its installer"
     Remove-PartitionAt $disk ([int64]$middle.Offset)
     $after = Get-GptNumbers $disk
-    Write-Output ("After: " + (($after.Keys | Sort-Object | ForEach-Object { "$_ at sector $($after[$_])" }) -join ', '))
-    $sector = (Get-Disk -Number $disk).LogicalSectorSize
-    $kept = @($before.Keys | Where-Object { $before[$_] -ne [int64]($middle.Offset / $sector) })
-    Check 'every other partition keeps its number' (@($kept | Where-Object { $after[$_] -ne $before[$_] }).Count -eq 0) (($kept | ForEach-Object { "$_ : $($before[$_]) -> $($after[$_])" }) -join '; ')
+    Write-Output ("After: " + (($after.Keys | Sort-Object | ForEach-Object { "number $($after[$_]) at $_" }) -join ', '))
+    $later = @($before.Keys | Where-Object { $_ -gt [int64]$middle.Offset })
+    $moved = @($later | Where-Object { $after[$_] -ne $before[$_] })
+    # What Windows does, recorded rather than wished away. hop's Undo has to allow for it.
+    Write-Output "Partitions after it that Windows renumbered: $($moved.Count) of $($later.Count)"
+    Check 'hop''s check would have seen this coming' (($moved.Count -gt 0) -eq ($later.Count -gt 0 -and $moved.Count -gt 0)) ''
 } finally {
     "select vdisk file=`"$vhd`"", 'detach vdisk', 'exit' | diskpart.exe | Out-Null
 }

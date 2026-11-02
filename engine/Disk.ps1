@@ -115,6 +115,37 @@ function Get-DriveLetter($Partition) {
 
 # Partition numbers can shift once a partition is removed, and acting on a stale one could
 # delete Windows' recovery partition. So each is looked up again by where it starts.
+# Each partition's number in the GPT, by where it starts, read from the disk itself. Linux and GRUB name partitions
+# by these, as nvme0n1p6 and (hd0,gpt6), and Windows closes the gap when it removes one, so every later one moves down.
+function Get-GptNumbers([int]$Disk) {
+    $sector = [int64](Get-Disk -Number $Disk).LogicalSectorSize
+    $header = [Hop.DiskProbe]::ReadHead($Disk, $sector)
+    if ([Text.Encoding]::ASCII.GetString($header, 0, 8) -cne 'EFI PART') { throw 'There is no GPT on this disk.' }
+    $first = [BitConverter]::ToInt64($header, 72)
+    $count = [BitConverter]::ToUInt32($header, 80)
+    $size = [BitConverter]::ToUInt32($header, 84)
+    $table = [Hop.DiskProbe]::ReadHead($Disk, $first * $sector)
+    $numbers = @{}
+    for ($i = 0; $i -lt $count -and ($i + 1) * $size -le $table.Length; $i++) {
+        $used = $false
+        for ($b = 0; $b -lt 16; $b++) { if ($table[$i * $size + $b]) { $used = $true; break } }
+        if ($used) { $numbers[[int64]([BitConverter]::ToInt64($table, $i * $size + 32) * $sector)] = $i + 1 }
+    }
+    $numbers
+}
+
+# Whether taking these away would change the number of a Linux partition that stays, which can stop it starting.
+# Not being able to read the GPT counts as yes.
+function Test-RemovalRenumbersLinux($ToRemove, [int]$Disk) {
+    if (-not @($ToRemove).Count) { return $false }
+    $numbers = try { Get-GptNumbers $Disk } catch { Write-Log "Could not read the GPT: $($_.Exception.Message)"; return $true }
+    $lowest = @($ToRemove | ForEach-Object { $numbers[[int64]$_.Offset] } | Where-Object { $_ } | Sort-Object)[0]
+    if (-not $lowest) { return $true }
+    $going = @($ToRemove | ForEach-Object { [int64]$_.Offset })
+    $linux = @(Get-LinuxPartitions @(Get-Partition -DiskNumber $Disk -ErrorAction SilentlyContinue) | Where-Object { [int64]$_.Offset -notin $going })
+    @($linux | Where-Object { $numbers[[int64]$_.Offset] -gt $lowest }).Count -gt 0
+}
+
 function Get-PartitionAt([int]$DiskNumber, [int64]$Offset) {
     Get-Partition -DiskNumber $DiskNumber -ErrorAction SilentlyContinue | Where-Object { [int64]$_.Offset -eq $Offset } | Select-Object -First 1
 }

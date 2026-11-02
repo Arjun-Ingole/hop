@@ -1618,6 +1618,34 @@ Describe 'Naming the EFI partition the way installers show it' {
     }
 }
 
+Describe 'Removing the installer with Linux after it' {
+    BeforeEach {
+        $installer = [pscustomobject]@{ DiskNumber = 0; Offset = [int64]100GB; Size = [int64]4GB }
+        $linux = [pscustomobject]@{ DiskNumber = 0; Offset = [int64]104GB; Size = [int64]350GB }
+        Mock Get-Partition { $installer, $linux }
+        Mock Write-Log { }
+    }
+    It 'would renumber Linux, so it says so' {
+        Mock Get-GptNumbers { @{ [int64]100GB = 4; [int64]104GB = 6 } }
+        Mock Get-LinuxPartitions { $linux }
+        Test-RemovalRenumbersLinux @($installer) 0 | Should -BeTrue
+    }
+    It 'is fine when Linux comes before it, as Mint''s and Zorin''s partitions do' {
+        Mock Get-GptNumbers { @{ [int64]100GB = 7; [int64]104GB = 6 } }
+        Mock Get-LinuxPartitions { $linux }
+        Test-RemovalRenumbersLinux @($installer) 0 | Should -BeFalse
+    }
+    It 'is fine with no Linux left' {
+        Mock Get-GptNumbers { @{ [int64]100GB = 4 } }
+        Mock Get-LinuxPartitions { @() }
+        Test-RemovalRenumbersLinux @($installer) 0 | Should -BeFalse
+    }
+    It 'plays safe when the GPT can''t be read' {
+        Mock Get-GptNumbers { throw 'no' }
+        Test-RemovalRenumbersLinux @($installer) 0 | Should -BeTrue
+    }
+}
+
 Describe 'Steps with no install behind them' {
     It 'refuses rather than make them up' {
         Mock Read-State { $null }

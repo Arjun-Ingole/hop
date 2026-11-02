@@ -362,18 +362,28 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
     if ($state -and -not $InstallerOnly) {
         try { Remove-CasperPartition $state } catch { Write-Log "Could not remove the partition the live system made: $($_.Exception.Message)" }
     }
+    $roles = if ($InstallerOnly) { @('installer', 'live') } else { @('installer', 'live', 'root', 'boot') }
+    $leftovers = @(Get-RecordedPartitions $state $roles)
+    # With Linux staying, Windows taking a partition away renumbers Linux's after it, and GRUB then stops at
+    # "no such partition". So they stay, which does no harm.
+    $keepForLinux = $InstallerOnly -and (@($hopPartitions).Count -or $leftovers.Count) -and (Test-RemovalRenumbersLinux (@($hopPartitions | ForEach-Object { $_.Partition }) + $leftovers) ([int]@(@($hopPartitions | ForEach-Object { $_.Partition }) + $leftovers)[0].DiskNumber))
+    if ($keepForLinux) {
+        $gb = [int][math]::Round((@(@($hopPartitions | ForEach-Object { $_.Partition }) + $leftovers) | Measure-Object -Property Size -Sum).Sum / 1GB)
+        Write-Log 'Kept the installer partition: removing it would renumber the Linux partition after it.'
+        [void]$problems.Add("hop left its $gb GB installer partition, because Windows would renumber the Linux partition after it, and Linux wouldn't start. It does no harm, and Windows and Linux start as before.")
+        $hopPartitions = @(); $leftovers = @()
+    }
     foreach ($found in $hopPartitions) {
         Set-Status "Removing the $($found.Label) partition..."
         Remove-PartitionAt $found.Partition.DiskNumber $found.Partition.Offset
     }
-    $roles = if ($InstallerOnly) { @('installer', 'live') } else { @('installer', 'live', 'root', 'boot') }
-    foreach ($partition in @(Get-RecordedPartitions $state $roles)) {
+    foreach ($partition in $leftovers) {
         Set-Status 'Removing an unfinished partition...'
         Remove-PartitionAt $partition.DiskNumber $partition.Offset
     }
 
     # Only the disk can say they went.
-    foreach ($record in @($state.Partitions | Where-Object { $_ -and $_.Role -in $roles })) {
+    foreach ($record in @($state.Partitions | Where-Object { $_ -and $_.Role -in $roles -and -not $keepForLinux })) {
         $left = Get-PartitionAt (Get-StateDisk $state) ([int64]$record.Offset)
         if ($left -and [int64]$left.Size -eq [int64]$record.Size -and -not (Get-VolumeOf $left).FileSystemLabel) {
             [void]$problems.Add(('A {0:N0} GB partition hop made is still on the disk. You can delete it in Disk Management.' -f ($left.Size / 1GB)))

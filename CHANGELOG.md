@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- **Remove the installer could stop Linux starting.** Windows renumbers every partition after one it removes, and Linux and GRUB find partitions by number, so GRUB stopped at "no such partition". hop now keeps the installer partition when removing it would renumber Linux, and says so. Seen in a real GPT on a virtual disk.
+- Debian and CachyOS are no longer offered next to Windows, because nobody has seen either start afterwards. Debian can still replace Windows.
+
 - The steps for Debian, CachyOS and Arch now find Windows' EFI partition by its size and FAT32, as every installer shows it. CachyOS lists it as /dev/nvme0n1p1 or Windows Boot Manager, never "EFI System Partition", and HOPINSTALL is FAT32 too.
 
 - When an ordinary file limits the shrink, Make room tries to move it too. Something usually keeps a file like that in place, such as the app using it, so this may not work. If it doesn't, hop now names the full path and says what to do.
