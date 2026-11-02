@@ -527,6 +527,10 @@ def click_next(vm, screen, label='Next'):
     if back and cancel and abs(back.y - cancel.y) < 10 and cancel.x - back.x > 100:
         vm.click((back.x + cancel.x) / 2, cancel.y, f'between Back and Cancel, for {label}')
         return True
+    # Both installers put it about 90 pixels right of Back.
+    if back and back.x > screen.size[0] * 0.5:
+        vm.click(back.x + 90, back.y, f'right of Back, for {label}')
+        return True
     return False
 
 
@@ -656,9 +660,20 @@ def drive(vm, distro, state):
     raise RuntimeError('Calamares did not finish in time.')
 
 
-def field_right_of(vm, screen, label, what):
+FILE_SYSTEMS = ('btrfs', 'ext4', 'xfs', 'f2fs', 'zfs', 'fat32', 'unformatted')
+
+
+def file_system(screen):
+    """The dialog's File System line, told from the list's heading by the name of one in it."""
+    for match in screen.find_all('File System'):
+        if any(w.key in [canon(f) for f in FILE_SYSTEMS] for w in match.line if w.left > match.right):
+            return match
+    return screen.find('File System', colon=True)
+
+
+def field_right_of(vm, screen, label, what, match=None):
     """Clicks the box to the right of a label in a dialog: on the text in it, if there is any."""
-    match = screen.find(label, colon=True) or screen.find(label, pick='bottom')
+    match = match or screen.find(label, colon=True) or screen.find(label, pick='bottom')
     if not match:
         raise RuntimeError(f'No "{label}" on screen:\n{screen.text()}')
     inside = [w for w in match.line if w.left > match.right and w.left - match.right < 200]
@@ -680,19 +695,19 @@ def manual(vm, screen, state):
     vm.click_on(screen.find('Create', exact=True, pick='bottom'), 'Create')
     screen = wait_for(vm, ['Create a Partition', 'Flags'], 30, 'create-dialog')
     note('Create dialog: ' + ' | '.join(screen.lines_with('Size', 'File System', 'Mount', 'Flags', 'Label')))
-    fs = screen.find('File System', colon=True)
+    fs = file_system(screen)
     if fs and not any(w.key == canon('ext4') for w in fs.line):
-        field_right_of(vm, screen, 'File System', 'the file system')
+        field_right_of(vm, screen, 'File System', 'the file system', fs)
         screen = vm.look('fs-list')
         ext4 = [m for m in screen.find_all('ext4', exact=True) if abs(m.y - fs.y) > 5] or screen.find_all('ext4', exact=True)
         if not ext4:
             raise RuntimeError('No ext4 in the list.')
         vm.click_on(ext4[0], 'ext4')
         screen = vm.look('fs-chosen')
-        fs = screen.find('File System', colon=True)
+        fs = file_system(screen)
         if fs and not any(w.key == canon('ext4') for w in fs.line):
             # Its list also finds an entry by the first letter typed.
-            field_right_of(vm, screen, 'File System', 'the file system')
+            field_right_of(vm, screen, 'File System', 'the file system', fs)
             vm.type('e')
             vm.key('ret')
             screen = vm.look('fs-chosen-by-key')
