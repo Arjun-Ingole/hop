@@ -1,8 +1,9 @@
 # The engine's own code, run with pwsh on Linux for tools/vm/omarchy/omarchyvm.py, so the test disk gets what hop gives a PC.
 #   prepare.ps1 sizes <ISO folder>                      what goes on HOPLIVE, and both partitions' sizes, as JSON
 #   prepare.ps1 boot <HOPINSTALL folder> <EFI folder>   Update-BootConfig, as Install-Linux and Register-Installer run it, then Copy-EspLoader into EFI/hop
+#   prepare.ps1 boot <HOPINSTALL folder> <EFI folder> -FullDisk   the same, for replacing Windows
 # Read-Iso and Copy-Installer need Windows, so the sizes use the same helpers they do, on a folder.
-param([string]$Action, [string]$Path, [string]$Esp)
+param([string]$Action, [string]$Path, [string]$Esp, [switch]$FullDisk)
 $ErrorActionPreference = 'Stop'
 
 $engine = Join-Path $PSScriptRoot '../../../engine'
@@ -36,7 +37,9 @@ switch ($Action) {
         } | ConvertTo-Json -Depth 3
     }
     'boot' {
-        Update-BootConfig $distro $Path
+        Update-BootConfig $distro $Path -FullDisk:$FullDisk
+        if ($FullDisk -and -not (Test-FullDiskConfig $distro $Path)) { throw 'The menu does not ask for the copy to memory.' }
+        # Register-Installer runs it again, without -FullDisk.
         Update-BootConfig $distro $Path
         Copy-EspLoader $distro (Join-Path $Path 'EFI/BOOT') (Join-Path $Esp 'EFI/hop')
         $Sync.Log | ForEach-Object { Write-Host $_ }

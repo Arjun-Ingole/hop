@@ -23,21 +23,32 @@ jobs:
             sha: 715d7c72d51c29a1e2db7b8f8562d54f0f5710b9c1c5a4243800be48fba24269
             memory: 8
             encrypt: ''
+            prepare: ''
           - name: 4.5.0-rc3-encrypted
             url: https://iso.omarchy.org/omarchy-4.5.0-rc3-x86.iso
             sha: 715d7c72d51c29a1e2db7b8f8562d54f0f5710b9c1c5a4243800be48fba24269
             memory: 8
             encrypt: --encrypt
+            prepare: ''
           - name: 4.5.0-rc3-4gb
             url: https://iso.omarchy.org/omarchy-4.5.0-rc3-x86.iso
             sha: 715d7c72d51c29a1e2db7b8f8562d54f0f5710b9c1c5a4243800be48fba24269
             memory: 4
             encrypt: ''
+            prepare: ''
           - name: 4.0.6
             url: https://iso.omarchy.org/omarchy-4.0.6.iso
             sha: ''
             memory: 8
             encrypt: ''
+            prepare: ''
+          # Replacing Windows, which copies the live system to memory first: the ISO plus 4 GB, as hop asks.
+          - name: 4.0.6-replacing-windows
+            url: https://iso.omarchy.org/omarchy-4.0.6.iso
+            sha: ''
+            memory: 12
+            encrypt: ''
+            prepare: --full-disk
     steps:
       - uses: actions/checkout@v4
 
@@ -59,7 +70,7 @@ jobs:
           echo "$want  /mnt/ovm/omarchy.iso" | sha256sum -c - | sudo tee /mnt/ovm/out/iso-checksum.txt
 
       - name: Lay out the disk as hop does
-        run: sudo python3 tools/vm/omarchy/omarchyvm.py prepare --iso /mnt/ovm/omarchy.iso
+        run: sudo python3 tools/vm/omarchy/omarchyvm.py prepare --iso /mnt/ovm/omarchy.iso ${{ matrix.prepare }}
 
       - name: Install into the free space and restart
         run: sudo python3 tools/vm/omarchy/omarchyvm.py install --memory ${{ matrix.memory }} ${{ matrix.encrypt }}

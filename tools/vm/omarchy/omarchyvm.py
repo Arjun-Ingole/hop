@@ -162,6 +162,8 @@ def prepare(args):
         note(f'hop would refuse this ISO: too big {sizes["TooBig"]}, untried {sizes["Untried"]}, boot known {sizes["BootKnown"]}')
         sys.exit(1)
     note(f'Replacing Windows with this ISO would be refused as untried: {sizes["FullDiskUntried"]}')
+    if args.full_disk and sizes['FullDiskUntried']:
+        sys.exit(1)
     live = set(sizes['LiveFiles'])
 
     windows_gb = DISK_GB - FREE_GB - sizes['InstallerGB'] - sizes['LiveGB'] - 1
@@ -222,7 +224,7 @@ def prepare(args):
         log(f'Copied and checked {copied} files.')
 
         # The engine's own edits, as Install-Linux and Register-Installer make them, and its loader on the EFI partition.
-        run('pwsh', '-NoProfile', '-File', os.path.join(HERE, 'prepare.ps1'), 'boot', installer, esp)
+        run('pwsh', '-NoProfile', '-File', os.path.join(HERE, 'prepare.ps1'), 'boot', installer, esp, *(['-FullDisk'] if args.full_disk else []))
         menu = os.path.join(installer, 'boot/grub/grub.cfg')
         shutil.copyfile(menu, os.path.join(OUT, 'grub-hop.cfg'))
         with open(menu, encoding='latin-1') as f:
@@ -239,7 +241,7 @@ def prepare(args):
         for folder in (esp, installer, second):
             run('umount', folder)
 
-        state = {'esp': tree_hashes_mounted(loop), 'partitions': partition_hashes(loop), 'sizes': sizes}
+        state = {'esp': tree_hashes_mounted(loop), 'partitions': partition_hashes(loop), 'sizes': sizes, 'full_disk': args.full_disk}
     finally:
         run('losetup', '-d', loop, check=False)
         run('umount', iso, check=False)
@@ -498,6 +500,8 @@ def install(args):
 
 def drive(vm, args):
     """Omarchy's real wizard, as the catalog's steps describe it."""
+    with open(STATE) as f:
+        full_disk = json.load(f).get('full_disk')
     done = set()
     deadline = time.time() + 1500
     last = ''
@@ -520,9 +524,24 @@ def drive(vm, args):
         if 'installation stopped' in joined or 'Aborted' in joined or 'You can retry later' in joined:
             vm.shot('failed')
             raise RuntimeError('The installer stopped:\n' + joined)
-        if 'Confirm overwriting' in joined:
+        if 'Confirm overwriting' in joined and not full_disk:
             vm.shot('wrong-mode')
             raise RuntimeError('Reached Full disk install, which would erase the disk. Stopped without confirming.')
+        if 'Confirm overwriting' in joined:
+            if 'overwrite' not in done:
+                done.add('overwrite')
+                for line in lines:
+                    if 'overwritten' in line or 'Confirm overwriting' in line:
+                        note('Full disk screen: ' + line)
+                vm.shot('overwrite')
+            if not args.encrypt and 'without encryption' not in joined:
+                vm.key('ctrl', 'c')
+                time.sleep(3)
+            elif act('install'):
+                note('Chose: ' + ('Yes, install' if args.encrypt else 'Yes, install without encryption'))
+                vm.key('ret')
+            time.sleep(1.5)
+            continue
         if 'Reboot Now' in joined and ('Installed Omarchy' in joined or 'Finished installing' in joined):
             for line in lines:
                 if 'Installed Omarchy' in line:
@@ -560,7 +579,7 @@ def drive(vm, args):
             for line in lines:
                 if 'install' in line.lower() or 'disk' in line.lower():
                     note('Mode screen: ' + line)
-            choose(vm, 'Free space install', 'Select installation mode')
+            choose(vm, 'Full disk install' if full_disk else 'Free space install', 'Select installation mode')
         elif 'Install Omarchy in the' in joined and 'Confirm installing on' in joined:
             if 'free-space' not in done:
                 done.add('free-space')
@@ -602,6 +621,7 @@ def check(args):
     with open(STATE) as f:
         state = json.load(f)
     failures = []
+    full_disk = state.get('full_disk')
     layout = run('sgdisk', '-p', DISK, capture=True)
     with open(os.path.join(OUT, 'layout-after.txt'), 'w') as f:
         f.write(layout)
@@ -611,14 +631,14 @@ def check(args):
         after = partition_hashes(loop)
         for name, digest in state['partitions'].items():
             same = after[name] == digest
-            note(f'{name}: {"byte for byte the same" if same else "CHANGED"}')
-            if not same:
+            note(f'{name}: {"byte for byte the same" if same else ("gone, as replacing Windows means" if full_disk else "CHANGED")}')
+            if not same and not full_disk:
                 failures.append(name)
         esp_after = tree_hashes_mounted(loop)
         for path, digest in sorted(state['esp'].items()):
             same = esp_after.get(path) == digest
             note(f'EFI partition {path}: {"unchanged" if same else "CHANGED or gone"}')
-            if not same:
+            if not same and not full_disk:
                 failures.append(path)
         for path in sorted(set(esp_after) - set(state['esp'])):
             note(f'EFI partition {path}: new')
@@ -688,6 +708,7 @@ def main():
     sub = parser.add_subparsers(dest='command', required=True)
     p = sub.add_parser('prepare')
     p.add_argument('--iso', required=True)
+    p.add_argument('--full-disk', action='store_true', help='set it up for replacing Windows, and choose Full disk install')
     p = sub.add_parser('install')
     p.add_argument('--memory', type=int, default=8)
     p.add_argument('--encrypt', action='store_true')
