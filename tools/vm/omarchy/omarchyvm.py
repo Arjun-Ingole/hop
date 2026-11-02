@@ -624,8 +624,9 @@ def check(args):
             note(f'EFI partition {path}: new')
         blkid = run('blkid', check=False, capture=True)
         note('blkid:\n' + blkid)
-        root = next((line.split(':')[0] for line in blkid.splitlines() if loop in line and 'LABEL="OMARCHY"' in line), None)
-        crypt = next((line.split(':')[0] for line in blkid.splitlines() if loop in line and 'TYPE="crypto_LUKS"' in line), None)
+        # 4.5 keeps the root image's own label, so it's found by the partition's name.
+        root = next((line.split(':')[0] for line in blkid.splitlines() if loop in line and 'PARTLABEL="OMARCHY_ROOT"' in line and 'TYPE="btrfs"' in line), None)
+        crypt = next((line.split(':')[0] for line in blkid.splitlines() if loop in line and 'PARTLABEL="OMARCHY_ROOT"' in line and 'TYPE="crypto_LUKS"' in line), None)
         if crypt and not root:
             subprocess.run(['cryptsetup', 'open', '--readonly', crypt, 'ovmroot', '-'], input=PASSWORD.encode(), check=True)
             root = '/dev/mapper/ovmroot'

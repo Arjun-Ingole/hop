@@ -23,6 +23,16 @@ jobs:
             sha: 715d7c72d51c29a1e2db7b8f8562d54f0f5710b9c1c5a4243800be48fba24269
             memory: 8
             encrypt: ''
+          - name: 4.5.0-rc3-encrypted
+            url: https://iso.omarchy.org/omarchy-4.5.0-rc3-x86.iso
+            sha: 715d7c72d51c29a1e2db7b8f8562d54f0f5710b9c1c5a4243800be48fba24269
+            memory: 8
+            encrypt: --encrypt
+          - name: 4.5.0-rc3-4gb
+            url: https://iso.omarchy.org/omarchy-4.5.0-rc3-x86.iso
+            sha: 715d7c72d51c29a1e2db7b8f8562d54f0f5710b9c1c5a4243800be48fba24269
+            memory: 4
+            encrypt: ''
           - name: 4.0.6
             url: https://iso.omarchy.org/omarchy-4.0.6.iso
             sha: ''
