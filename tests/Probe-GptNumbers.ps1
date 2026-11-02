@@ -21,11 +21,15 @@ try {
     $disk = (Get-DiskImage -ImagePath $vhd | Get-Disk).Number
     Initialize-Disk -Number $disk -PartitionStyle GPT
     # Made the way hop makes its own, one after another.
-    1..5 | ForEach-Object { New-Partition -DiskNumber $disk -Size 300MB | Out-Null }
+    1..4 | ForEach-Object { New-Partition -DiskNumber $disk -Size 300MB | Out-Null }
+    # The last one stands in for a Linux root a Linux installer made after hop's installer.
+    $linux = New-Partition -DiskNumber $disk -Size 300MB -GptType '{0fc63daf-8483-4772-8e79-3d69d8477de4}'
     $before = Get-GptNumbers $disk
     Write-Output ("Before: " + (($before.Keys | Sort-Object | ForEach-Object { "number $($before[$_]) at $_" }) -join ', '))
     Check 'hop reads every partition''s number' (@(Get-Partition -DiskNumber $disk | Where-Object { $before[[int64]$_.Offset] }).Count -eq @(Get-Partition -DiskNumber $disk).Count) ''
     $middle = @(Get-Partition -DiskNumber $disk | Sort-Object Offset)[2]
+    Check 'hop sees that removing it would renumber Linux' ([bool](Test-RemovalRenumbersLinux @($middle) $disk)) ''
+    Check 'and that removing the last one wouldn''t' (-not (Test-RemovalRenumbersLinux @(@(Get-Partition -DiskNumber $disk | Where-Object { [int64]$_.Offset -ne [int64]$linux.Offset } | Sort-Object Offset)[-1]) $disk)) ''
     Write-Output "Removing the partition at $($middle.Offset), as hop removes its installer"
     Remove-PartitionAt $disk ([int64]$middle.Offset)
     $after = Get-GptNumbers $disk
@@ -34,7 +38,7 @@ try {
     $moved = @($later | Where-Object { $after[$_] -ne $before[$_] })
     # What Windows does, recorded rather than wished away. hop's Undo has to allow for it.
     Write-Output "Partitions after it that Windows renumbered: $($moved.Count) of $($later.Count)"
-    Check 'hop''s check would have seen this coming' (($moved.Count -gt 0) -eq ($later.Count -gt 0 -and $moved.Count -gt 0)) ''
+    Check 'Linux''s partition got a new number, which is why hop checks' ($after[[int64]$linux.Offset] -ne $before[[int64]$linux.Offset]) "$($before[[int64]$linux.Offset]) -> $($after[[int64]$linux.Offset])"
 } finally {
     "select vdisk file=`"$vhd`"", 'detach vdisk', 'exit' | diskpart.exe | Out-Null
 }
