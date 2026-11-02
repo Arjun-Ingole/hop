@@ -18,7 +18,7 @@ function Check([string]$What, [bool]$Ok, $Detail) { if ($Ok) { Write-Output "  p
 function Get-GptNumbers([int]$Disk) {
     $sector = (Get-Disk -Number $Disk).LogicalSectorSize
     $table = [Hop.DiskProbe]::ReadHead($Disk, 2 * $sector)
-    $numbers = [ordered]@{}
+    $numbers = @{}   # not [ordered], where a number reads as a position
     for ($i = 0; $i -lt 128 -and ($i + 1) * 128 -le $table.Length; $i++) {
         $type = [BitConverter]::ToString($table, $i * 128, 16)
         if ($type -ne '00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00') { $numbers[$i + 1] = [BitConverter]::ToInt64($table, $i * 128 + 32) }
@@ -33,12 +33,12 @@ $lines | diskpart.exe | Out-Null
 try {
     $disk = (Get-Disk | Where-Object Location -eq $vhd).Number
     $before = Get-GptNumbers $disk
-    Write-Output ("Before: " + (($before.Keys | ForEach-Object { "$_ at sector $($before[$_])" }) -join ', '))
+    Write-Output ("Before: " + (($before.Keys | Sort-Object | ForEach-Object { "$_ at sector $($before[$_])" }) -join ', '))
     $middle = @(Get-Partition -DiskNumber $disk | Sort-Object Offset)[2]
     Write-Output "Removing the partition at $($middle.Offset), as hop removes its installer"
     Remove-PartitionAt $disk ([int64]$middle.Offset)
     $after = Get-GptNumbers $disk
-    Write-Output ("After: " + (($after.Keys | ForEach-Object { "$_ at sector $($after[$_])" }) -join ', '))
+    Write-Output ("After: " + (($after.Keys | Sort-Object | ForEach-Object { "$_ at sector $($after[$_])" }) -join ', '))
     $sector = (Get-Disk -Number $disk).LogicalSectorSize
     $kept = @($before.Keys | Where-Object { $before[$_] -ne [int64]($middle.Offset / $sector) })
     Check 'every other partition keeps its number' (@($kept | Where-Object { $after[$_] -ne $before[$_] }).Count -eq 0) (($kept | ForEach-Object { "$_ : $($before[$_]) -> $($after[$_])" }) -join '; ')
