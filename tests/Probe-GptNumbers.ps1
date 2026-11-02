@@ -28,10 +28,12 @@ function Get-GptNumbers([int]$Disk) {
 
 $vhd = Join-Path $env:TEMP 'hop-gpt.vhdx'
 if (Test-Path $vhd) { Remove-Item $vhd -Force }
-$lines = @("create vdisk file=`"$vhd`" maximum=4000 type=expandable", "select vdisk file=`"$vhd`"", 'attach vdisk', 'convert gpt') + (1..5 | ForEach-Object { 'create partition primary size=300' }) + 'exit'
-$lines | diskpart.exe | Out-Null
+@("create vdisk file=`"$vhd`" maximum=4000 type=expandable", "select vdisk file=`"$vhd`"", 'attach vdisk', 'exit') | diskpart.exe | Out-Null
 try {
-    $disk = (Get-Disk | Where-Object Location -eq $vhd).Number
+    $disk = (Get-DiskImage -ImagePath $vhd | Get-Disk).Number
+    Initialize-Disk -Number $disk -PartitionStyle GPT
+    # Made the way hop makes its own, one after another.
+    1..5 | ForEach-Object { New-Partition -DiskNumber $disk -Size 300MB | Out-Null }
     $before = Get-GptNumbers $disk
     Write-Output ("Before: " + (($before.Keys | Sort-Object | ForEach-Object { "$_ at sector $($before[$_])" }) -join ', '))
     $middle = @(Get-Partition -DiskNumber $disk | Sort-Object Offset)[2]
