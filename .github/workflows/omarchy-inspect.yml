@@ -1,0 +1,83 @@
+name: Omarchy ISO inspect
+
+# Throwaway: reads an Omarchy ISO's layout, boot menu and installer scripts.
+on:
+  push:
+    branches: ['probe/omarchy45-1']
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: '4.5.0-rc3'
+            url: https://iso.omarchy.org/omarchy-4.5.0-rc3-x86.iso
+            sha: 715d7c72d51c29a1e2db7b8f8562d54f0f5710b9c1c5a4243800be48fba24269
+          - name: '4.0.6'
+            url: https://iso.omarchy.org/omarchy-4.0.6.iso
+            sha: ''
+    steps:
+      - name: Tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq squashfs-tools erofs-utils zstd cpio initramfs-tools-core binutils >/dev/null
+          sudo mkdir -p /mnt/w && sudo chown "$(id -u):$(id -g)" /mnt/w
+          df -h / /mnt
+
+      - name: Download
+        run: |
+          cd /mnt/w
+          curl -fsSI "${{ matrix.url }}.sha256" && curl -fsSL "${{ matrix.url }}.sha256" || echo 'no .sha256 next to the ISO'
+          curl -fL --retry 3 -o omarchy.iso "${{ matrix.url }}"
+          sha256sum omarchy.iso | tee sum.txt
+          if [ -n "${{ matrix.sha }}" ]; then grep -q "${{ matrix.sha }}" sum.txt; fi
+
+      - name: Inspect
+        run: |
+          set -x
+          O=/mnt/w/out; mkdir -p $O/files
+          sudo mkdir -p /mnt/iso /mnt/air
+          sudo mount -o loop,ro /mnt/w/omarchy.iso /mnt/iso
+          cd /mnt/iso
+          find . -printf '%y %12s %p\n' | sort -k3 > $O/layout.txt
+          find . -type f -size +3900M -printf '%s %p\n' > $O/over4gb.txt
+          du -sb . arch arch/x86_64 arch/boot 2>/dev/null > $O/du.txt
+          cp -r boot/grub/grub.cfg loader EFI/BOOT/*.cfg $O/files/ 2>/dev/null || true
+          cp boot/grub/grub.cfg $O/files/iso-grub.cfg || true
+          for f in EFI/BOOT/*.EFI EFI/BOOT/*.efi; do [ -f "$f" ] && strings -n 6 "$f" | grep -E 'search|configfile|prefix|set root|\.uuid|/boot/' | head -40 > "$O/files/strings-$(basename $f).txt"; done
+          ls -la boot boot/* arch arch/* > $O/ls.txt 2>&1
+          AIR=$(ls arch/x86_64/airootfs.* | grep -E 'sfs|erofs' | head -1)
+          file "$AIR" > $O/airootfs-type.txt
+          case "$AIR" in *.erofs) sudo mount -t erofs -o loop,ro "$AIR" /mnt/air ;; *) sudo mount -t squashfs -o loop,ro "$AIR" /mnt/air ;; esac
+          cd /mnt/air
+          sudo tar -cf $O/airootfs-bits.tar --ignore-failed-read root/configurator root/.automated_script.sh usr/share/omarchy-iso usr/local/bin usr/local/sbin etc/systemd/system etc/mkinitcpio.conf etc/mkinitcpio.conf.d etc/mkinitcpio.d etc/pam.d/system-auth etc/os-release usr/lib/initcpio/hooks usr/lib/initcpio/install || true
+          sudo grep -rIl 'bootmnt' etc usr/local usr/share/omarchy-iso root usr/lib/initcpio 2>/dev/null > $O/bootmnt-users.txt || true
+          sudo grep -n '^root' etc/shadow > $O/shadow-root.txt || true
+          ls usr/lib/systemd/ | grep -i shared > $O/systemd-version.txt || true
+          ls usr/lib/modules > $O/live-kernels.txt
+          for k in usr/lib/modules/*; do find "$k" -name 'exfat*' -o -name 'ntfs3*' ; done > $O/live-fs-modules.txt
+          sudo du -sh var/cache/omarchy/mirror/offline > $O/offline-mirror-size.txt 2>&1 || true
+          cd /mnt/iso
+          for img in arch/boot/x86_64/initramfs-*.img; do
+            n=$(basename $img .img); mkdir -p /mnt/w/ir/$n
+            unmkinitramfs "$img" /mnt/w/ir/$n || true
+            (cd /mnt/w/ir/$n && find . -name '*.ko*' | grep -E 'exfat|ntfs|vfat|fat|nvme|loop|squash|erofs|overlay' ; find . -path '*hooks/archiso*') > $O/initramfs-$n.txt 2>&1
+            find /mnt/w/ir/$n -path '*hooks/archiso' -exec cp {} $O/files/archiso-hook-$n \; || true
+            find /mnt/w/ir/$n -name 'config' -path '*/etc/*' | head -0
+          done
+          sudo chown -R "$(id -u)" $O
+          cat $O/over4gb.txt $O/du.txt $O/airootfs-type.txt $O/live-kernels.txt $O/live-fs-modules.txt $O/bootmnt-users.txt $O/shadow-root.txt $O/systemd-version.txt
+          cat $O/files/iso-grub.cfg
+          grep -v '^d' $O/layout.txt | grep -v 'usr/share' | head -100
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: inspect-${{ matrix.name }}
+          path: /mnt/w/out
