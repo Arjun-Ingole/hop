@@ -20,6 +20,17 @@ function Mount-Iso([string]$Path) {
     throw 'Windows could not open the ISO file.'
 }
 
+# Whether a file goes on the second partition, by its path on the ISO, such as arch\x86_64\airootfs.sfs.
+function Test-LiveFile($Distro, [string]$Relative) {
+    foreach ($pattern in @($Distro.LiveFiles)) { if ($pattern -and $Relative -like $pattern) { return $true } }
+    $false
+}
+
+# The partitions' sizes in GB, from what goes on each, with room to spare. FAT32 gets at least 4 GB.
+function Get-InstallerGB([int64]$Bytes) { [int][math]::Max([double]4, [math]::Ceiling(($Bytes + 512MB) / 1GB)) }
+
+function Get-LiveGB([int64]$Bytes) { if ($Bytes) { [int][math]::Ceiling(($Bytes + 512MB) / 1GB) } else { 0 } }
+
 function Read-Iso([string]$Path, $Distro) {
     Set-Status 'Checking the ISO file...'
     $letter = Mount-Iso $Path
@@ -27,7 +38,7 @@ function Read-Iso([string]$Path, $Distro) {
     $files = @(Get-ChildItem -LiteralPath $root -Recurse -Force -File)
     # What's too big for FAT32 gets its own partition. Everything else goes on the installer partition, as ever.
     $base = (Get-Item -LiteralPath $root).FullName
-    $liveFiles = @(if ($Distro.LiveFiles) { $files | Where-Object { $_.FullName.Substring($base.Length).TrimStart('\') -like $Distro.LiveFiles } })
+    $liveFiles = @($files | Where-Object { Test-LiveFile $Distro $_.FullName.Substring($base.Length).TrimStart('\') })
     if ($liveFiles.Count) { $files = @($files | Where-Object { $_.FullName -notin $liveFiles.FullName }) }
 
     if (-not (Test-Path -LiteralPath (Join-Path $root 'EFI\BOOT\BOOTX64.EFI'))) {
@@ -72,7 +83,7 @@ function Read-Iso([string]$Path, $Distro) {
 
     $bytes = ($files | Measure-Object -Property Length -Sum).Sum
     $liveBytes = [int64]($liveFiles | Measure-Object -Property Length -Sum).Sum
-    $installerGB = [int][math]::Max([double]4, [math]::Ceiling(($bytes + 512MB) / 1GB))
+    $installerGB = Get-InstallerGB $bytes
     # Windows can't format a FAT32 partition larger than 32 GB.
     if ($installerGB -gt 32) { throw "This ISO is too big: its $installerGB GB won't fit on a FAT32 installer partition." }
     [pscustomobject]@{
@@ -81,6 +92,19 @@ function Read-Iso([string]$Path, $Distro) {
         InstallerGB = $installerGB
         LiveFiles   = $liveFiles
         LiveBytes   = $liveBytes
-        LiveGB      = if ($liveBytes) { [int][math]::Ceiling(($liveBytes + 512MB) / 1GB) } else { 0 }
+        LiveGB      = Get-LiveGB $liveBytes
     }
+}
+
+# A catalog entry's FullDisk or SecondDisk can name a file that means hop hasn't tried that ISO there, though it has next to
+# Windows. Found once the ISO is open, and before the disk changes.
+function Assert-IsoTriedThere($Distro, $Iso, [switch]$FullDisk, [switch]$SecondDisk) {
+    if ($FullDisk) {
+        $file = $Distro.FullDisk.UntriedFile
+        $reason = "hop hasn't tried replacing Windows with this version of $($Distro.Name), so it can't say it would work. Nothing has been changed. You can still install it next to Windows."
+    } elseif ($SecondDisk -and $Distro.SecondDisk) {
+        $file = $Distro.SecondDisk.UntriedFile
+        $reason = "hop hasn't tried this version of $($Distro.Name) on a second disk, so it can't say it would work. Nothing has been changed. Choose a drive on the disk Windows is on."
+    } else { return }
+    if ($file -and (Test-Path -LiteralPath (Join-Path "$($Iso.Letter):\" $file))) { throw $reason }
 }

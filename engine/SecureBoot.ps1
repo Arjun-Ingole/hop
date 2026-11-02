@@ -36,8 +36,15 @@ function Get-IsoKernelPath([string]$Root) {
     $menu = @('boot\grub\grub.cfg', 'boot\grub2\grub.cfg') | ForEach-Object { Join-Path $Root $_ } |
         Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
     if (-not $menu) { return }
-    $m = [regex]::Match((Get-Content -LiteralPath $menu -Raw), '(?m)^\s*linux(?:efi)?\s+(?:\(\$root\))?(/(?!boot/memtest)\S+)')
-    if ($m.Success) { Join-Path $Root ($m.Groups[1].Value.TrimStart('/') -replace '/', '\') }
+    $text = Get-Content -LiteralPath $menu -Raw
+    $m = [regex]::Match($text, '(?m)^\s*linux(?:efi)?\s+(?:\(\$root\))?(/(?!boot/memtest)\S+)')
+    if (-not $m.Success) { return }
+    # Omarchy 4.5 names its kernel through a variable, vmlinuz-${live_kernel}, which its menu sets first and changes only on a Mac.
+    $path = $m.Groups[1].Value
+    foreach ($set in [regex]::Matches($text, '(?m)^\s*set\s+(\w+)=["'']?([^"''\s]+)')) {
+        $path = $path.Replace('${' + $set.Groups[1].Value + '}', $set.Groups[2].Value)
+    }
+    Join-Path $Root ($path.TrimStart('/') -replace '/', '\')
 }
 
 # The kernel the ISO's menu starts first.

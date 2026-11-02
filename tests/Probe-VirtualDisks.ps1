@@ -319,7 +319,7 @@ try {
     Update-BootConfig $omarchy "$letter`:\"
     Update-BootConfig $omarchy "$letter`:\"
     $menu = Get-Content "$letter`:\boot\grub\grub.cfg" -Raw
-    Check 'the menu names the second partition, once' (([regex]::Matches($menu, "archisolabel=$LiveLabel ")).Count -eq 1 -and ([regex]::Matches($menu, 'systemd\.run=')).Count -eq 1) $menu
+    Check 'the menu names the second partition, once' (([regex]::Matches($menu, "archisolabel=$LiveLabel ")).Count -eq 1 -and ([regex]::Matches($menu, 'systemd\.run_success_action=')).Count -eq 1) $menu
     Remove-DriveLetter $live
     Check 'hop can tell both are its own, with no letter on the second' (@(Get-HopPartitions | Where-Object { $_.Label -in $InstallerLabel, $LiveLabel }).Count -eq 2) ''
     Remove-Item -LiteralPath $StatePath -Force

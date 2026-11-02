@@ -157,9 +157,21 @@ Describe 'Resolve-Download' {
         $download.Url | Should -Be 'https://iso.omarchy.org/omarchy-4.0.6.iso'
         $download.Sha256 | Should -Be $hash
     }
-    It 'refuses a later Omarchy, which installs in a way hop has not tried' {
-        Mock Get-WebText { '<a href="https://iso.omarchy.org/omarchy-4.5.0.iso">ISO</a>' }
-        { Resolve-Download (Get-Catalog | Where-Object Id -eq 'omarchy') } | Should -Throw '*4.5.0*only tried 4.0*'
+    It 'takes Omarchy 4.5.0-rc3, by its x86 name, and not the ARM one before it' {
+        Mock Get-WebText { '<a href="https://iso.omarchy.org/omarchy-4.5.0-rc3-aarch64.iso">ARM</a> <a href="https://iso.omarchy.org/omarchy-4.5.0-rc3-x86.iso">ISO</a>' } -ParameterFilter { $Url -eq 'https://omarchy.org/' }
+        Mock Get-WebText { "$hash  omarchy-4.5.0-rc3-x86.iso`n" } -ParameterFilter { $Url -like '*.sha256' }
+        $download = Resolve-Download (Get-Catalog | Where-Object Id -eq 'omarchy')
+        $download.Url | Should -Be 'https://iso.omarchy.org/omarchy-4.5.0-rc3-x86.iso'
+        $download.Sha256 | Should -Be $hash
+        Should -Invoke Get-WebText -ParameterFilter { $Url -eq 'https://iso.omarchy.org/omarchy-4.5.0-rc3-x86.iso.sha256' }
+    }
+    It 'refuses Omarchy <file>, which hop has not seen install' -ForEach @(
+        @{ file = 'omarchy-4.5.0-x86.iso'; version = '4.5.0' }, @{ file = 'omarchy-4.5.0-rc2-x86.iso'; version = '4.5.0-rc2' }
+        @{ file = 'omarchy-4.5.0-rc30-x86.iso'; version = '4.5.0-rc30' }, @{ file = 'omarchy-4.6.0.iso'; version = '4.6.0' }
+    ) {
+        Mock Get-WebText { "<a href=`"https://iso.omarchy.org/$file`">ISO</a>" }
+        { Resolve-Download (Get-Catalog | Where-Object Id -eq 'omarchy') } | Should -Throw "*version $version, and hop has only tried 4.0 and 4.5.0-rc3."
+        Should -Invoke Get-WebText -Times 0 -ParameterFilter { $Url -like '*.sha256' }
     }
     It 'takes the dated Arch ISO, whose name is the same on every mirror' {
         Mock Get-WebText { "$hash  archlinux-2026.10.01-x86_64.iso`n$hash  archlinux-x86_64.iso`n$('1' * 64)  archlinux-bootstrap-2026.10.01-x86_64.tar.zst`n" }
@@ -667,6 +679,26 @@ Describe 'Get-IsoKernelPath' {
         Set-Content "$iso\boot\grub2\grub.cfg" "menuentry 'a' {`n`tlinux (`$root)/boot/x86_64/loader/linux quiet`n}"
         Get-IsoKernelPath $iso | Should -Be "$iso\boot\x86_64\loader\linux"
     }
+    It 'reads Omarchy 4.5''s kernel through the variable its menu sets first, not the one for Macs' {
+        Set-Content "$iso\boot\grub\grub.cfg" @'
+set live_kernel=linux-omarchy
+if [ -f '/arch/boot/x86_64/vmlinuz-linux-t2' ]; then
+            if [ "${sys_vendor}" == 'Apple Inc.' ]; then
+                set live_kernel=linux-t2
+            fi
+fi
+menuentry "Omarchy (x86_64, ${archiso_platform})" --id 'archlinux' {
+    set gfxpayload=keep
+    linux /arch/boot/x86_64/vmlinuz-${live_kernel} archisobasedir=arch archisosearchuuid=2026-11-02-03-43-50-00 copytoram=n quiet splash
+    initrd /arch/boot/x86_64/initramfs-${live_kernel}.img
+}
+'@
+        Get-IsoKernelPath $iso | Should -Be "$iso\arch\boot\x86_64\vmlinuz-linux-omarchy"
+    }
+    It 'leaves a variable the menu never sets, so the kernel is not found' {
+        Set-Content "$iso\boot\grub\grub.cfg" 'linux /k-${unknown} quiet'
+        Get-IsoKernelPath $iso | Should -Be "$iso\k-`${unknown}"
+    }
 }
 
 Describe 'Boot config' {
@@ -704,8 +736,21 @@ Describe 'Boot config' {
     It 'points Omarchy at its second partition and frees its disk, the same however often it runs' {
         $omarchy = Get-CatalogEntry 'omarchy'
         $text = Get-EditedBootConfig $omarchy 'linux /arch/boot/x86_64/vmlinuz-linux-t2 archisobasedir=arch archisosearchuuid=2026-10-19-22-18-53-00 quiet splash'
-        $text | Should -BeLike "linux /arch/boot/x86_64/vmlinuz-linux-t2 archisobasedir=arch archisolabel=$LiveLabel `"systemd.run=umount -l /run/archiso/bootmnt`" *systemd.unit=multi-user.target* quiet splash"
+        $text | Should -BeLike "linux /arch/boot/x86_64/vmlinuz-linux-t2 archisobasedir=arch archisolabel=$LiveLabel `"systemd.run=mkdir -p /run/hop`" *systemd.unit=multi-user.target* quiet splash"
         Get-EditedBootConfig $omarchy $text | Should -BeExactly $text
+    }
+    It 'lets go of Omarchy''s disk, then puts back the folder 4.5''s installer reads its image from' {
+        $text = Get-Edited 'omarchy' 'linux /k archisobasedir=arch archisosearchuuid=2026-11-02-03-43-50-00 copytoram=n quiet'
+        @([regex]::Matches($text, '"systemd\.run=([^"]+)"') | ForEach-Object { $_.Groups[1].Value }) | Should -Be @(
+            'mkdir -p /run/hop'
+            'mount --bind /run/archiso/bootmnt/arch /run/hop'
+            'umount -l /run/archiso/bootmnt'
+            'mkdir -p /run/archiso/bootmnt/arch'
+            'mount --bind /run/hop /run/archiso/bootmnt/arch')
+        # GRUB escapes a quote inside quotes, so the kernel would pass on \' and a shell would get it wrong. That's why there's none.
+        $text | Should -Not -Match "'"
+        $text | Should -Not -Match '[$%\\]'
+        $text | Should -BeLike '*copytoram=n quiet'
     }
     It 'points CachyOS and Arch at the installer partition, and keeps their other settings' {
         Get-Edited 'cachyos' 'linux /arch/boot/x86_64/vmlinuz-linux-cachyos archisobasedir=arch archisosearchuuid=2026-08-09-15-47-03-00 cow_spacesize=10G' |
@@ -862,9 +907,36 @@ Describe 'Read-Iso' {
             $iso.LiveGB | Should -Be 1
             $iso.InstallerGB | Should -Be 4
         }
-        It 'refuses an ISO with the separate image later versions install from, before the disk changes' {
-            New-IsoFiles @{ 'EFI\BOOT\BOOTX64.EFI' = 'x'; 'arch\x86_64\airootfs.sfs' = 'x'; 'arch\x86_64\omarchy-root.img.zst' = 'x'; 'boot\grub\grub.cfg' = $menu }
-            { Read-Iso 'a.iso' $omarchy } | Should -Throw "*hasn't tried*Nothing has been changed*"
+        It 'puts 4.5''s root image next to its live image, where its installer looks, and the kernel on FAT32' {
+            # Its menu names the kernel through a variable, as the real one does.
+            $menu45 = "set live_kernel=linux-omarchy`nmenuentry 'Omarchy' {`n    linux /arch/boot/x86_64/vmlinuz-`${live_kernel} archisobasedir=arch archisosearchuuid=2026-11-02-03-43-50-00 copytoram=n quiet`n}"
+            New-IsoFiles @{ 'EFI\BOOT\BOOTX64.EFI' = 'x'; 'arch\x86_64\airootfs.sfs' = 'x'; 'arch\x86_64\airootfs.sha512' = 'x'; 'arch\x86_64\omarchy-root.img.zst' = 'x' * 2000
+                'arch\x86_64\omarchy-root.img.zst.sha256' = 'x'; 'arch\boot\x86_64\vmlinuz-linux-omarchy' = 'x'; 'arch\pkglist.x86_64.txt' = 'x'; 'boot\grub\grub.cfg' = $menu45 }
+            $iso = Read-Iso 'a.iso' $omarchy
+            @($iso.LiveFiles.Name | Sort-Object) | Should -Be @('airootfs.sfs', 'airootfs.sha512', 'omarchy-root.img.zst', 'omarchy-root.img.zst.sha256')
+            $iso.LiveBytes | Should -BeGreaterThan 2000
+            $iso.Bytes | Should -BeLessThan 1000
+        }
+        It 'sizes the partitions for the real ISOs as the virtual PC had them' {
+            # 4.5.0-rc3: 249 MB for FAT32, and its live and root images, 6.3 GB, for exFAT. 4.0.6: 294 MB and 6.1 GB.
+            Get-InstallerGB 249367835 | Should -Be 4
+            Get-LiveGB 6262326139 | Should -Be 7
+            Get-InstallerGB 293878842 | Should -Be 4
+            Get-LiveGB 6129025167 | Should -Be 7
+            Get-LiveGB 0 | Should -Be 0
+        }
+        It 'refuses 4.5 for replacing Windows and for a second disk, which hop has only tried with 4.0' {
+            New-IsoFiles @{ 'arch\x86_64\omarchy-root.img.zst' = 'x' }
+            $iso = [pscustomobject]@{ Letter = 'HOPISO' }
+            { Assert-IsoTriedThere $omarchy $iso -FullDisk } | Should -Throw "hop hasn't tried replacing Windows with this version of Omarchy*Nothing has been changed*next to Windows."
+            { Assert-IsoTriedThere $omarchy $iso -SecondDisk } | Should -Throw "hop hasn't tried this version of Omarchy on a second disk*Nothing has been changed*disk Windows is on."
+            { Assert-IsoTriedThere $omarchy $iso } | Should -Not -Throw
+        }
+        It 'still lets 4.0 replace Windows and go on a second disk' {
+            New-IsoFiles @{ 'arch\x86_64\airootfs.sfs' = 'x' }
+            $iso = [pscustomobject]@{ Letter = 'HOPISO' }
+            { Assert-IsoTriedThere $omarchy $iso -FullDisk } | Should -Not -Throw
+            { Assert-IsoTriedThere $omarchy $iso -SecondDisk } | Should -Not -Throw
         }
     }
     It 'has no second partition for anything else' {
@@ -2065,6 +2137,8 @@ Describe 'Omarchy''s steps' {
     It 'warns off the option that erases Windows, and says how to get back to it' {
         $steps = Get-Steps (Get-Catalog | Where-Object Id -eq 'omarchy') 60 ([pscustomobject]@{ OnWindowsDisk = $true })
         ($steps.Steps -join ' ') | Should -BeLike '*Free space install*Full disk install*erases Windows*60 GB*Reboot Now*'
+        # 4.5 asks for a language before the keyboard, and a timezone with the account.
+        ($steps.Steps -join ' ') | Should -BeLike '*language if it asks*keyboard*timezone*Yes*Select install disk*'
         ($steps.Notes -join ' ') | Should -BeLike '*limine-scan*'
     }
     It 'on a second disk, names it, warns off the Windows disk and says the space may be more than hop''s' {
