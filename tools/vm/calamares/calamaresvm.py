@@ -527,20 +527,26 @@ def click_next(vm, screen, label='Next'):
 def drive(vm, distro, state):
     """Calamares's real screens, as hop's steps say."""
     done = {}
-    deadline = time.time() + 2700
+    deadline = time.time() + 2400
     last = None
     same = 0
     installing = None
+    acted = time.time()
     while time.time() < deadline and vm.alive():
         screen = vm.look('calamares', quiet=True)
         text = screen.text()
-        if text == last:
+        # Without the clock, which changes by itself.
+        signature = re.sub(r'\d', '', text)
+        if signature == last:
             same += 1
         else:
             same = 0
             with open(os.path.join(OUT, 'screens.txt'), 'a') as f:
                 f.write(f'===== {time.strftime("%H:%M:%S")} {os.path.basename(screen.path)}\n{text}\n')
-        last = text
+        last = signature
+        if not installing and time.time() - acted > 300:
+            vm.look('stuck')
+            raise RuntimeError('Nothing the steps say to do for five minutes:\n' + text)
 
         def once(name):
             if done.get(name):
@@ -566,26 +572,37 @@ def drive(vm, distro, state):
             vm.click_on(screen.find('Install now'), 'Install now')
             installing = time.time()
             continue
-        if screen.has('smaller than recommended', 'may fail to start', 'EFI system partition') and screen.find('OK', exact=True) and done.get('manual') and not done.get('summary'):
+        if screen.has('smaller than recommended', 'may fail to start', 'configured incorrectly', 'must be at least') and done.get('manual') and not done.get('summary'):
             # Step: "If the installer then says this partition is small, click OK".
             done['esp-warning'] = done.get('esp-warning', 0) + 1
-            note('Warning: ' + ' | '.join(text.splitlines()))
-            if done['esp-warning'] > 2:
+            note('Warning: ' + ' | '.join(screen.lines_with('EFI', 'partition', 'size', 'must', 'continue', 'fail', 'recommended')))
+            if done['esp-warning'] > 3:
                 raise RuntimeError('The warning keeps coming back.')
-            vm.click_on(screen.find('OK', exact=True, pick='right'), 'OK on the warning')
+            ok = screen.find('OK', exact=True, pick='right')
+            if ok:
+                vm.click_on(ok, 'OK on the warning')
+            else:
+                # Its OK is the default button, which tesseract doesn't always read.
+                vm.key('ret')
+                log('pressed Return for OK on the warning')
+            acted = time.time()
+            time.sleep(3)
             continue
         if screen.has('Summary') and screen.find('Install', exact=True, pick='right', region=BOTTOM_RIGHT) and done.get('users'):
             once('summary')
             vm.look('summary')
             click_next(vm, screen, 'Install')
+            acted = time.time()
             continue
         if screen.has('What is your name', 'Your Full Name', 'log in automatically') and not done.get('users'):
             once('users')
             users(vm, screen)
+            acted = time.time()
             continue
-        if screen.has('New Partition Table') and screen.find('Create', exact=True) and not done.get('manual'):
+        if screen.has('New Partition Table') and not done.get('manual'):
             once('manual')
             manual(vm, screen, state)
+            acted = time.time()
             continue
         if screen.has('Manual partitioning') and not done.get('choice'):
             once('choice')
@@ -593,6 +610,7 @@ def drive(vm, distro, state):
             vm.click_on(choice, 'Manual partitioning')
             vm.look('manual-chosen')
             click_next(vm, vm.screen)
+            acted = time.time()
             continue
         if distro == 'cachyos' and screen.has('GRUB', exact=True) and screen.has('systemd-boot', 'Limine', 'rEFInd') and not done.get('bootloader'):
             # Step 2: "On the Bootloader screen, choose GRUB".
@@ -600,6 +618,15 @@ def drive(vm, distro, state):
             vm.click_on(screen.find('GRUB', exact=True), 'GRUB')
             vm.look('grub-chosen')
             click_next(vm, vm.screen)
+            acted = time.time()
+            continue
+        if distro == 'cachyos' and screen.has('Plasma Desktop') and screen.has('No Desktop') and not done.get('desktop'):
+            # It starts on No Desktop. Plasma is what its live system shows.
+            once('desktop')
+            vm.click_on(screen.find('Plasma Desktop'), 'Plasma Desktop')
+            vm.look('desktop-chosen')
+            click_next(vm, vm.screen)
+            acted = time.time()
             continue
         if same >= 15:
             raise RuntimeError('Stuck on a screen:\n' + text)
@@ -615,11 +642,15 @@ def drive(vm, distro, state):
 
 
 def field_right_of(vm, screen, label, what):
-    """Clicks the box to the right of a label in a dialog."""
+    """Clicks the box to the right of a label in a dialog: on the text in it, if there is any."""
     match = screen.find(label, colon=True) or screen.find(label, pick='bottom')
     if not match:
         raise RuntimeError(f'No "{label}" on screen:\n{screen.text()}')
-    vm.click(match.right + 120, match.y, f'the box right of "{label}" for {what}')
+    inside = [w for w in match.line if w.left > match.right and w.left - match.right < 200]
+    if inside:
+        vm.click(inside[0].cx, match.y, f'on "{inside[0].text}" right of "{label}" for {what}')
+    else:
+        vm.click(match.right + 60, match.y, f'the box right of "{label}" for {what}')
     return match
 
 
@@ -643,6 +674,13 @@ def manual(vm, screen, state):
             raise RuntimeError('No ext4 in the list.')
         vm.click_on(ext4[0], 'ext4')
         screen = vm.look('fs-chosen')
+        fs = screen.find('File System', colon=True)
+        if fs and not any(w.key == canon('ext4') for w in fs.line):
+            # Its list also finds an entry by the first letter typed.
+            field_right_of(vm, screen, 'File System', 'the file system')
+            vm.type('e')
+            vm.key('ret')
+            screen = vm.look('fs-chosen-by-key')
     note('File system now: ' + ' | '.join(screen.lines_with('File System')))
     field_right_of(vm, screen, 'Mount Point', 'the mount point')
     vm.key('ctrl', 'a')
