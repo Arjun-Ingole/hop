@@ -450,7 +450,8 @@ function Move-SystemFiles([string]$Room, $Partition, [datetime]$Deadline = [date
         if ((Get-Date) -ge $Deadline) { break }
         $file = Get-ShrinkBlocker $Partition
         if (-not (Test-MovableFile $file) -or $moved[$file]) { break }
-        Set-Status "Moving $(Split-Path $file -Leaf) out of the way..."
+        # Not Split-Path, which reads $Mft::$BITMAP as a drive.
+        Set-Status "Moving $($file.Substring($file.LastIndexOf('\') + 1)) out of the way..."
         $seconds = [int][math]::Max(1, [math]::Min(600, ($Deadline - (Get-Date)).TotalSeconds))
         try { $clusters = [Hop.NtfsMove]::MoveDown($Room, $file, $above, $seconds) } catch {
             Write-Log "Could not move $file`: $($_.Exception.Message)"
