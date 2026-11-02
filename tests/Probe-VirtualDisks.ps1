@@ -386,6 +386,7 @@ try {
     }
     Invoke-Install 'elementary' $iso 6 $target ''
     Remove-Item function:New-Partition
+    Check 'they really started offline, and hop brought them online' (@($Sync.Log | Where-Object { $_ -like '*started offline*' }).Count -gt 0) (@($Sync.Log) -join ' / ')
     Check 'the install still finishes' ((Get-InstallStatus) -eq 'ready') (Get-InstallStatus)
     Invoke-Cleanup
     Check 'undo: layout is back' ((Get-Layout $a) -eq $beforeA) (Get-Layout $a)
