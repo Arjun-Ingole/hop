@@ -1123,6 +1123,7 @@ Describe 'Get-WindowsEsp' {
 
 Describe 'Invoke-Cleanup' {
     BeforeEach {
+        Mock Test-RemovalRenumbersLinux { $false }   # these disks can't be read for their GPT
         $script:removed = @()
         $state = [pscustomobject]@{ Partitions = @(); WindowsShrunk = $true; FastStartupWasOn = $false; BitLockerPaused = $false }
         Mock Read-State { $state }
@@ -1171,6 +1172,13 @@ Describe 'Invoke-Cleanup' {
         Mock Test-LinuxInstalled { $true }
         Invoke-Cleanup
         $script:removed | Should -Be @([int64]160GB)
+    }
+    It 'keeps the installer, and says why, when removing it would renumber Linux' {
+        Mock Test-LinuxInstalled { $true }
+        Mock Test-RemovalRenumbersLinux { $true }
+        Invoke-Cleanup -InstallerOnly
+        @($script:removed).Count | Should -Be 0
+        (@($Sync.CleanupProblems) -join ' ') | Should -BeLike '*renumber*'
     }
     Context 'when the space cannot go back' {
         BeforeEach {
