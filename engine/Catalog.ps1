@@ -102,7 +102,14 @@ function Get-ArchisoBoot([string[]]$Configs) {
 $OmarchyRootImage = 'arch\x86_64\omarchy-root.img.zst'   # what 4.5's installer unpacks, which 4.0 didn't have
 
 function Get-OmarchyBoot {
-    $release = '"systemd.run=/bin/sh -c ''mkdir -p /run/hop && mount --bind /run/archiso/bootmnt/arch /run/hop && umount -l /run/archiso/bootmnt && mkdir -p /run/archiso/bootmnt/arch && mount --bind /run/hop /run/archiso/bootmnt/arch''" systemd.run_success_action=none systemd.run_failure_action=none systemd.unit=multi-user.target systemd.wants=kernel-command-line.service'
+    # One command each, run in this order, and the rest skipped if one fails. GRUB escapes quotes inside quotes, so no shell.
+    $commands = @(
+        'mkdir -p /run/hop'
+        'mount --bind /run/archiso/bootmnt/arch /run/hop'
+        'umount -l /run/archiso/bootmnt'
+        'mkdir -p /run/archiso/bootmnt/arch'
+        'mount --bind /run/hop /run/archiso/bootmnt/arch')
+    $release = (@($commands | ForEach-Object { "`"systemd.run=$_`"" }) -join ' ') + ' systemd.run_success_action=none systemd.run_failure_action=none systemd.unit=multi-user.target systemd.wants=kernel-command-line.service'
     @{
         Live = 'arch/x86_64/airootfs.sfs'; LiveFiles = 'arch\x86_64\*'; GrubDir = 'boot/grub'; BootConfigs = @('boot/grub/grub.cfg')
         BootEdits = [ordered]@{ 'archisosearchuuid=\S+' = "archisolabel=$LiveLabel $release" }
