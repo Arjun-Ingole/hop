@@ -147,7 +147,15 @@ function New-RecordedPartition($Plan, $State, [string]$Role, [int64]$Offset, [in
     $record.Offset = $partition.Offset
     $record.Size = $partition.Size
     Save-State $State
-    $partition
+    Set-PartitionOnline $partition
+}
+
+# On some PCs a new partition starts offline, and formatting it then fails with just "Invalid Parameter".
+function Set-PartitionOnline($Partition) {
+    if (-not $Partition.IsOffline) { return $Partition }
+    Write-Log "Partition $($Partition.PartitionNumber) started offline, so hop is bringing it online."
+    Set-Partition -DiskNumber $Partition.DiskNumber -PartitionNumber $Partition.PartitionNumber -IsOffline $false
+    Get-Partition -DiskNumber $Partition.DiskNumber -PartitionNumber $Partition.PartitionNumber
 }
 
 function New-LinuxSpace($Plan, [string]$Strategy, $State) {

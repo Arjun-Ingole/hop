@@ -286,8 +286,23 @@ function Get-Catalog {
     )
 }
 
+# Someone's own copy of a system hop knows, for those that don't start the way Ubuntu's do. Named as its project
+# names it. If the name is wrong, Read-Iso finds out before the disk changes.
+function Get-KnownIso([string]$IsoPath) {
+    switch -Regex ([IO.Path]::GetFileName($IsoPath)) {
+        '^omarchy-\d' { return 'omarchy' }
+        '^archlinux-' { return 'arch' }
+        '^cachyos-' { return 'cachyos' }
+        '^Fedora-Workstation-' { return 'fedora' }
+        '^Ultramarine-' { return 'ultramarine' }
+        '^debian-live-' { return 'debian' }
+    }
+}
+
 function Get-Distro([string]$Id, [string]$IsoPath) {
     if ($Id -eq 'custom') {
+        $known = Get-KnownIso $IsoPath
+        if ($known) { return Get-Catalog | Where-Object Id -eq $known }
         return New-Entry 'custom' ([IO.Path]::GetFileNameWithoutExtension($IsoPath)) '' '' '#1D1D1F' '' ((Get-CasperBoot) + @{
             Alongside = 'Install ... alongside Windows'; Manual = 'Manual installation' })
     }

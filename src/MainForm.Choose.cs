@@ -163,7 +163,7 @@ namespace Hop
             else if (!enoughSpace && target.IsFreeSpace)
                 noteText = $"This free space is about {MinLinuxGB - MaxLinuxGB} GB too small. Choose another drive.";
             else if (!enoughSpace)
-                noteText = $"{target.Title} needs about {MinLinuxGB - MaxLinuxGB} GB more free space. Delete some files or empty the Recycle Bin, then open hop again.";
+                noteText = $"{target.Title} needs about {MinLinuxGB - MaxLinuxGB} GB more free space. Delete some files or empty the Recycle Bin, then open hop again.{(target.IsWindows && startup.BitLockerOn ? " BitLocker is on for this drive, so have your recovery key ready." : "")}";
             else if (isoPath != null)
                 noteText = $"Your file, {Path.GetFileName(isoPath)}. Nothing on your disk changes until you click Install.";
             else
@@ -247,8 +247,9 @@ namespace Hop
             if (target.BlockerKind == "restore")
                 return $"hop can use {release} GB. Restore points on {target.InSentence} are stopping Windows releasing more.";
             string blocker = target.BlockerKind == "ntfs" ? "Windows' own file system data, near the end of the drive," : target.ShrinkBlocker ?? "Something on the drive";
+            string bitLocker = target.IsWindows && startup.BitLockerOn ? " BitLocker is on for this drive." : "";
             string instead = MaxLinuxGB >= MinLinuxGB ? "" : startup.Drives.Any(d => d.Id != target.Id) ? " Choose another drive." : " Windows can't shrink it past that, so Linux needs a second disk.";
-            return $"hop made what room it could, and can use {release} GB. {blocker} limits the rest.{instead}";
+            return $"hop made what room it could, and can use {release} GB. {blocker} limits the rest.{instead}{bitLocker}";
         }
 
         // --- Choosing a drive -------------------------------------------------------------

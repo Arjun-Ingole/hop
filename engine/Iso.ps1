@@ -41,13 +41,13 @@ function Read-Iso([string]$Path, $Distro) {
     } else {
         # The boot loader finds the installer partition by this file.
         if (-not (Test-Path -LiteralPath (Join-Path $root '.disk\info'))) {
-            throw 'This ISO is not an Ubuntu-style live system. hop only supports Ubuntu-based systems (Ubuntu, Mint, elementary, Pop!_OS, Zorin...).'
+            throw 'This ISO is not an Ubuntu-style live system. hop can use your own ISO of an Ubuntu-based system, or of Omarchy, Arch, CachyOS, Fedora, Ultramarine or Debian if it keeps the name its project gave it. Otherwise pick the system from the list.'
         }
         $live = Get-ChildItem -LiteralPath $root -Directory -Force | Where-Object {
             $_.Name -like 'casper*' -and (Get-ChildItem -LiteralPath $_.FullName -Filter '*.squashfs' -Force)
         }
         if (-not $live) {
-            throw 'This ISO is not an Ubuntu-style live system. hop only supports Ubuntu-based systems (Ubuntu, Mint, elementary, Pop!_OS, Zorin...).'
+            throw 'This ISO is not an Ubuntu-style live system. hop can use your own ISO of an Ubuntu-based system, or of Omarchy, Arch, CachyOS, Fedora, Ultramarine or Debian if it keeps the name its project gave it. Otherwise pick the system from the list.'
         }
     }
     if ($Distro.UntriedFile -and (Test-Path -LiteralPath (Join-Path $root $Distro.UntriedFile))) {

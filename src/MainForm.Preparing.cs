@@ -59,6 +59,7 @@ namespace Hop
             engine.Log.Clear();
             engine.ResetProgress();
             engine.ClearLastError();
+            engine.Sync["CleanupProblems"] = null;
             log.Clear();
             busy = installing = true;
             closeRefused = null;
@@ -188,6 +189,8 @@ namespace Hop
             catch { }
             if (!ReleaseScreen(held)) return;
 
+            var left = engine.CleanupProblems;
+            if (left.Length > 0) message += " " + string.Join(" ", left);
             Arrange(new[]
             {
                 new[] { Run.Gray("Couldn't prepare"), new Run { Text = system.Name, Color = Ink, Logo = LogoFor(selected) } },

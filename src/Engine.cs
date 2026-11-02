@@ -100,6 +100,7 @@ namespace Hop
         public string IsoPath;          // the ISO an install used, which stays when it's undone
         public bool CameBack;           // restarted for the installer, and Windows started instead
         public bool SecureBoot;
+        public bool BitLockerOn;        // on the drive Windows is on
         public string BootKey;          // the key that opens this PC's boot menu
     }
 
@@ -320,6 +321,7 @@ namespace Hop
                 IsoPath = state == null ? null : Get<string>(state, "IsoPath"),
                 CameBack = Get<bool>(info, "CameBack"),
                 SecureBoot = Get<bool>(info, "SecureBoot"),
+                BitLockerOn = Get<bool>(info, "BitLockerOn"),
                 BootKey = Get<string>(info, "BootKey"),
             };
         }

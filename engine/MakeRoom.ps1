@@ -386,7 +386,9 @@ function Invoke-Defrag([string]$Drive) {
     $c = Get-Partition -DriveLetter $room.TrimEnd(':')
     Wait-ShrinkLimit $c $deadline
     # With a system file out of the way, the next thing in the way may be something defrag can move.
-    if (Move-SystemFiles $room $c $deadline) {
+    # Defrag can use all of its time on a big drive, and these take moments. So they get time of their own,
+    # and $Mft::$BITMAP isn't left in the way just because defrag ran out.
+    if (Move-SystemFiles $room $c (Get-Date).AddMinutes(5)) {
         $left = [int][math]::Floor(($deadline - (Get-Date)).TotalSeconds)
         if ($left -gt 0) { Write-Log "Finished moving files (code $(Start-DefragRun $room $left))." }
         Wait-ShrinkLimit $c $deadline

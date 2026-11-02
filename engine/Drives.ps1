@@ -122,6 +122,7 @@ function Get-DriveBlocker($Disk, $Partition, [switch]$Windows) {
         $volume = Get-Volume -DriveLetter $env:SystemDrive.TrimEnd(':')
         if ($volume.FileSystemType -ne 'NTFS') { return "Drive $env:SystemDrive uses $($volume.FileSystemType). Windows can only shrink NTFS drives." }
         if ($volume.HealthStatus -in @('Warning', 'Unhealthy')) { return "Windows reports a problem with drive $env:SystemDrive. Run chkdsk $env:SystemDrive /f in an administrator terminal, restart, and open hop again." }
+        if (Test-BitLockerChanging $env:SystemDrive.TrimEnd(':')) { return "Drive $env:SystemDrive is being encrypted or decrypted by BitLocker. Wait for that to finish, then open hop again." }
         return
     }
 

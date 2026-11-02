@@ -163,6 +163,7 @@ function Get-StartupInfo {
         State     = $state
         CameBack  = $status -eq 'ready' -and (Test-CameBack $state)
         SecureBoot = Test-SecureBoot
+        BitLockerOn = Test-BitLockerOn
         BootKey   = Get-BootMenuKey
         Drives    = $drives
         DownloadDrives = @(try { Get-DownloadDrives } catch { Write-Log "Could not list the drives for the download: $($_.Exception.Message)" })
@@ -367,6 +368,14 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
     foreach ($partition in @(Get-RecordedPartitions $state $roles)) {
         Set-Status 'Removing an unfinished partition...'
         Remove-PartitionAt $partition.DiskNumber $partition.Offset
+    }
+
+    # Only the disk can say they went.
+    foreach ($record in @($state.Partitions | Where-Object { $_ -and $_.Role -in $roles })) {
+        $left = Get-PartitionAt (Get-StateDisk $state) ([int64]$record.Offset)
+        if ($left -and [int64]$left.Size -eq [int64]$record.Size -and -not (Get-VolumeOf $left).FileSystemLabel) {
+            [void]$problems.Add(('A {0:N0} GB partition hop made is still on the disk. You can delete it in Disk Management.' -f ($left.Size / 1GB)))
+        }
     }
 
     # Free space that was next to the drive before hop started stays free, unless it was shrunk.

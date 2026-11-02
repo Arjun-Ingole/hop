@@ -170,10 +170,12 @@ function Read-PartitionHead($Partition) { [Hop.DiskProbe]::ReadHead($Partition.D
 # Partitions hop recorded but may not have got as far as labelling, for example when formatting
 # failed. It takes all of this to count: no file system Windows knows, a type that doesn't say Linux,
 # and nothing written at its start. Windows can't read ext4 either, and a Linux installer may have
-# been there since. Not being able to look means it stays.
+# been there since. Not being able to look means it stays. Before the copy has finished and any restart,
+# no installer can have been there, so old data left in that space doesn't make it someone else's.
 function Get-RecordedPartitions($State, [string[]]$Roles) {
     $recorded = @($State.Partitions | Where-Object { $_.Role -in $Roles })
     if (-not $recorded.Count) { return }
+    $neverStarted = -not $State.Copied -and -not $State.RestartedAt -and $null -eq $State.BootNumber
     $disk = Get-StateDisk $State
     if ($null -eq $disk) { return }
     foreach ($partition in @(Get-Partition -DiskNumber $disk -ErrorAction SilentlyContinue)) {
@@ -181,6 +183,7 @@ function Get-RecordedPartitions($State, [string[]]$Roles) {
         if (-not $match -or $partition.IsSystem -or $partition.IsBoot -or $partition.GptType -in $LinuxPartitionTypes) { continue }
         $volume = Get-VolumeOf $partition
         if ($volume -and $volume.FileSystemType -and $volume.FileSystemType -ne 'Unknown') { continue }
+        if ($neverStarted) { $partition; continue }
         $head = try { Read-PartitionHead $partition } catch {
             Write-Log "Could not read partition $($partition.PartitionNumber), so it stays: $($_.Exception.Message)"
             continue

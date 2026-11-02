@@ -377,6 +377,19 @@ try {
     Check 'and the layout is as it was' ((Get-Layout $a) -eq $beforeA) (Get-Layout $a)
     Check 'data survived' ((Get-TestHash $dLetter) -eq $dHash) ''
 
+    Step 'A2c: every new partition starts offline, as on some PCs'
+    Reset-Run
+    function New-Partition {
+        $made = Storage\New-Partition @args
+        Storage\Set-Partition -DiskNumber $made.DiskNumber -PartitionNumber $made.PartitionNumber -IsOffline $true
+        Storage\Get-Partition -DiskNumber $made.DiskNumber -PartitionNumber $made.PartitionNumber
+    }
+    Invoke-Install 'elementary' $iso 6 $target ''
+    Remove-Item function:New-Partition
+    Check 'the install still finishes' ((Get-InstallStatus) -eq 'ready') (Get-InstallStatus)
+    Invoke-Cleanup
+    Check 'undo: layout is back' ((Get-Layout $a) -eq $beforeA) (Get-Layout $a)
+
     Step 'A3: Linux installed: installer goes, its space goes to D:, Linux stays'
     Reset-Run
     Invoke-Install 'elementary' $iso 6 $target ''

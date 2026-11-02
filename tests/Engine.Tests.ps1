@@ -1481,6 +1481,48 @@ Describe 'Clean up saying what it could not do' {
     }
 }
 
+Describe 'A partition that starts offline' {
+    It 'is brought online before anything uses it' {
+        Mock Set-Partition { }
+        Mock Write-Log { }
+        Mock Get-Partition { [pscustomobject]@{ PartitionNumber = 5; DiskNumber = 0; IsOffline = $false } }
+        (Set-PartitionOnline ([pscustomobject]@{ PartitionNumber = 5; DiskNumber = 0; IsOffline = $true })).IsOffline | Should -BeFalse
+        Should -Invoke Set-Partition -ParameterFilter { $IsOffline -eq $false -and $PartitionNumber -eq 5 } -Times 1
+    }
+    It 'leaves one that is already online alone' {
+        Mock Set-Partition { }
+        Set-PartitionOnline ([pscustomobject]@{ PartitionNumber = 5; IsOffline = $false }) | Out-Null
+        Should -Invoke Set-Partition -Times 0
+    }
+}
+
+Describe 'Rolling back a partition over old data' {
+    BeforeEach {
+        $made = [pscustomobject]@{ DiskNumber = 0; PartitionNumber = 5; Offset = [int64]100GB; Size = [int64]4GB; IsSystem = $false; IsBoot = $false; GptType = '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' }
+        Mock Get-Partition { $made }
+        Mock Get-VolumeOf { $null }
+        Mock Get-StateDisk { 0 }
+        Mock Read-PartitionHead { [byte[]](1, 2, 3) }
+        $records = @([pscustomobject]@{ Role = 'installer'; Offset = [int64]100GB; Size = [int64]4GB })
+    }
+    It 'removes it when no installer can have been there' {
+        @(Get-RecordedPartitions ([pscustomobject]@{ Partitions = $records; Copied = $false; RestartedAt = $null; BootNumber = $null }) @('installer')).Count | Should -Be 1
+    }
+    It 'keeps it once an installer could have used it' {
+        @(Get-RecordedPartitions ([pscustomobject]@{ Partitions = $records; Copied = $true; RestartedAt = '2026-11-01T10:00:00'; BootNumber = 7 }) @('installer')).Count | Should -Be 0
+    }
+}
+
+Describe 'Your own copy of a system hop knows' {
+    It 'starts <file> as <id>' -ForEach @(
+        @{ file = 'omarchy-4.0.6.iso'; id = 'omarchy' }, @{ file = 'archlinux-2026.10.01-x86_64.iso'; id = 'arch' }, @{ file = 'cachyos-desktop-linux-260809.iso'; id = 'cachyos' },
+        @{ file = 'Fedora-Workstation-Live-44.iso'; id = 'fedora' }, @{ file = 'debian-live-13.7.0-amd64-gnome.iso'; id = 'debian' }
+    ) { (Get-Distro 'custom' "D:\isos\$file").Id | Should -Be $id }
+    It 'treats anything else as Ubuntu-style' {
+        (Get-Distro 'custom' 'D:\isos\zorin-17.iso').Id | Should -Be 'custom'
+    }
+}
+
 Describe 'Steps with no install behind them' {
     It 'refuses rather than make them up' {
         Mock Read-State { $null }
