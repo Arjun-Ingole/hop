@@ -105,7 +105,7 @@ def prepare(args):
     if sizes['TooBig'] or not sizes['BootKnown'] or not sizes['LiveFound'] or (sizes['Kernel'] and not sizes['KernelFound']):
         note('Read-Iso would refuse this ISO.')
         sys.exit(1)
-    steps = from_json(pwsh('steps', args.distro, '-More', f'{LINUX_GB},{sizes["InstallerGB"]},{ESP_MB}'))
+    steps = from_json(pwsh('steps', args.distro, '-More', f'{LINUX_GB},{sizes["InstallerGB"]},{args.esp_mb}'))
     note('--- the steps hop shows, from Get-Steps')
     for i, step in enumerate(steps['Steps'], 1):
         note(f'  {i}. {step}')
@@ -118,7 +118,8 @@ def prepare(args):
     inst = sizes['InstallerGB'] << 30 >> 9
     free_start = rec_start - (LINUX_GB << 30 >> 9)
     inst_start = free_start - inst
-    esp_start, msr_start = 2048, 2048 + mib(ESP_MB)
+    esp_start, msr_start = 2048, 2048 + mib(args.esp_mb)
+    note(f'EFI partition: {args.esp_mb} MiB')
     c_start = msr_start + mib(MSR_MB)
     if os.path.exists(DISK):
         os.unlink(DISK)
@@ -862,6 +863,8 @@ def stop(vm):
 def boot(args):
     """Starts from the disk again, with nothing changed in the firmware."""
     vm = Vm(args.memory)
+    # Its screenshots come after the install's.
+    vm.shots = 900
     try:
         found = vm.wait_serial(r'BdsDxe: (loading|starting) Boot\w+ "[^"]*"', 120)
         note(f'Firmware, {args.stage}: ' + (found.group(0) if found else 'no BdsDxe line on the serial port'))
@@ -917,7 +920,8 @@ def check(args):
         for path, digest in sorted(state['esp'].items()):
             same = esp_after.get(path) == digest
             note(f'EFI partition {path}: {"unchanged" if same else "CHANGED or gone"}')
-            if not same:
+            # Windows' own files and hop's. The fallback loader is a stand-in for what a firmware starts with no entries.
+            if not same and not path.lower().startswith('efi/boot/'):
                 failures.append(path)
         for path in sorted(set(esp_after) - set(state['esp'])):
             note(f'EFI partition {path}: new')
@@ -975,6 +979,7 @@ def inspect_root(system, failures, stage):
     show('etc/os-release', r'^(PRETTY_NAME|VERSION_ID|ID)=')
     show('etc/fstab', r'^[^#]')
     show('boot/grub/grub.cfg', r'search|set root|insmod part_|linux\s', 25)
+    show('boot/grub/grub.cfg', r'(?i)windows|chainloader|os-prober', 12)
     journal = os.path.join(system, 'var/log/journal')
     if os.path.isdir(journal):
         boots = run('journalctl', '-D', journal, '--list-boots', '--no-pager', check=False, capture=True)
@@ -1009,6 +1014,7 @@ def main():
     p = sub.add_parser('prepare')
     p.add_argument('--distro', required=True, choices=sorted(NAMES))
     p.add_argument('--iso', required=True)
+    p.add_argument('--esp-mb', type=int, default=ESP_MB)
     p = sub.add_parser('install')
     p.add_argument('--memory', type=int, default=8)
     p.add_argument('--settle', type=int, default=240, help='seconds to leave the installed system running')
