@@ -2066,6 +2066,19 @@ Describe 'Get-Steps' {
     It 'tells CachyOS to use GRUB, whose files fit on the EFI partition' {
         ((Get-Steps (Get-Catalog | Where-Object Id -eq 'cachyos') 60).Steps -join ' ') | Should -BeLike '*Bootloader*GRUB*'
     }
+    It 'gives <id> the words its Calamares shows, in order, with the warning it gives Windows'' EFI partition' -ForEach @(@{ id = 'debian' }, @{ id = 'cachyos' }) {
+        Mock Get-WindowsEsp { [pscustomobject]@{ Size = [int64]100MB } }
+        $result = Get-Steps (Get-Catalog | Where-Object Id -eq $id) 60 ([pscustomobject]@{ OnWindowsDisk = $true })
+        ($result.Steps -join ' ') | Should -BeLike '*Manual partitioning*60 GB of **Free Space***Create*File System***ext4***Mount Point***/***100 MiB FAT32*Windows Boot Manager*Keep*/boot/efi*configured incorrectly*OK*Summary*Install*Erase disk*'
+        ($result.Notes -join ' ') | Should -BeLike '*GRUB first*Windows Boot Manager*bootx64.efi*'
+    }
+    It 'has CachyOS pick a desktop, which its installer leaves at none' {
+        $steps = (Get-Steps (Get-Catalog | Where-Object Id -eq 'cachyos') 60).Steps -join ' '
+        $steps | Should -BeLike '*Partitions*Desktop*Plasma Desktop*No Desktop*Install Now*'
+    }
+    It 'warns against removing hop''s partition by hand under CachyOS, whose GRUB finds itself by number' {
+        ((Get-Steps (Get-Catalog | Where-Object Id -eq 'cachyos') 60).Notes -join ' ') | Should -BeLike '*installer partition*partition number*'
+    }
 }
 
 Describe 'Assert-NoBitLocker' {
@@ -2230,13 +2243,14 @@ Describe 'Assert-SystemFitsDrive' {
     It 'refuses <id> on a second disk, with the reason, and claims nothing it has not seen' -ForEach @(
         @{ id = 'debian' }, @{ id = 'cachyos' }
     ) {
-        # Refused anywhere but replacing Windows, for now, so that's the reason given.
-        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Throw "*can't install * yet*"
+        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Throw "*finish on a second disk yet*"
     }
-    It 'refuses <id> next to Windows too, until it has been seen starting afterwards' -ForEach @(
+    It 'offers <id> next to Windows, having seen it start afterwards' -ForEach @(
         @{ id = 'debian' }, @{ id = 'cachyos' }
     ) {
-        { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) '' } | Should -Throw "*next to Windows yet*"
+        $distro = Get-Catalog | Where-Object Id -eq $id
+        $distro.Refused | Should -BeNullOrEmpty
+        { Assert-SystemFitsDrive $distro '' } | Should -Not -Throw
     }
     It 'still offers Debian for replacing Windows, where it was seen working' {
         (Get-Catalog | Where-Object Id -eq 'debian').FullDisk | Should -Not -BeNullOrEmpty
