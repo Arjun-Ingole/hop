@@ -5,7 +5,7 @@
 ### Fixed
 
 - **Remove the installer could stop Linux starting.** Windows renumbers every partition after one it removes, and Linux and GRUB find partitions by number, so GRUB stopped at "no such partition". hop now keeps the installer partition when removing it would renumber Linux, and says so. Seen in a real GPT on a virtual disk.
-- Debian and CachyOS are no longer offered next to Windows, because nobody has seen either start afterwards. Debian can still replace Windows.
+- Debian's and CachyOS's steps next to Windows now match their real installer screens, as followed to a working install in a virtual PC: ext4 rather than CachyOS's btrfs, the EFI partition warning and what to do about it, and CachyOS's Desktop screen, which starts on No Desktop. Both started with Windows' EFI partition at 100 MB and 200 MB.
 
 - The steps for Debian, CachyOS and Arch now find Windows' EFI partition by its size and FAT32, as every installer shows it. CachyOS lists it as /dev/nvme0n1p1 or Windows Boot Manager, never "EFI System Partition", and HOPINSTALL is FAT32 too.
 
