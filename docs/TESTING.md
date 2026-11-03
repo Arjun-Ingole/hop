@@ -248,10 +248,10 @@ started from. Nobody logged in. **Green proves nothing by itself: read `report.t
 
 | System | EFI partition | Runs | Installed | First start | After removing `HOPINSTALL` |
 | --- | --- | --- | --- | --- | --- |
-| Debian 13.7 | 200 MB | 2 | Yes, root on `/dev/nvme0n1p6` | `Boot0008 "Debian"`, shim, then GDM's login screen | Starts, root now on `/dev/nvme0n1p5` |
-| Debian 13.7 | 100 MB | 1 | The same | The same | The same |
-| CachyOS 260809 | 200 MB | 3 | Yes, root on `/dev/nvme0n1p6`, with Plasma | `Boot0008 "cachyos"`, then its login screen, `Reached target Graphical Interface` | **`grub rescue>`** |
-| CachyOS 260809 | 100 MB | 1 | The same | The same | **`grub rescue>`** |
+| Debian 13.7 | 200 MB | 3 | Yes, root on `/dev/nvme0n1p6` | `Boot0008 "Debian"`, shim, then GDM's login screen | Starts, root now on `/dev/nvme0n1p5` |
+| Debian 13.7 | 100 MB | 2 | The same | The same | The same |
+| CachyOS 260809 | 200 MB | 4 | Yes, root on `/dev/nvme0n1p6`, with Plasma | `Boot0008 "cachyos"`, then its login screen, `Reached target Graphical Interface` | **`grub rescue>`** |
+| CachyOS 260809 | 100 MB | 2 | The same | The same | **`grub rescue>`** |
 
 What the screens showed, in both:
 
@@ -281,8 +281,9 @@ Debian, whose shim could have started with it on. The test pressed Return for th
 because it couldn't read **Done**'s effect. hop's own screens and Undo weren't run. Nobody logged in, so the desktops weren't seen. A second
 disk wasn't tried, and both are still refused there. The runs are
 [41532656003](https://github.com/Arjun-Ingole/hop/actions/runs/41532656003) (CachyOS),
-[41534597768](https://github.com/Arjun-Ingole/hop/actions/runs/41534597768) and
-[41551488195](https://github.com/Arjun-Ingole/hop/actions/runs/41551488195).
+[41534597768](https://github.com/Arjun-Ingole/hop/actions/runs/41534597768),
+[41551488195](https://github.com/Arjun-Ingole/hop/actions/runs/41551488195) and
+[41554439860](https://github.com/Arjun-Ingole/hop/actions/runs/41554439860).
 
 ## On a real Windows, in a virtual PC
 
