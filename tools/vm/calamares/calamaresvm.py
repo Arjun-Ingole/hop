@@ -996,6 +996,10 @@ def inspect_root(system, failures, stage):
     else:
         note('No persistent journal')
     markers = os.path.join(system, 'var/lib/hop-marker')
+    # Each start from the disk leaves one, so starting again after the renumbering leaves a second.
+    if stage == 'renumbered' and not os.path.exists(os.path.join(markers, 'boot-2.txt')):
+        note('No second marker: it did not start again after the renumbering')
+        failures.append('no start after the renumbering')
     if os.path.isdir(markers):
         for name in sorted(os.listdir(markers)):
             with open(os.path.join(markers, name), errors='replace') as f:
