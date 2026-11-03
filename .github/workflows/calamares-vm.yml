@@ -20,6 +20,8 @@ jobs:
       fail-fast: false
       matrix:
         distro: [debian, cachyos]
+        # Windows makes 100 MB on most PCs, some makers 260 MB. Both installers ask for more.
+        esp: [100, 200]
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +45,7 @@ jobs:
           echo "$sha  /mnt/cvm/linux.iso" | sha256sum -c - | tee /mnt/cvm/out/iso-checksum.txt
 
       - name: Lay out the disk as hop does
-        run: sudo python3 tools/vm/calamares/calamaresvm.py prepare --distro ${{ matrix.distro }} --iso /mnt/cvm/linux.iso
+        run: sudo python3 tools/vm/calamares/calamaresvm.py prepare --distro ${{ matrix.distro }} --iso /mnt/cvm/linux.iso --esp-mb ${{ matrix.esp }}
 
       - name: Install with Calamares and restart
         id: install
@@ -66,5 +68,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: calamares-${{ matrix.distro }}
+          name: calamares-${{ matrix.distro }}-esp${{ matrix.esp }}
           path: /mnt/cvm/out
