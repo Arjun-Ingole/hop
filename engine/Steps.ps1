@@ -106,8 +106,8 @@ function Assert-NoBitLocker($Distro, [string]$Target) {
 # What to click in the Linux installer. The app shows Steps as a numbered list
 # and Notes underneath; text between ** is shown in a heavier weight. $Place is the
 # saved state, which says where Linux is going; without it, that's next to C:.
-# Windows' EFI partition as a Linux installer shows it: CachyOS's lists it as /dev/nvme0n1p1 and calls it Windows
-# Boot Manager, others EFI System Partition. Its size and FAT32 are what they all show. And the installer partition,
+# Windows' EFI partition as a Linux installer shows it: Debian's and CachyOS's list it as /dev/nvme0n1p1 and call it
+# Windows Boot Manager, others EFI System Partition. Its size and FAT32 are what they all show. And the installer partition,
 # which is FAT32 too, so it doesn't get picked instead.
 function Get-EspWords($Place) {
     $esp = try { Get-WindowsEsp } catch { $null }

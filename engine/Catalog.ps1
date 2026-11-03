@@ -50,9 +50,10 @@ function Get-UbiquityRoute([string]$Id, [string]$Name) {
     }
 }
 
-# Calamares's systems, whose steps next to Windows nobody has followed to a working install. A user who did got GRUB's
-# rescue prompt. Replacing Windows is separate, and is offered where it was seen working.
-$CalamaresProven = @()
+# Calamares's systems, by id, seen installing next to Windows with these steps and starting afterwards. See docs/TESTING.md.
+# A user who followed them got GRUB's rescue prompt. The test got the same once HOPINSTALL was removed and Windows renumbered
+# the partitions after it, which hop's Undo no longer does. Replacing Windows is separate, and is offered where it was seen working.
+$CalamaresProven = @('debian', 'cachyos')
 
 function Get-CalamaresRefusal([string]$Name) {
     "hop can't install $Name next to Windows yet, because it hasn't seen it start afterwards. Pick another system$(if ($Name -eq 'Debian') { ', or replace Windows with it' })."
@@ -178,11 +179,15 @@ function Get-Catalog {
     # Installers name it differently, so it's told apart by what they all show: its size and FAT32. See Get-EspWords.
     # {ESP} is whole sentences, ending in a full stop. See Get-EspWords.
     $EspExtra = 'Also click {ESP} Then choose **Edit**, set the mount point to **/boot/efi** and keep its contents: don''t format it.'
+    # In the words of Debian 13's and CachyOS's screens. Both say Windows' EFI partition is too small, and both carry on.
     $CalamaresSteps = @(
-        'When asked about partitions, choose **Manual partitioning**. If it lists several drives, pick the one with the {GB} GB of free space.'
-        'Click the {GB} GB of **Free Space**, click **Create** and make an **ext4** partition mounted at **/**.'
-        'Click {ESP} Then click **Edit**, choose **Keep** so it isn''t formatted, and set the mount point to **/boot/efi**. If the installer then says this partition is small, click **OK**: hop checked there is room.'
-        "Don't choose **Erase disk**. The installer is running from this drive.")
+        'At **Partitions**, choose **Manual partitioning** and click **Next**. If it lists several drives, pick the one with the {GB} GB of free space.'
+        'Click the {GB} GB of **Free Space**, then **Create**. Set **File System** to **ext4** and **Mount Point** to **/**, then click **OK**.'
+        'Click {ESP} Then click **Edit**, leave **Content** on **Keep** so it isn''t formatted, set **Mount Point** to **/boot/efi** and click **OK**.'
+        'Click **Next**. It says **EFI system partition configured incorrectly**, because it asks for a bigger one. Click **OK** and carry on: hop checked there is room, and its boot loader needs only a few MB.')
+    $CalamaresDont = "Don't choose **Erase disk**. The installer is running from this drive."
+    # Removing hop's installer partition renumbers the ones after it, and CachyOS's GRUB finds its files by number. hop's Undo leaves it.
+    $CalamaresNotes = @("Afterwards this PC starts {NAME}'s GRUB first. Its menu lists **Windows Boot Manager**, and Windows stays in your PC's boot menu too. The installer also replaces the fallback loader **\EFI\Boot\bootx64.efi** on Windows' EFI partition. Windows' own files there aren't touched.")
     $AnacondaSteps = @(
         'On the welcome screen, choose **Not Now**.'
         'Open the install app from the dock, then pick your language.'
@@ -232,11 +237,16 @@ function Get-Catalog {
                 'Fill in your name and password. Check the **Summary** names only that drive, then click **Install**.') }
             Steps = @(
                 'At the menu that appears after restarting, press Enter on **Live system**. It waits until you do.'
-                'On the desktop, open **Install Debian**, then pick your language and keyboard.') + $CalamaresSteps }
+                'On the desktop, open **Install Debian**, then pick your language and keyboard.') + $CalamaresSteps + @('Fill in your name and password, check the **Summary** lists only the new **ext4** partition and **/boot/efi**, then click **Install**.', $CalamaresDont)
+            Notes = @($CalamaresNotes -replace '\{NAME\}', 'Debian') }
         New-Entry 'cachyos' 'CachyOS' 'Fast, for gaming' 'cachyos.org' '#008066' 'cachyos' ((Get-ArchisoBoot @('boot/grub/grub.cfg')) + @{
             Kind = 'cachyos'; SecureBootOff = $true; EspLinuxMB = 25; Refused = $(if ('cachyos' -notin $CalamaresProven) { Get-CalamaresRefusal 'CachyOS' }); GrubDir = 'boot/grub'; Manual = 'Manual partitioning'; ManualExtra = $EspExtra
             # Its other boot loaders keep kernels on the EFI partition, which Windows made too small for them.
-            Steps = @('In the CachyOS Hello window, click **Launch installer**, then pick your language and keyboard.', 'On the **Bootloader** screen, choose **GRUB**.') + $CalamaresSteps })
+            # Its desktop list starts on No Desktop.
+            Steps = @('In the CachyOS Hello window, click **Launch installer**, then pick your language and keyboard.', 'On the **Bootloader** screen, choose **GRUB**.') + $CalamaresSteps + @(
+                'On **Desktop**, choose one, such as **Plasma Desktop**. It starts on **No Desktop**, which has none.'
+                'Fill in your name and password, check the **Summary** lists only the new **ext4** partition and **/boot/efi**, then click **Install** and **Install Now**.', $CalamaresDont)
+            Notes = @(($CalamaresNotes -replace '\{NAME\}', 'CachyOS') + " Don't delete hop's installer partition yourself: CachyOS's GRUB finds itself by partition number, which Windows changes when a partition before it goes.") })
         New-Entry 'arch' 'Arch Linux' 'Do it yourself' 'geo.mirror.pkgbuild.com' '#1793D1' 'arch' ((Get-ArchisoBoot @('loader/entries/*.conf')) + @{
             Kind = 'arch'; SecureBootOff = $true; EspShell = 'shellx64.efi'; EspLinuxMB = 20; Manual = 'Manual Partitioning'; ManualExtra = $EspExtra
             FullDisk = (Get-FullDiskBoot 'archiso') + @{ IsoGB = 2; Steps = @(
