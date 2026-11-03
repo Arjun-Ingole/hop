@@ -212,7 +212,7 @@ The same, with one 130 GB disk: EFI partition, reserved partition, C:, `HOPINSTA
 | --- | --- | --- | --- | --- |
 | Arch 2026.10.01 | The same config, as `archinstall --silent` | hop's 60 GB, as ext4, with `/boot/efi` on the existing EFI partition | Yes: `Boot0009 "GRUB"` first in `BootOrder`, root on the new partition, `Windows Boot Manager` next | Unchanged. MSR, C: and recovery byte for byte, and `HOPINSTALL` apart from `loader/random-seed` |
 | Zorin OS 18.1, Linux Mint 22.3 | Ubiquity's real screens under a small X server, and on Zorin OS its `noninteractive` mode | **Nothing installed.** See below | No | Unchanged, but nothing tried to change them |
-| Debian 13.7, CachyOS | Their real Calamares screens, as above, one attempt each. Not run to the end: the script didn't finish the partition screen. The steps offered next to Windows use the words on those screens, but nobody has followed them through | Nothing installed | No | Unchanged, but nothing tried to change them |
+| Debian 13.7, CachyOS | Their real Calamares screens, clicked as the steps say. See [Debian and CachyOS next to Windows](#debian-and-cachyos-next-to-windows-in-a-virtual-pc) | hop's 40 GB, as ext4, with `/boot/efi` on the existing EFI partition | Yes | Windows' own files unchanged. MSR, C:, recovery and `HOPINSTALL` byte for byte |
 
 **So hop's own partition is how these go next to Windows: see the next section. They're refused on a second disk.** Started from the disk it's installing to, Ubiquity's `Installation type` goes straight to its manual screen, with no option to install alongside Windows, and says: `Your installation medium is on /dev/nvme0n1p5. You will not be able to create, delete, or resize partitions on this disk, but you may be able to install to existing partitions there.` hop's steps asked for that option, then **+**, which is greyed out on Linux Mint. `noninteractive` mode stopped at `No root file system is defined`. Replacing Windows with Zorin OS isn't affected: that run copies it to memory first.
 
@@ -231,6 +231,58 @@ Two routes got further, and neither was run to the end. The test's script stoppe
 **So `prepared` may not be enough:** the partition table can't be written while `/cdrom` is on that disk, at least on Zorin OS. That's a finding from these screens, not from a finished install.
 
 The other results above are from runs whose partition checksums were read. Runs on a second kind of runner weren't counted: its loop devices didn't give hop's partitions, so they checked nothing.
+
+## Debian and CachyOS next to Windows, in a virtual PC
+
+`.github/workflows/calamares-vm.yml` runs `tools/vm/calamares/calamaresvm.py` on a GitHub Actions runner when a `probe/calamares` branch is pushed.
+In QEMU with OVMF and KVM, on an 80 GB NVMe disk numbered as Windows numbers it: EFI partition with stand-ins for Windows' files as 1,
+reserved partition as 2, an NTFS "C:" as 3, the recovery partition ending the disk as 4, and `HOPINSTALL` straight after C: as 5, with
+40 GB free between them. The ISOs are the ones `Resolve-Download` finds, by their checksums: `debian-live-13.7.0-amd64-gnome.iso` and
+`cachyos-desktop-linux-260809.iso`. The engine's real `Update-BootConfig` and `Copy-EspLoader` ran under pwsh, and the firmware started
+`Boot0042` through `BootNext`, with a stand-in "Windows Boot Manager" first in `BootOrder`. Secure Boot was off.
+
+The test adds `systemd.debug_shell=ttyS0` to the live menu, after hop's edits, for a root shell it only reads logs with. Calamares itself
+was driven through its screens, as the steps that `Get-Steps` renders say: QEMU took screenshots, tesseract read them, and the mouse and keys
+went in through QEMU. Nothing was preconfigured. After the install it put a marker service in the installed system, which writes where it
+started from. Nobody logged in. **Green proves nothing by itself: read `report.txt` and look at the screens.**
+
+| System | EFI partition | Runs | Installed | First start | After removing `HOPINSTALL` |
+| --- | --- | --- | --- | --- | --- |
+| Debian 13.7 | 200 MB | 2 | Yes, root on `/dev/nvme0n1p6` | `Boot0008 "Debian"`, shim, then GDM's login screen | Starts, root now on `/dev/nvme0n1p5` |
+| Debian 13.7 | 100 MB | 1 | The same | The same | The same |
+| CachyOS 260809 | 200 MB | 3 | Yes, root on `/dev/nvme0n1p6`, with Plasma | `Boot0008 "cachyos"`, then its login screen, `Reached target Graphical Interface` | **`grub rescue>`** |
+| CachyOS 260809 | 100 MB | 1 | The same | The same | **`grub rescue>`** |
+
+What the screens showed, in both:
+
+- **The EFI partition is named after Windows.** The manual screen's legend calls it `Windows Boot Manager`, and its list `/dev/nvme0n1p1`,
+  `FAT32`. `HOPINSTALL` is `/dev/nvme0n1p5`. Neither said **EFI System Partition**.
+- **They offer Install alongside, Replace a partition and Manual partitioning.** CachyOS also offers Erase disk.
+- **Create starts on ext4 in Debian, and on btrfs in CachyOS**, so the steps say to set it. CachyOS's legend then calls it `Root`.
+- **Both say the EFI partition is too small, and both carry on.** At Next: `EFI system partition configured incorrectly`, `The filesystem must
+  be at least 300 MiB in size` from Debian and `512 MiB` from CachyOS, then `You can continue without setting up an EFI system partition but
+  your system may fail to start.` OK went on, and the summary said `Set up fat32 partition /dev/nvme0n1p1 with mount point /boot/efi`.
+- **Their boot loaders need little room there.** Debian put `shimx64.efi`, `grubx64.efi`, `mmx64.efi`, `fbx64.efi` and a `grub.cfg` in
+  `\EFI\Debian`, about 5 MB. CachyOS ran `grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=cachyos --force` and put
+  one 168 KB `grubx64.efi` in `\EFI\cachyos`. Both also replaced `\EFI\Boot\bootx64.efi`, the fallback loader. `\EFI\Microsoft` and
+  `\EFI\hop` were unchanged.
+- **Both menus list Windows**, as `Windows Boot Manager (on /dev/nvme0n1p1)`. It's a stand-in, so it wasn't started.
+- CachyOS's desktop list starts on **No Desktop**. The test chose Plasma Desktop. Its install downloads packages, so it needs the internet.
+- Debian starts installing straight from **Install**. CachyOS asks first, with **Install Now**.
+
+**Why the user's GRUB said "no such partition".** The test then removed `HOPINSTALL` and moved every later GPT entry down one, as
+`tests/Probe-GptNumbers.ps1` saw Windows do, so Linux's root went from 6 to 5. CachyOS's `grubx64.efi` carries `(,gpt6)/boot/grub` as its
+prefix, so it looked for partition 6 and stopped at `error: kern/disk.c:grub_disk_open:368:no such partition.`, `Entering rescue mode...`,
+`grub rescue>`, every time. Debian's `\EFI\Debian\grub.cfg` finds its files with `search.fs_uuid`, so it started again, with root on
+`/dev/nvme0n1p5`. hop's **Remove the installer** now keeps `HOPINSTALL` when Linux comes after it. The CachyOS steps also say not to delete it by hand.
+
+**What this doesn't show:** no real PC and no real Windows, so Windows was never started from GRUB's menu. Secure Boot was off, including for
+Debian, whose shim could have started with it on. The test pressed Return for the warning's OK, and restarted with `systemctl reboot`,
+because it couldn't read **Done**'s effect. hop's own screens and Undo weren't run. Nobody logged in, so the desktops weren't seen. A second
+disk wasn't tried, and both are still refused there. The runs are
+[41532656003](https://github.com/Arjun-Ingole/hop/actions/runs/41532656003) (CachyOS),
+[41534597768](https://github.com/Arjun-Ingole/hop/actions/runs/41534597768) and
+[41551488195](https://github.com/Arjun-Ingole/hop/actions/runs/41551488195).
 
 ## On a real Windows, in a virtual PC
 
@@ -299,6 +351,7 @@ Note which of these you ran in your pull request. Anything touching disks or boo
 - [ ] Windows with no partition after C:: Ubuntu's live system makes no `writable` partition
 - [ ] Fresh Windows: install a system whose boot menu hop changes (Fedora, CachyOS or Arch) through to a working Linux
 - [ ] Fedora or Ultramarine: click through **Share disk with other operating systems**, which automated tests don't reach
+- [ ] Debian or CachyOS next to a real Windows: follow the steps, then start Windows from GRUB's menu. Then **Remove the installer**: `HOPINSTALL` stays, and CachyOS still starts
 - [ ] Omarchy with BitLocker on, then paused: refused before the download. Then fully off: installs, and Windows starts from the firmware's boot menu and after `limine-scan`
 - [ ] Omarchy: the live system starts from a `HOPLIVE` that Windows formatted
 - [ ] Windows still starts afterwards, from the firmware's boot menu
