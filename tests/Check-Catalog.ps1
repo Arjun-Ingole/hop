@@ -15,6 +15,11 @@ foreach ($distro in Get-Catalog) {
         $head = Invoke-WebRequest -Uri $download.Url -Method Head -UseBasicParsing -TimeoutSec 60
         $size = [int64]($head.Headers['Content-Length'] | Select-Object -First 1)
         Write-Output ('ok    {0,-20} {1:N1} GB  {2}' -f $distro.Id, ($size / 1GB), $download.FileName)
+        # Still installs, but with an older version than the project offers, so it wants trying.
+        if ($download.Untried) {
+            $failed++
+            Write-Output ('FAIL  {0,-20} offers {1}, which hop hasn''t tried, so hop gets {2}.' -f $distro.Id, $download.Untried, $download.FileName)
+        }
     } catch {
         $failed++
         Write-Output ('FAIL  {0,-20} {1}' -f $distro.Id, $_.Exception.Message)

@@ -48,6 +48,7 @@ Each check is from the serial log or the disk image, not the job's result:
 | Ultramarine 44 | Yes | Yes | By its installer | Yes, as Fedora, at 7.4 GB of memory and with Secure Boot on. The firmware started `\EFI\fedora\shimx64.efi`, and the system then stopped at its own first-start **Language** screen, `taidan-initial-setup.service`, so the probe's message didn't run |
 | Omarchy 4.0.6 | Yes | Yes, as it starts, with `copytoram` added to hop's `umount -l` | By its installer | Yes, in its real wizard on `tty1` with keys pressed: **Full disk install**, at 10 GB of memory, with BitLocker's signature on "C:", which that mode doesn't check for. Once encrypted, with the password typed at its prompt, to its desktop, and once not, to its login screen, with `Reached target Graphical Interface`. Secure Boot off, as it needs. Run again with hop's menu as it is now, at 12 GB, in [41455950194](https://github.com/Arjun-Ingole/hop/actions/runs/41455950194) and 41457041976: `copytoram` let go of the disk, hop's first `mount` then found nothing and stopped the rest, as it should, and **Full disk install** erased the disk. The firmware then started `Limine`, and its journal has `Reached target Graphical Interface` and `VERSION_ID="4.0.6"` |
 | Omarchy 4.5.0-rc3 | No | Not run | Not run | Not run. hop refuses it once the ISO is open: its menu has `copytoram=n` after hop's `copytoram`, which wins, and its installer reads its root image from the partition it would erase |
+| Omarchy 4.5.0 | No | Not run | Not run | Not run. Refused once the ISO is open, as 4.5.0-rc3 is, for the same reasons |
 | Xubuntu, Ubuntu Budgie, Ubuntu Cinnamon, Edubuntu, Ubuntu Studio 26.04.1 | Yes | Yes | By its installer | Yes, as Ubuntu, with its autoinstall, each at its ISO plus 4 GB, with Secure Boot on and BitLocker's signature on "C:". Their screens weren't seen. The firmware started `\EFI\ubuntu\shimx64.efi`, each said root on the new partition, `secureboot=1` and `dm=active`, and a screenshot shows each one's login screen |
 | Linux Mint 22.3, all three | No | Yes, and `blockdev --rereadpt` succeeded, with Secure Boot on | No | Not shown. Its `noninteractive` mode stopped at a question it can't ask, with `does not implement question_dialog`, and its graphical installer under a small X server waited at **Welcome** because the test pressed no keys. The disk was untouched |
 | Pop!_OS 24.04 | No | Yes, once hop's edit found its `/casper_pop-os_...` folder | By `distinst` | Erased it with `distinst` and a table given by hand, but without `--modify-boot`, so the firmware found nothing to start: `No bootable option or device was found`. Not shown starting |
@@ -127,6 +128,14 @@ say. It's each ISO by its checksum. **Green proves nothing by itself: read `repo
 | 4.5.0-rc3 | The same | Yes, with the password typed at its prompt | 8 GB | 32, 26 and 25 seconds | Omarchy's desktop, which logs in by itself after that password, `session opened for user hop` |
 | 4.5.0-rc3 | The same | No | 4 GB | 27, 21 and 22 seconds | Login screen, `Reached target Graphical Interface` |
 | 4.0.6 | 4 GB `HOPINSTALL`, 7 GB `HOPLIVE` | No | 8 GB | 2 minutes 5 seconds, 2 minutes 3 and 1 minute 43 | Login screen, `Reached target Graphical Interface` |
+
+4.5.0, the release after 4.5.0-rc3, ran the same way once each in
+[42175783774](https://github.com/Arjun-Ingole/hop/actions/runs/42175783774): with 8 GB, encrypted with 8 GB, and with 4 GB. All three
+offered the free space with the same words, wrote `3744 MiB from /run/archiso/bootmnt/arch/x86_64/omarchy-root.img.zst`, and started
+the installed system to `Reached target Graphical Interface`, with `VERSION_ID="4.5.0"` in its os-release. It boots through `Limine` from
+an EFI partition of its own, and its kernel line finds its root by `UUID=`. Replacing Windows with it was refused as untried, as for rc3.
+When omarchy.org offers a version that isn't in `$OmarchyTried`, hop downloads 4.5.0 by its own checksum instead, and the weekly
+catalog check fails until it has been tried.
 
 Each ran three times, with the same results. In all twelve, with hop's menu as it is now:
 

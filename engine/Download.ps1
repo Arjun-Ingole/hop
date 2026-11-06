@@ -1,7 +1,9 @@
 # --- Official download sources -----------------------------------------
 
 # The Omarchy versions seen installing next to Windows in a virtual PC: see docs/TESTING.md.
-$OmarchyTried = @('4.0.*', '4.5.0-rc3')
+$OmarchyTried = @('4.0.*', '4.5.0-rc3', '4.5.0')
+# The newest of those, which omarchy.org keeps, for when it offers one hop hasn't tried yet.
+$OmarchyKnown = @{ Version = '4.5.0'; Url = 'https://iso.omarchy.org/omarchy-4.5.0-x86.iso'; Sha256 = '5d6288bc57f96f6231719830457582c846a2291985201c36a9a7d1216978b00f' }
 
 function Get-WebText([string]$Url) {
     for ($attempt = 1; ; $attempt++) {
@@ -134,7 +136,13 @@ function Resolve-Download($Distro) {
             if (-not $m.Success) { throw 'Could not find the Omarchy ISO on omarchy.org.' }
             # Each version has changed its installer, so only those seen installing next to Windows are taken.
             $version = $m.Groups[1].Value
-            if (-not @($OmarchyTried | Where-Object { $version -like $_ }).Count) { throw "omarchy.org now offers version $version, and hop has only tried $(($OmarchyTried -replace '\.\*$') -join ' and ')." }
+            if (-not @($OmarchyTried | Where-Object { $version -like $_ }).Count) {
+                # A new version can come out any day, so until it's been tried, the last one that was is what installs.
+                Write-Log "omarchy.org now offers version $version, which hop hasn't tried, so it gets $($OmarchyKnown.Version)."
+                $download = New-Download $OmarchyKnown.Url $OmarchyKnown.Sha256 0
+                $download | Add-Member Untried $version
+                return $download
+            }
             $sum = [regex]::Match((Get-WebText "$($m.Value).sha256"), '^[0-9a-f]{64}')
             if (-not $sum.Success) { throw 'Could not find the checksum for the Omarchy ISO.' }
             return New-Download $m.Value $sum.Value 0
