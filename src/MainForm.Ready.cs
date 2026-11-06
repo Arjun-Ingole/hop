@@ -68,12 +68,12 @@ namespace Hop
         Task RestartIntoInstallerFirstAsync() => RestartAsync(engine.RestartIntoInstallerFirstAsync,
             $"You can also restart yourself and tap {startup.BootKey} while the PC starts, then choose the installer.");
 
-        Task RestartToBiosAsync() => RestartAsync(engine.RestartToBiosAsync, "Restart yourself and tap Delete, F2 or F10 while the PC starts.");
+        Task RestartToBiosAsync() => RestartAsync(engine.RestartToBiosAsync, "Restart yourself and tap Delete, F2 or F10 while the PC starts.", setsNextStart: false);
 
         Task RestartIntoBiosAsync() => RestartAsync(engine.RestartIntoFirmwareAsync, "Restart yourself and tap Delete, F2 or F10 while the PC starts.");
 
         /// <summary>Windows closes hop as it restarts. If that's cancelled, the buttons have to come back.</summary>
-        async Task RestartAsync(Func<Task> restart, string doItYourself)
+        async Task RestartAsync(Func<Task> restart, string doItYourself, bool setsNextStart = true)
         {
             int shown = screen;
             primary.Enabled = secondary.Enabled = footerLink.Enabled = false;
@@ -83,6 +83,8 @@ namespace Hop
                 await restart();
                 await Task.Delay(RoomRestartWaitSeconds * 1000);
                 problem = "This PC didn't restart. Something stopped Windows restarting. Save your work and try again.";
+                // What hop set for the next start is still set, whoever restarts the PC next.
+                if (setsNextStart) problem += " Until then, the next restart opens the installer, whenever it happens.";
             }
             catch (Exception ex) { problem = Describe(ex); }
             if (shown != screen) return;
