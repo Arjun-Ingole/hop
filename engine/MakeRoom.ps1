@@ -193,8 +193,8 @@ function Get-MakeRoomSteps([string]$Drive) {
     if ($pagingOff) { $steps += "On drive $room turns off the **paging file**." }
     $byItself = Test-OpensAgainByItself
     $steps += if ($restart -and -not $byItself) { 'Restarts this PC. Open hop again within 20 minutes, and it moves what''s left out of the way.' } elseif ($restart) { 'Restarts this PC, opens again, and moves what''s left out of the way.' } else { 'Moves files out of the way, which can take 15 minutes or more.' }
-    $steps += "Shrinks drive $room to set the space aside for Linux, so nothing can take it back, then turns everything back on. If Windows still can't release it all, they stay off until you install or close hop."
-    $steps += 'Until you install, you can give the space back to the drive.'
+    $steps += "Sets the space aside for Linux by shrinking drive $room, so nothing can take it back, and turns everything back on once it has. Until you install, you can give it back."
+
     $note = if ($restart) { 'Save your work first. Your files aren''t touched.' } else { 'Your files aren''t touched, and this PC doesn''t restart.' }
     $notes = @($note)
     if (-not $pagingOff -and $isWindows) { $notes += 'This PC has too little memory to turn off the paging file safely. If that''s what is in the way, this won''t free much.' }

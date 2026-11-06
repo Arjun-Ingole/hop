@@ -581,7 +581,7 @@ Describe 'Make room setting the space aside' {
         Test-Path $AsidePath | Should -BeFalse
     }
     It 'says how it sets the space aside, and that it can be given back' {
-        ((Get-MakeRoomSteps '').Steps -join ' ') | Should -BeLike '*set the space aside for Linux*give the space back*'
+        ((Get-MakeRoomSteps '').Steps -join ' ') | Should -BeLike '*Sets the space aside for Linux*you can give it back*'
     }
 }
 

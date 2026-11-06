@@ -776,7 +776,7 @@ Describe 'Make room''s steps' {
             "On drive $env:SystemDrive turns off **hibernation** and clears the **change journal**."
             "On drive $env:SystemDrive turns off the **paging file**."
             'Restarts this PC, opens again, and moves what''s left out of the way.'
-            'Turns everything back on once Linux has its space, or when you close hop.')
+            "Sets the space aside for Linux by shrinking drive $env:SystemDrive, so nothing can take it back, and turns everything back on once it has. Until you install, you can give it back.")
         $steps.Notes | Should -Be @('Save your work first. Your files aren''t touched.')
     }
     It 'leave out the paging file on C: with little memory, and still restart' {
@@ -794,7 +794,7 @@ Describe 'Make room''s steps' {
         $steps.Steps | Should -Be @(
             'On drive Y: clears the **change journal**.'
             'Moves files out of the way, which can take 15 minutes or more.'
-            'Turns everything back on once Linux has its space, or when you close hop.')
+            'Sets the space aside for Linux by shrinking drive Y:, so nothing can take it back, and turns everything back on once it has. Until you install, you can give it back.')
         $steps.Notes | Should -Be @('Your files aren''t touched, and this PC doesn''t restart.')
     }
     It 'restart for another drive with a paging file' {
