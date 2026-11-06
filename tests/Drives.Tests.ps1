@@ -480,6 +480,7 @@ Describe 'Get-SpaceOwner' {
 Describe 'Invoke-Cleanup on another drive' {
     BeforeEach {
         Mock Test-RemovalRenumbersLinux { $false }   # these disks can't be read for their GPT
+        Mock Get-LinuxLoaders { }
         $script:resized = @()
         $script:removed = @()
         Mock Get-BcdEntries { }

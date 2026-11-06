@@ -21,6 +21,37 @@ function Use-Esp([scriptblock]$Action) {
     try { & $Action "$($letter):\" } finally { & mountvol.exe "$($letter):" /d | Out-Null }
 }
 
+# The partition numbers Linux's boot files on the EFI partition name, for those that find Linux by its number rather than
+# its ID: CachyOS's GRUB has (,gpt6)/boot/grub built in, and a kernel line can say root=/dev/nvme0n1p6. Debian's and
+# Ubuntu's search for an ID. $null when it can't tell: no Linux boot files there, or no way to look.
+function Get-LinuxBootNumbers {
+    $patterns = @('\((?:hd\d+)?,gpt(\d+)\)', '\bhd\d+,gpt(\d+)\b', '\bhdd\(\d+:(\d+)\)', '/dev/(?:nvme\d+n\d+p|mmcblk\d+p|[shv]d[a-z])(\d+)\b')
+    try {
+        Use-Esp {
+            param($root)
+            $skip = @(@('EFI\Microsoft', 'EFI\Boot') + $EspFolders | ForEach-Object { (Join-Path $root $_) + '\' })
+            $files = @(Get-ChildItem -LiteralPath $root -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.efi', '.cfg', '.conf' -and $_.Length -le 32MB })
+            $own = @($files | Where-Object { $path = $_.FullName; -not @($skip | Where-Object { $path.StartsWith($_, 'OrdinalIgnoreCase') }).Count })
+            # The fallback loader in EFI\Boot can be Linux's too, but it's Windows' as often, so it alone can't say Linux is here.
+            if (-not $own.Count) { return }
+            $numbers = New-Object Collections.ArrayList
+            foreach ($file in @($own + @($files | Where-Object { $_.FullName.StartsWith((Join-Path $root 'EFI\Boot\'), 'OrdinalIgnoreCase') }))) {
+                $text = [Text.Encoding]::GetEncoding(28591).GetString([IO.File]::ReadAllBytes($file.FullName))
+                # A menu that searches for its partition only falls back on the number it names, but a kernel line doesn't search.
+                $searches = $file.Extension -ne '.efi' -and $text -match '(?m)^\s*search(\.fs_uuid|\.fs_label|\s)'
+                foreach ($pattern in $patterns) {
+                    if ($searches -and $pattern -notlike '/dev/*') { continue }
+                    foreach ($m in [regex]::Matches($text, $pattern)) { [void]$numbers.Add([int]$m.Groups[1].Value) }
+                }
+            }
+            [pscustomobject]@{ Numbers = @($numbers | Sort-Object -Unique) }
+        }
+    } catch {
+        Write-Log "Could not read Linux's boot files: $($_.Exception.Message)"
+        $null
+    }
+}
+
 function Get-BootEntries { [Hop.Firmware]::ListEntries() }
 
 function Remove-FirmwareEntry([int]$Number) { [Hop.Firmware]::DeleteBootEntry($Number) }

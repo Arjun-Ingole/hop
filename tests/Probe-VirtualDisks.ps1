@@ -93,7 +93,8 @@ function Assert-FirmwareAccess { }
 function Assert-SecureBootAllows($Distro) { }
 function Get-SecureBootProblem([string]$Root) { }
 function Test-SecureBoot { $false }
-function Use-Esp([scriptblock]$Action) { }
+# A folder stands in for it where a step needs Linux's boot files on it.
+function Use-Esp([scriptblock]$Action) { if ($global:ProbeEsp) { & $Action $global:ProbeEsp } }
 function Register-Installer([string]$Name) { 7 }
 function Test-BitLockerOn { $false }
 function Get-FastStartup { 0 }
@@ -555,19 +556,44 @@ try {
     Check 'Linux on this disk is not offered before it has been kept' ($null -eq (Get-OtherSystem)) ''
     Invoke-Cleanup
     Check 'clean-up noticed and only took the installer' ($null -ne (Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$linuxPart.Offset })) ''
-    # Linux came after the installer, so removing it would have renumbered Linux's partition, which stops GRUB.
-    Check 'the installer stays, because removing it would renumber Linux' (@(Get-HopPartitions | Where-Object Label -eq $InstallerLabel).Count -eq 1) ''
-    Check 'and hop says why' ((@($Sync.CleanupProblems) -join ' ') -like '*renumber*') (@($Sync.CleanupProblems) -join ' / ')
+    # Linux came after the installer, so removing it would renumber Linux's partition, and with no boot files to read,
+    # hop can't tell whether its GRUB names it by number, as CachyOS's does.
+    $kept = Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$inst.Partition.Offset }
+    Check 'the installer partition stays, because removing it would renumber Linux' ($null -ne $kept) ''
+    Check 'emptied, under a name that isn''t hop''s' ((Get-VolumeOf $kept).FileSystemLabel -eq $SharedLabel -and @(Get-ChildItem -LiteralPath "$((Get-VolumeOf $kept).DriveLetter):\" -Force -ErrorAction SilentlyContinue | Where-Object Name -ne 'System Volume Information').Count -eq 0) "$((Get-VolumeOf $kept).FileSystemLabel)"
+    Check 'so hop doesn''t count it as its own' (@(Get-HopPartitions).Count -eq 0 -and (Get-InstallStatus) -eq 'none') (Get-InstallStatus)
+    Check 'and it says why, as a result, not a failure' ($Sync.KeptForLinux -and $Sync.SpaceNote -like '*change the number of a Linux partition*' -and @($Sync.CleanupProblems).Count -eq 0) "$($Sync.SpaceNote) / $(@($Sync.CleanupProblems) -join ' / ')"
     Check 'X: never gave anything up, so it keeps its size' ((Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$x.Offset }).Size -eq $x.Size) ''
     Check 'the disk is remembered' (@(Get-LinuxDisks) -contains $vdiskB.Guid) (@(Get-LinuxDisks) -join ',')
     $other = Get-OtherSystem
     Check 'and that Linux is now offered for removal' ($null -ne $other -and -not $other.OnWindowsDisk) ''
     Check 'the disk is refused while it has Linux on it' ((Get-DriveBlocker (Get-Disk -Number $b) $null) -like '*already has Linux*') ''
     Remove-OtherSystem (Get-OtherSystem).Selection
-    # With no Linux after it now, the installer can go too.
-    foreach ($left in @(Get-HopPartitions)) { Remove-PartitionAt $left.Partition.DiskNumber $left.Partition.Offset }
+    # With no Linux after it now, the kept partition can go too.
+    Remove-PartitionAt $b $inst.Partition.Offset
     Check 'removing it gives the disk back as it was' ((Get-Layout $b) -eq $beforeLinux) "$(Get-Layout $b) vs $beforeLinux"
     Check 'and forgets the disk' (@(Get-LinuxDisks).Count -eq 0) ''
+
+    Step 'B9b: Linux installed after the installer, with a GRUB that finds it by ID'
+    Reset-Run
+    Invoke-Install 'ubuntu' $iso 6 $target ''
+    $inst = @(Get-HopPartitions) | Where-Object Label -eq $InstallerLabel
+    $linuxPart = New-Partition -DiskNumber $b -Offset ([int64]$inst.Partition.Offset + [int64]$inst.Partition.Size) -Size 5GB -GptType '{0fc63daf-8483-4772-8e79-3d69d8477de4}'
+    # What Ubuntu's installer leaves on the EFI partition: a menu that searches for its partition's ID.
+    $global:ProbeEsp = Join-Path $env:TEMP "hop-probe-esp-$(Get-Random)\"
+    New-Item -ItemType Directory -Path (Join-Path $global:ProbeEsp 'EFI\ubuntu') -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $global:ProbeEsp 'EFI\ubuntu\grub.cfg') -Value "search.fs_uuid 7300343e-8b03-4bfa-9c44-2f995f339bf6 root hd0,gpt7`nset prefix=(`$root)'/boot/grub'`nconfigfile `$prefix/grub.cfg"
+    Set-Content -LiteralPath (Join-Path $global:ProbeEsp 'EFI\ubuntu\grubx64.efi') -Value 'MZ'
+    $numbersBefore = Get-GptNumbers $b
+    Invoke-Cleanup -InstallerOnly
+    $global:ProbeEsp = $null
+    Check 'the installer goes, because renumbering does that Linux no harm' ($null -eq (Storage\Get-Partition -DiskNumber $b | Where-Object { [int64]$_.Offset -eq [int64]$inst.Partition.Offset })) ''
+    Check 'with nothing said about keeping it' (-not $Sync.KeptForLinux -and @($Sync.CleanupProblems).Count -eq 0) "$($Sync.SpaceNote) / $(@($Sync.CleanupProblems) -join ' / ')"
+    Check 'Linux stays, renumbered as Windows does' ((Get-GptNumbers $b)[[int64]$linuxPart.Offset] -eq $numbersBefore[[int64]$linuxPart.Offset] - 1) "$($numbersBefore[[int64]$linuxPart.Offset]) then $((Get-GptNumbers $b)[[int64]$linuxPart.Offset])"
+    Remove-PartitionAt $b $linuxPart.Offset
+    foreach ($left in @(Get-HopPartitions)) { Remove-PartitionAt $left.Partition.DiskNumber $left.Partition.Offset }
+    Remove-LinuxDiskIfAny $vdiskB.Guid
+    Check 'put back for the next run' ((Get-Layout $b) -eq $beforeLinux) "$(Get-Layout $b) vs $beforeLinux"
     Check 'data survived' ((Get-TestHash $xLetter) -eq $xHash) ''
 
     Step 'B10: the partition casper makes when an older build started the installer'

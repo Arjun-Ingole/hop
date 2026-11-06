@@ -159,7 +159,8 @@ namespace Hop
                 : installerOnly ? "The space it used is free, but Windows can't reach it from here."
                 : "The space it used is free on this disk.";
             if (!string.IsNullOrEmpty(iso)) result += $" The ISO is still at {iso}. Delete it if you don't need it.";
-            Arrange(new[] { new[] { Run.Black("Changes removed.") } }, result, Secondary, null, 0);
+            var title = engine.KeptForLinux ? new[] { Run.Black("Linux is set up.") } : new[] { Run.Black("Changes removed.") };
+            Arrange(new[] { title }, result, Secondary, null, 0);
             Footer("Start over", ShowChoose, "Close", Close);
         }
 

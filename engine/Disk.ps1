@@ -134,8 +134,9 @@ function Get-GptNumbers([int]$Disk) {
     $numbers
 }
 
-# Whether taking these away would change the number of a Linux partition that stays, which can stop it starting.
-# Not being able to read the GPT counts as yes.
+# Whether taking these away would change the number of a Linux partition that stays in a way that stops it starting:
+# Windows closes up the gap. Only what names a partition by number minds, so Linux's boot files say. Not being able
+# to read the GPT or those files counts as yes.
 function Test-RemovalRenumbersLinux($ToRemove, [int]$Disk) {
     if (-not @($ToRemove).Count) { return $false }
     $numbers = try { Get-GptNumbers $Disk } catch { Write-Log "Could not read the GPT: $($_.Exception.Message)"; return $true }
@@ -143,7 +144,21 @@ function Test-RemovalRenumbersLinux($ToRemove, [int]$Disk) {
     if (-not $lowest) { return $true }
     $going = @($ToRemove | ForEach-Object { [int64]$_.Offset })
     $linux = @(Get-LinuxPartitions @(Get-Partition -DiskNumber $Disk -ErrorAction SilentlyContinue) | Where-Object { [int64]$_.Offset -notin $going })
-    @($linux | Where-Object { $numbers[[int64]$_.Offset] -gt $lowest }).Count -gt 0
+    $shifting = @($linux | ForEach-Object { $numbers[[int64]$_.Offset] } | Where-Object { $_ -gt $lowest })
+    if (-not $shifting.Count) { return $false }
+    $named = Get-LinuxBootNumbers
+    if (-not $named) { Write-Log "Linux's partition $($shifting -join ', ') would be renumbered, and hop can't see whether that matters."; return $true }
+    $hit = @($named.Numbers | Where-Object { $_ -in $shifting })
+    if ($hit.Count) { Write-Log "Linux's boot files name partition $($hit -join ', ') by number, which removing this would change."; return $true }
+    Write-Log "Linux's partition $($shifting -join ', ') will be renumbered, which is fine: its boot files find it by ID."
+    $false
+}
+
+# A partition kept for Linux's sake, emptied and named so hop never takes it for its own again. Says its letter, if it has one.
+function Clear-KeptPartition($Partition) {
+    $format = if ((Get-VolumeOf $Partition).FileSystemType -eq 'exFAT') { 'exFAT' } else { 'FAT32' }
+    Format-NewPartition $Partition $format $SharedLabel
+    try { Get-DriveLetter $Partition } catch { $null }
 }
 
 function Get-PartitionAt([int]$DiskNumber, [int64]$Offset) {

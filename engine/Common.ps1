@@ -31,6 +31,7 @@ $InstallerLabels = @($InstallerLabel, 'LINUXHOP')
 $LiveLabel = 'HOPLIVE'     # the second partition, for a live image FAT32 can't hold
 $BootLabel = 'LINUXBOOT'
 $RootLabel = 'LINUXROOT'
+$SharedLabel = 'SHARED'   # an installer partition kept for Linux's sake, emptied, and no longer hop's
 $EspFolder = 'EFI\hop'   # on Windows' EFI partition
 $EspFolders = @($EspFolder, 'EFI\linuxhop')
 $EntryMarker = '(hop)'

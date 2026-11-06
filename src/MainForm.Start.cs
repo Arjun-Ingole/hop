@@ -138,6 +138,12 @@ namespace Hop
                 return;
             }
             if (afterwards != null) afterwards();
+            else if (engine.KeptForLinux)
+            {
+                // A drive appeared: say why before going on.
+                Arrange(new[] { new[] { Run.Black("Cleaned up.") } }, engine.SpaceNote, Secondary, null, 0);
+                Footer("Start over", ShowChoose, "Close", Close);
+            }
             else ShowChoose();
         }
     }

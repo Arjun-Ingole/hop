@@ -165,12 +165,23 @@ Describe 'Resolve-Download' {
         $download.Sha256 | Should -Be $hash
         Should -Invoke Get-WebText -ParameterFilter { $Url -eq 'https://iso.omarchy.org/omarchy-4.5.0-rc3-x86.iso.sha256' }
     }
-    It 'refuses Omarchy <file>, which hop has not seen install' -ForEach @(
-        @{ file = 'omarchy-4.5.0-x86.iso'; version = '4.5.0' }, @{ file = 'omarchy-4.5.0-rc2-x86.iso'; version = '4.5.0-rc2' }
-        @{ file = 'omarchy-4.5.0-rc30-x86.iso'; version = '4.5.0-rc30' }, @{ file = 'omarchy-4.6.0.iso'; version = '4.6.0' }
+    It 'takes Omarchy 4.5.0' {
+        Mock Get-WebText { '<a href="https://iso.omarchy.org/omarchy-4.5.0-aarch64.iso">ARM</a> <a href="https://iso.omarchy.org/omarchy-4.5.0-x86.iso">ISO</a>' } -ParameterFilter { $Url -eq 'https://omarchy.org/' }
+        Mock Get-WebText { "$hash  omarchy-4.5.0-x86.iso`n" } -ParameterFilter { $Url -like '*.sha256' }
+        $download = Resolve-Download (Get-Catalog | Where-Object Id -eq 'omarchy')
+        $download.Url | Should -Be 'https://iso.omarchy.org/omarchy-4.5.0-x86.iso'
+        $download.Sha256 | Should -Be $hash
+        $download.Untried | Should -BeNullOrEmpty
+    }
+    It 'gets the last Omarchy it tried, with its own checksum, when omarchy.org offers <file>' -ForEach @(
+        @{ file = 'omarchy-4.5.0-rc2-x86.iso'; version = '4.5.0-rc2' }, @{ file = 'omarchy-4.5.0-rc30-x86.iso'; version = '4.5.0-rc30' }
+        @{ file = 'omarchy-4.5.1-x86.iso'; version = '4.5.1' }, @{ file = 'omarchy-4.6.0.iso'; version = '4.6.0' }
     ) {
         Mock Get-WebText { "<a href=`"https://iso.omarchy.org/$file`">ISO</a>" }
-        { Resolve-Download (Get-Catalog | Where-Object Id -eq 'omarchy') } | Should -Throw "*version $version, and hop has only tried 4.0 and 4.5.0-rc3."
+        $download = Resolve-Download (Get-Catalog | Where-Object Id -eq 'omarchy')
+        $download.Url | Should -Be 'https://iso.omarchy.org/omarchy-4.5.0-x86.iso'
+        $download.Sha256 | Should -Be '5d6288bc57f96f6231719830457582c846a2291985201c36a9a7d1216978b00f'
+        $download.Untried | Should -Be $version
         Should -Invoke Get-WebText -Times 0 -ParameterFilter { $Url -like '*.sha256' }
     }
     It 'takes the dated Arch ISO, whose name is the same on every mirror' {
@@ -1124,7 +1135,9 @@ Describe 'Get-WindowsEsp' {
 Describe 'Invoke-Cleanup' {
     BeforeEach {
         Mock Test-RemovalRenumbersLinux { $false }   # these disks can't be read for their GPT
+        Mock Get-LinuxLoaders { }
         $script:removed = @()
+        $script:cleared = @()
         $state = [pscustomobject]@{ Partitions = @(); WindowsShrunk = $true; FastStartupWasOn = $false; BitLockerPaused = $false }
         Mock Read-State { $state }
         Mock Get-BcdEntries { }
@@ -1173,12 +1186,44 @@ Describe 'Invoke-Cleanup' {
         Invoke-Cleanup
         $script:removed | Should -Be @([int64]160GB)
     }
-    It 'keeps the installer, and says why, when removing it would renumber Linux' {
+    It 'keeps the installer, emptied, and says why, when removing it would renumber Linux' {
         Mock Test-LinuxInstalled { $true }
         Mock Test-RemovalRenumbersLinux { $true }
+        Mock Clear-KeptPartition { $script:cleared += $Partition.Offset; 'E' }
         Invoke-Cleanup -InstallerOnly
         @($script:removed).Count | Should -Be 0
-        (@($Sync.CleanupProblems) -join ' ') | Should -BeLike '*renumber*'
+        $script:cleared | Should -Be @([int64]160GB)
+        # Not a failure: Linux starts, and the screen says so.
+        @($Sync.CleanupProblems).Count | Should -Be 0
+        $Sync.KeptForLinux | Should -BeTrue
+        $Sync.SpaceNote | Should -BeLike '*change the number of a Linux partition*E:*SHARED*Windows and Linux can both use*'
+    }
+    It 'guards a Linux that stays when there is no record of the install' {
+        Mock Read-State { $null }
+        Mock Test-RemovalRenumbersLinux { $true }
+        Mock Clear-KeptPartition { $script:cleared += $Partition.Offset }
+        Invoke-Cleanup
+        @($script:removed).Count | Should -Be 0
+        $script:cleared | Should -Be @([int64]100GB, [int64]160GB)
+        $Sync.SpaceNote | Should -BeLike '*empty partition called SHARED*'
+    }
+    It 'says so when a kept partition cannot be emptied' {
+        Mock Test-LinuxInstalled { $true }
+        Mock Test-RemovalRenumbersLinux { $true }
+        Mock Clear-KeptPartition { throw 'busy' }
+        Invoke-Cleanup -InstallerOnly
+        @($script:removed).Count | Should -Be 0
+        (@($Sync.CleanupProblems) -join ' ') | Should -BeLike "*couldn't empty it*"
+    }
+    It 'leaves the installer as it is when Linux was told to start from it' {
+        Mock Test-LinuxInstalled { $true }
+        Mock Get-HopPartitions { [pscustomobject]@{ Label = 'HOPINSTALL'; Partition = [pscustomobject]@{ DiskNumber = 0; Offset = [int64]160GB; Size = [int64]8GB; Guid = '{inst}' } } }
+        Mock Get-LinuxLoaders { [pscustomobject]@{ PartitionGuid = '{INST}'; Path = '\EFI\arch\grubx64.efi' } }
+        Mock Clear-KeptPartition { $script:cleared += $Partition.Offset }
+        Invoke-Cleanup -InstallerOnly
+        @($script:removed).Count | Should -Be 0
+        @($script:cleared).Count | Should -Be 0
+        (@($Sync.CleanupProblems) -join ' ') | Should -BeLike "*8 GB installer partition holds Linux's boot loader*"
     }
     Context 'when the space cannot go back' {
         BeforeEach {
@@ -1643,9 +1688,28 @@ Describe 'Removing the installer with Linux after it' {
         Mock Get-Partition { $installer, $linux }
         Mock Write-Log { }
     }
-    It 'would renumber Linux, so it says so' {
+    It 'would renumber Linux, whose boot loader names it by number, so it says so' {
         Mock Get-GptNumbers { @{ [int64]100GB = 4; [int64]104GB = 6 } }
         Mock Get-LinuxPartitions { $linux }
+        Mock Get-LinuxBootNumbers { [pscustomobject]@{ Numbers = @(6) } }
+        Test-RemovalRenumbersLinux @($installer) 0 | Should -BeTrue
+    }
+    It 'is fine when Linux''s boot files find it by ID, as Debian''s and Ubuntu''s do' {
+        Mock Get-GptNumbers { @{ [int64]100GB = 4; [int64]104GB = 6 } }
+        Mock Get-LinuxPartitions { $linux }
+        Mock Get-LinuxBootNumbers { [pscustomobject]@{ Numbers = @() } }
+        Test-RemovalRenumbersLinux @($installer) 0 | Should -BeFalse
+    }
+    It 'is not fooled by a number that stays the same' {
+        Mock Get-GptNumbers { @{ [int64]100GB = 4; [int64]104GB = 6 } }
+        Mock Get-LinuxPartitions { $linux }
+        Mock Get-LinuxBootNumbers { [pscustomobject]@{ Numbers = @(2) } }
+        Test-RemovalRenumbersLinux @($installer) 0 | Should -BeFalse
+    }
+    It 'plays safe when it can''t see Linux''s boot files' {
+        Mock Get-GptNumbers { @{ [int64]100GB = 4; [int64]104GB = 6 } }
+        Mock Get-LinuxPartitions { $linux }
+        Mock Get-LinuxBootNumbers { $null }
         Test-RemovalRenumbersLinux @($installer) 0 | Should -BeTrue
     }
     It 'is fine when Linux comes before it, as Mint''s and Zorin''s partitions do' {
@@ -1661,6 +1725,59 @@ Describe 'Removing the installer with Linux after it' {
     It 'plays safe when the GPT can''t be read' {
         Mock Get-GptNumbers { throw 'no' }
         Test-RemovalRenumbersLinux @($installer) 0 | Should -BeTrue
+    }
+}
+
+Describe 'Get-LinuxBootNumbers' {
+    BeforeEach {
+        $esp = Join-Path $TestDrive ([guid]::NewGuid())
+        New-Item -ItemType Directory -Path (Join-Path $esp 'EFI\Microsoft\Boot'), (Join-Path $esp 'EFI\Boot'), (Join-Path $esp 'EFI\hop') | Out-Null
+        Set-Content -LiteralPath (Join-Path $esp 'EFI\Microsoft\Boot\bootmgfw.efi') -Value 'MZ (hd0,gpt3)'
+        Set-Content -LiteralPath (Join-Path $esp 'EFI\hop\grub.cfg') -Value 'set root=(,gpt9)'
+        Mock Use-Esp { & $Action "$esp\" }
+        Mock Write-Log { }
+        function Add-EspFile([string]$Path, [string]$Text) {
+            $file = Join-Path $esp $Path
+            New-Item -ItemType Directory -Path (Split-Path $file) -Force | Out-Null
+            [IO.File]::WriteAllBytes($file, [Text.Encoding]::GetEncoding(28591).GetBytes($Text))
+        }
+    }
+    It 'finds the number CachyOS''s GRUB has built in' {
+        Add-EspFile 'EFI\cachyos\grubx64.efi' "MZ`0`0prefix`0(,gpt6)/boot/grub`0`0"
+        (Get-LinuxBootNumbers).Numbers | Should -Be @(6)
+    }
+    It 'finds none in Debian''s, which searches for an ID' {
+        Add-EspFile 'EFI\debian\grubx64.efi' "MZ`0prefix`0grub_net_search_config_file`0"
+        Add-EspFile 'EFI\debian\grub.cfg' "search.fs_uuid 7300343e-8b03 root `nset prefix=(`$root)'/boot/grub'`nconfigfile `$prefix/grub.cfg`n"
+        $found = Get-LinuxBootNumbers
+        $found | Should -Not -BeNullOrEmpty
+        @($found.Numbers).Count | Should -Be 0
+    }
+    It 'counts a menu''s fallback number only when it doesn''t search' {
+        Add-EspFile 'EFI\one\grub.cfg' "set root='hd0,gpt5'`nsearch --no-floppy --fs-uuid --set=root abc`n"
+        @((Get-LinuxBootNumbers).Numbers).Count | Should -Be 0
+        Add-EspFile 'EFI\one\grub.cfg' "set root='hd0,gpt5'`nconfigfile /boot/grub/grub.cfg`n"
+        (Get-LinuxBootNumbers).Numbers | Should -Be @(5)
+    }
+    It 'finds a kernel line that names its root by device, even in a menu that searches' {
+        Add-EspFile 'limine.conf' "/Arch`n    cmdline: root=/dev/nvme0n1p7 rw`n"
+        Add-EspFile 'EFI\limine\limine_x64.efi' 'MZ'
+        (Get-LinuxBootNumbers).Numbers | Should -Be @(7)
+        Add-EspFile 'EFI\one\grub.cfg' "search --fs-uuid --set=root abc`nlinux /vmlinuz root=/dev/sda3`n"
+        (Get-LinuxBootNumbers).Numbers | Should -Be @(3, 7)
+    }
+    It 'reads the fallback loader too, once Linux is there' {
+        Add-EspFile 'EFI\cachyos\grubx64.efi' 'MZ'
+        Add-EspFile 'EFI\Boot\bootx64.efi' "MZ`0(hd0,gpt4)/boot/grub`0"
+        (Get-LinuxBootNumbers).Numbers | Should -Be @(4)
+    }
+    It 'can''t tell with only Windows'' and hop''s files there' {
+        Add-EspFile 'EFI\Boot\bootx64.efi' "MZ`0(,gpt4)`0"
+        Get-LinuxBootNumbers | Should -BeNullOrEmpty
+    }
+    It 'can''t tell when the EFI partition won''t open' {
+        Mock Use-Esp { throw 'Could not open the EFI system partition.' }
+        Get-LinuxBootNumbers | Should -BeNullOrEmpty
     }
 }
 
@@ -2056,6 +2173,14 @@ Describe 'Get-Steps' {
             $steps | Should -Not -BeLike '*umount*'
             $steps | Should -BeLike '*/boot/efi*carry on*'
         }
+    }
+    It 'points Arch at Windows'' EFI partition by its size, here and on a second disk, not just any fat32 one' -ForEach @(@{ windowsDisk = $true }, @{ windowsDisk = $false }) {
+        Mock Get-WindowsEsp { [pscustomobject]@{ Size = [int64]260MB } }
+        $place = [pscustomobject]@{ OnWindowsDisk = $windowsDisk; DiskName = 'Disk'; DiskGB = 500; Partitions = @([pscustomobject]@{ Role = 'installer'; Size = [int64]4GB }) }
+        $steps = (Get-Steps (Get-Catalog | Where-Object Id -eq 'arch') 60 $place).Steps -join ' '
+        $steps | Should -BeLike '*select the **260 MiB FAT32** partition*Not the 4 GB **HOPINSTALL** one*Assign mountpoint*/boot/efi*'
+        $steps | Should -Not -BeLike '*{ESP}*'
+        $steps | Should -Not -BeLike '*existing **fat32***'
     }
     It 'says plainly that Arch installs in a terminal' {
         $steps = (Get-Steps (Get-Catalog | Where-Object Id -eq 'arch') 60).Steps -join ' '

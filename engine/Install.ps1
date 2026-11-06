@@ -364,15 +364,39 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
     }
     $roles = if ($InstallerOnly) { @('installer', 'live') } else { @('installer', 'live', 'root', 'boot') }
     $leftovers = @(Get-RecordedPartitions $state $roles)
-    # With Linux staying, Windows taking a partition away renumbers Linux's after it, and GRUB then stops at
-    # "no such partition". So they stay, which does no harm.
-    $keepForLinux = $InstallerOnly -and (@($hopPartitions).Count -or $leftovers.Count) -and (Test-RemovalRenumbersLinux (@($hopPartitions | ForEach-Object { $_.Partition }) + $leftovers) ([int]@(@($hopPartitions | ForEach-Object { $_.Partition }) + $leftovers)[0].DiskNumber))
+    # Windows taking a partition away renumbers the ones after it, and a GRUB that names its partition by number
+    # then stops at "no such partition". That goes for any Linux that stays, with state or without, so then they
+    # stay too, emptied, as a drive both can use. Their space couldn't have gone back to Windows past Linux anyway.
+    $removing = @(@($hopPartitions | ForEach-Object { $_.Partition }) + $leftovers)
+    # A Linux installer told to put its boot loader on hop's partition now starts from there, so that one stays as it is.
+    $startsLinux = @(Get-LinuxLoaders @($removing | ForEach-Object { $_.DiskNumber } | Sort-Object -Unique) | ForEach-Object { $_.PartitionGuid })
+    foreach ($partition in @($removing | Where-Object { $_.Guid -and $startsLinux -contains $_.Guid })) {
+        Write-Log "Kept partition $($partition.Guid): Linux starts from it."
+        [void]$problems.Add(('hop''s {0:N0} GB installer partition holds Linux''s boot loader, so hop left it. Linux was told to start from there, and would stop starting without it.' -f ($partition.Size / 1GB)))
+        $hopPartitions = @($hopPartitions | Where-Object { [int64]$_.Partition.Offset -ne [int64]$partition.Offset })
+        $leftovers = @($leftovers | Where-Object { [int64]$_.Offset -ne [int64]$partition.Offset })
+    }
+    $removing = @(@($hopPartitions | ForEach-Object { $_.Partition }) + $leftovers)
+    $keepForLinux = @($removing | Group-Object DiskNumber | Where-Object { Test-RemovalRenumbersLinux $_.Group ([int]$_.Name) }).Count -gt 0
+    $Sync.KeptForLinux = $keepForLinux
     if ($keepForLinux) {
         $bytes = [int64]0
-        foreach ($partition in @(@($hopPartitions | ForEach-Object { $_.Partition }) + $leftovers)) { if ($partition.Size) { $bytes += [int64]$partition.Size } }
+        $letters = New-Object Collections.ArrayList
+        foreach ($partition in $removing) {
+            if ($partition.Size) { $bytes += [int64]$partition.Size }
+            Set-Status 'Emptying the installer partition...'
+            try {
+                $letter = Clear-KeptPartition $partition
+                if ($letter) { [void]$letters.Add("$($letter):") }
+            } catch {
+                Write-Log "Could not empty a kept partition: $($_.Exception.Message)"
+                [void]$problems.Add(('hop''s {0:N0} GB installer partition is still on the disk, and hop couldn''t empty it. Leave it there: removing it would stop Linux starting.' -f ($partition.Size / 1GB)))
+            }
+        }
         $gb = [int][math]::Round($bytes / 1GB)
-        Write-Log 'Kept the installer partition: removing it would renumber the Linux partition after it.'
-        [void]$problems.Add("hop left its $(if ($gb) { "$gb GB " })installer partition, because Windows would renumber the Linux partition after it, and Linux wouldn't start. It does no harm, and Windows and Linux start as before.")
+        Write-Log 'Kept the installer partition: removing it would renumber a Linux partition its boot loader names by number.'
+        $where = if ($letters.Count) { " It's now an empty drive, $($letters -join ' and '), called $SharedLabel, that Windows and Linux can both use." } else { " It's now an empty partition called $SharedLabel." }
+        $Sync.SpaceNote = "hop left its $(if ($gb) { "$gb GB " })installer partition in place, because removing it would change the number of a Linux partition after it, and that can stop Linux starting.$where Don't delete it."
         $hopPartitions = @(); $leftovers = @()
     }
     foreach ($found in $hopPartitions) {
