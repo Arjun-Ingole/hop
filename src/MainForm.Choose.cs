@@ -409,7 +409,7 @@ namespace Hop
             ConfigureDrive(DriveMode.Stuck, Current);
             steps.Set(plan.Steps, plan.Notes.Skip(1).ToArray());
             Arrange(new[] { new[] { Run.Gray("Make room for"), Run.Black($"{linuxGB} GB") } },
-                $"{target.StuckGB} GB of {title} is free, but Windows can only shrink it as far as the last file it can't move. Make room moves what's in the way, then sets {linuxGB} GB aside for Linux.", Secondary, drive, 24);
+                $"{title} has the room, but Windows can only shrink it as far as the last file it can't move. Make room moves what's in the way, then sets {linuxGB} GB aside for Linux.", Secondary, drive, 24);
             PlaceSteps(drive.Bottom + S(24));
             steps.Visible = true;
             Footer(plan.Notes.FirstOrDefault(), null, plan.Restart ? "Make room and restart" : "Make room", () => _ = MakeRoomAsync(), "Back", ShowChoose);

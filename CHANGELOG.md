@@ -6,8 +6,13 @@
 
 - Omarchy 4.5.0, tested installing next to Windows in a virtual PC, with and without encryption, and with 4 GB of memory. When omarchy.org offers a version hop hasn't tried yet, hop now installs the newest one it has, by its own checksum, instead of refusing.
 
+### Changed
+
+- **Make room is part of choosing the size.** The slider now reaches as far as the drive's free space, with the part Windows can't release yet striped. Drag into it and the button becomes Make room, which says how much Windows releases now and what it takes to get the rest. Before, the slider stopped at what Windows released, and Make room was a small link that people missed.
+
 ### Fixed
 
+- **Make room's space could be taken again before the install.** It turned off the paging file and hibernation, moved files, and only shrank the drive when you clicked Install. Closing hop, restarting, or waiting too long turned them back on, and the paging file could come back at the end of the drive, as it did in issue #6. Make room now shrinks the drive by the size you chose as soon as there's room, so the space waits after it, and turns everything back on straight away. The install uses that space, Undo gives it back, and until you install, a link gives it back to the drive. hop comes back from the restart with the size you chose, and says plainly when Windows released less.
 - **Remove the installer could stop Linux starting.** Windows renumbers every partition after one it removes, and CachyOS's GRUB finds its partition by number, so it stopped at "no such partition". hop now reads Linux's boot files on the EFI partition first. When something there names a partition that would be renumbered, or hop can't tell, it keeps the installer partition, empties it into a drive called SHARED that Windows and Linux can both use, and says why. When they find Linux by ID, as Debian's do, the installer is removed as before. Seen in a real GPT on a virtual disk, and in CachyOS's and Debian's own boot files.
 - An installer partition a Linux installer was told to boot from now stays as it is, instead of being removed with Linux's boot loader on it.
 - hop now keeps the PC awake through the whole install, including the download and the copy, not only Make room and clean-up.
