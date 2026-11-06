@@ -259,7 +259,7 @@ function Get-Catalog {
                 'Type **archinstall** and press Enter.'
                 "Open **Disk configuration**, then **Partitioning**. Choose **Manual Partitioning** and select the drive with the free space."
                 'Select the {GB} GB of free space and make an **ext4** partition with the mountpoint **/**.'
-                'Select the existing **fat32** EFI partition, choose **Assign mountpoint** and type **/boot/efi**. Keep it unformatted.'
+                'Select {ESP} Choose **Assign mountpoint**, type **/boot/efi** and keep it unformatted.'
                 'Under **Bootloader**, choose **Grub**. Set up the rest of the menu as you like, including a Profile if you want a desktop, then choose **Install**.'
                 "Don't change any other partition. The installer is running from this drive.")
             # GRUB goes on Windows' EFI partition, the one this firmware is known to start, so both disks are chosen.
@@ -270,7 +270,7 @@ function Get-Catalog {
                     'Open **Disk configuration**, then **Partitioning**. Choose **Manual Partitioning**.'
                     'Under **Select disks for the installation**, press Space on **{DISK}** and on the disk Windows is on, so both have an **X**, then press Enter.'
                     'On **{DISK}**, select the {GB} GB of free space and make an **ext4** partition with the mountpoint **/**.'
-                    'On the disk Windows is on, select the existing **fat32** EFI partition, choose **Assign mountpoint** and type **/boot/efi**. Keep it unformatted.'
+                    'On the disk Windows is on, select {ESP} Choose **Assign mountpoint**, type **/boot/efi** and keep it unformatted.'
                     'Under **Bootloader**, choose **Grub**. Set up the rest of the menu as you like, including a Profile if you want a desktop, then choose **Install**.'
                     "Don't change any other partition. The installer is running from {DISK}, and Windows needs the rest of its disk.")
                 Notes = @("Afterwards this PC starts Arch's GRUB from Windows' EFI partition, and Arch itself from {DISK}. Windows stays in your PC's boot menu.")
