@@ -1724,7 +1724,13 @@ Describe 'Removing the installer with Linux after it' {
     }
     It 'plays safe when the GPT can''t be read' {
         Mock Get-GptNumbers { throw 'no' }
+        Mock Get-LinuxPartitions { $linux }
         Test-RemovalRenumbersLinux @($installer) 0 | Should -BeTrue
+    }
+    It 'doesn''t need the GPT when no Linux stays, as on Undo before Linux is installed' {
+        Mock Get-GptNumbers { throw 'no' }
+        Mock Get-LinuxPartitions { @() }
+        Test-RemovalRenumbersLinux @($installer) 0 | Should -BeFalse
     }
 }
 

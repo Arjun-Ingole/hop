@@ -139,11 +139,13 @@ function Get-GptNumbers([int]$Disk) {
 # to read the GPT or those files counts as yes.
 function Test-RemovalRenumbersLinux($ToRemove, [int]$Disk) {
     if (-not @($ToRemove).Count) { return $false }
+    # With no Linux staying, there's nothing to renumber, whatever the GPT says.
+    $going = @($ToRemove | ForEach-Object { [int64]$_.Offset })
+    $linux = @(Get-LinuxPartitions @(Get-Partition -DiskNumber $Disk -ErrorAction SilentlyContinue) | Where-Object { [int64]$_.Offset -notin $going })
+    if (-not $linux.Count) { return $false }
     $numbers = try { Get-GptNumbers $Disk } catch { Write-Log "Could not read the GPT: $($_.Exception.Message)"; return $true }
     $lowest = @($ToRemove | ForEach-Object { $numbers[[int64]$_.Offset] } | Where-Object { $_ } | Sort-Object)[0]
     if (-not $lowest) { return $true }
-    $going = @($ToRemove | ForEach-Object { [int64]$_.Offset })
-    $linux = @(Get-LinuxPartitions @(Get-Partition -DiskNumber $Disk -ErrorAction SilentlyContinue) | Where-Object { [int64]$_.Offset -notin $going })
     $shifting = @($linux | ForEach-Object { $numbers[[int64]$_.Offset] } | Where-Object { $_ -gt $lowest })
     if (-not $shifting.Count) { return $false }
     $named = Get-LinuxBootNumbers
