@@ -19,34 +19,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: 4.5.0-rc3
-            url: https://iso.omarchy.org/omarchy-4.5.0-rc3-x86.iso
-            sha: 715d7c72d51c29a1e2db7b8f8562d54f0f5710b9c1c5a4243800be48fba24269
+          - name: 4.5.0
+            url: https://iso.omarchy.org/omarchy-4.5.0-x86.iso
+            sha: 5d6288bc57f96f6231719830457582c846a2291985201c36a9a7d1216978b00f
             memory: 8
             encrypt: ''
             prepare: ''
-          - name: 4.5.0-rc3-encrypted
-            url: https://iso.omarchy.org/omarchy-4.5.0-rc3-x86.iso
-            sha: 715d7c72d51c29a1e2db7b8f8562d54f0f5710b9c1c5a4243800be48fba24269
+          - name: 4.5.0-encrypted
+            url: https://iso.omarchy.org/omarchy-4.5.0-x86.iso
+            sha: 5d6288bc57f96f6231719830457582c846a2291985201c36a9a7d1216978b00f
             memory: 8
             encrypt: --encrypt
             prepare: ''
-          - name: 4.5.0-rc3-4gb
-            url: https://iso.omarchy.org/omarchy-4.5.0-rc3-x86.iso
-            sha: 715d7c72d51c29a1e2db7b8f8562d54f0f5710b9c1c5a4243800be48fba24269
+          - name: 4.5.0-4gb
+            url: https://iso.omarchy.org/omarchy-4.5.0-x86.iso
+            sha: 5d6288bc57f96f6231719830457582c846a2291985201c36a9a7d1216978b00f
             memory: 4
             encrypt: ''
             prepare: ''
-          - name: 4.0.6
-            url: https://iso.omarchy.org/omarchy-4.0.6.iso
-            sha: ''
-            memory: 8
-            encrypt: ''
-            prepare: ''
-          # Replacing Windows, which copies the live system to memory first: the ISO plus 4 GB, as hop asks.
-          - name: 4.0.6-replacing-windows
-            url: https://iso.omarchy.org/omarchy-4.0.6.iso
-            sha: ''
+          - name: 4.5.0-replacing-windows
+            url: https://iso.omarchy.org/omarchy-4.5.0-x86.iso
+            sha: 5d6288bc57f96f6231719830457582c846a2291985201c36a9a7d1216978b00f
             memory: 12
             encrypt: ''
             prepare: --full-disk
