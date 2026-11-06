@@ -56,6 +56,7 @@ cmd /c dir /a C:\*.sys | Select-String '\.sys'
 "RunOnce: " + ((Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce -ErrorAction SilentlyContinue).hop)
 "make-room.json: " + $(if (Test-Path C:\ProgramData\hop\make-room.json) { Get-Content C:\ProgramData\hop\make-room.json -Raw } else { 'none' })
 "state.json: " + $(if (Test-Path C:\ProgramData\hop\state.json) { 'there' } else { 'none' })
+"room-aside.json: " + $(if (Test-Path C:\ProgramData\hop\room-aside.json) { Get-Content C:\ProgramData\hop\room-aside.json -Raw } else { 'none' })
 Get-Partition -DiskNumber $c.DiskNumber | Sort-Object Offset | ForEach-Object { "  part {0} {1,-12} offset {2:N2} GB size {3:N2} GB letter [{4}]" -f $_.PartitionNumber, $_.Type, ($_.Offset/1GB), ($_.Size/1GB), $_.DriveLetter }
 "hop running: " + ((Get-Process hop -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Id) '$($_.MainWindowTitle)'" }) -join ', ')
 Get-WinEvent -FilterHashtable @{ LogName='Application'; ProviderName='Microsoft-Windows-Defrag'; Id=259 } -MaxEvents 1 -ErrorAction SilentlyContinue | ForEach-Object { "last shrink blocker event, $($_.TimeCreated.ToString('s')): " + ($_.Message -replace '\s+',' ') }
@@ -453,6 +454,31 @@ def scenario_stuck(bench):
     restart_and_wait(vm)
     vm.shot('stuck-restarted-again')
     s.facts('after one more restart: are hibernation, the paging file and the journal back?')
+    s.hop_log()
+
+
+def scenario_roomkept(bench):
+    """Make room, then closing hop and restarting before installing, as people do. Until 0.3.3 that put the
+    paging file back, which could take the space again. Now the space is set aside first, so it has to still be
+    after C:, with the paging file, hibernation and the journal back on, and hop has to say so."""
+    vm, s = bench.fresh()
+    s.desktop()
+    s.facts('as installed')
+    make_space_stuck(vm)
+    s.facts('after moving the paging file to the end')
+    s.get_hop()
+    make_room(vm, s)
+    s.facts('Make room done: is the space set aside after C:, and the settings back?')
+    ui = s.ui()
+    vm.click(ui['right'] - 24, ui['top'] + 22)
+    time.sleep(15)
+    vm.shot('kept-closed')
+    restart_and_wait(vm)
+    s.facts('closed hop and restarted: is the space still there, with the paging file back?')
+    s.open_as_a_person('kept-elevation-prompt')
+    s.settle()
+    vm.shot('kept-choose')
+    print(s.names(), flush=True)
     s.hop_log()
 
 

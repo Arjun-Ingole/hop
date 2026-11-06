@@ -481,6 +481,110 @@ A volume shrink analysis was initiated on volume Windows (C:).
     }
 }
 
+Describe 'Make room setting the space aside' {
+    BeforeAll {
+        Mock Get-SignedInUser { 'PC\\someone' }
+        $RoomPath = Join-Path $TestDrive 'make-room-aside.json'
+        $AsidePath = Join-Path $TestDrive 'room-aside.json'
+    }
+    BeforeEach {
+        Remove-Item $RoomPath, $AsidePath -ErrorAction SilentlyContinue
+        $script:size = [int64]470GB
+        $script:tail = [int64]0
+        $script:shrinkable = [int64]200GB
+        Mock Test-HibernationOn { $true }
+        Mock Test-EnoughMemoryWithoutPaging { $true }
+        Mock Get-PagingSettings { @('?:\pagefile.sys') }
+        Mock Set-Hibernation { }
+        Mock Clear-ChangeJournal { }
+        Mock New-ChangeJournal { }
+        Mock Set-PagingOff { }
+        Mock Restore-Paging { }
+        Mock Register-RunAfterRestart { }
+        Mock Unregister-RunAfterRestart { }
+        Mock Unregister-ResumeTask { }
+        Mock Invoke-Shutdown { }
+        Mock Invoke-Defrag { }
+        Mock Get-LastBoot { [datetime]'2030-01-01' }
+        Mock Get-Partition { [pscustomobject]@{ DiskNumber = 0; PartitionNumber = 3; Offset = [int64]1GB; Size = $script:size } }
+        Mock Get-TailFree { $script:tail }
+        Mock Get-SupportedSize { [pscustomobject]@{ SizeMin = [int64]100GB; SizeMax = $script:size } }
+        Mock Get-ShrinkableBytes { $script:shrinkable }
+        Mock Resize-Partition { $script:tail += $script:size - $Size; $script:size = $Size }
+    }
+    It 'sets aside what Linux asked for once files have moved, then turns everything back on' {
+        Start-MakeRoom '' 60 ([int64]72GB) 0
+        Complete-MakeRoom | Should -Be 'done'
+        Should -Invoke Resize-Partition -ParameterFilter { $Size -eq [int64]398GB } -Times 1
+        $script:tail | Should -Be ([int64]72GB)
+        (Read-RoomAside).SizeBefore | Should -Be ([int64]470GB)
+        (Read-RoomAside).WantedLinuxGB | Should -Be 60
+        # Nothing is left to keep them off for, so closing hop or restarting again loses nothing.
+        Should -Invoke Restore-Paging -Times 1
+        Should -Invoke Set-Hibernation -ParameterFilter { $On } -Times 1
+        Test-Path $RoomPath | Should -BeFalse
+    }
+    It 'sets aside as far as Windows can, and keeps the settings off for the install' {
+        $script:shrinkable = [int64]30GB
+        Start-MakeRoom '' 60 ([int64]72GB) 0
+        Complete-MakeRoom | Should -Be 'done'
+        Should -Invoke Resize-Partition -ParameterFilter { $Size -eq [int64]440GB } -Times 1
+        Should -Invoke Restore-Paging -Times 0
+        (Read-RoomState).Phase | Should -Be 'ready'
+    }
+    It 'counts free space already after the drive' {
+        $script:tail = [int64]72GB
+        Start-MakeRoom '' 60 ([int64]72GB) 0
+        Complete-MakeRoom
+        Should -Invoke Resize-Partition -Times 0
+        Should -Invoke Restore-Paging -Times 1
+    }
+    It 'keeps room inside the drive for the download' {
+        Start-MakeRoom '' 60 ([int64]72GB) ([int64]8GB)
+        Complete-MakeRoom
+        Should -Invoke Get-ShrinkableBytes -ParameterFilter { $Reserve -eq $WindowsReserve + 8GB }
+    }
+    It 'sets nothing aside when it wasn''t asked to, as before' {
+        Start-MakeRoom
+        Complete-MakeRoom
+        Should -Invoke Resize-Partition -Times 0
+        Should -Invoke Restore-Paging -Times 0
+        Test-Path $AsidePath | Should -BeFalse
+    }
+    It 'loses nothing when Windows refuses the shrink' {
+        Mock Resize-Partition { throw 'The size of the extent is less than the minimum.' }
+        Start-MakeRoom '' 60 ([int64]72GB) 0
+        Complete-MakeRoom | Should -Be 'done'
+        Test-Path $AsidePath | Should -BeFalse
+        Should -Invoke Restore-Paging -Times 0
+        (Read-RoomState).Phase | Should -Be 'ready'
+    }
+    It 'remembers the size the drive had before the first time, when it runs again' {
+        $script:shrinkable = [int64]30GB
+        Start-MakeRoom '' 60 ([int64]72GB) 0
+        Complete-MakeRoom
+        $script:shrinkable = [int64]200GB
+        Restore-RoomSettings
+        Start-MakeRoom '' 60 ([int64]72GB) 0
+        Complete-MakeRoom
+        $script:size | Should -Be ([int64]398GB)
+        (Read-RoomAside).SizeBefore | Should -Be ([int64]470GB)
+    }
+    It 'says what is set aside, and forgets it once the space has gone' {
+        Start-MakeRoom '' 60 ([int64]72GB) 0
+        Complete-MakeRoom
+        $aside = Get-RoomAside
+        $aside.GB | Should -Be 72
+        $aside.WantedLinuxGB | Should -Be 60
+        $script:tail = [int64]0
+        Get-RoomAside | Should -BeNullOrEmpty
+        Test-Path $AsidePath | Should -BeFalse
+    }
+    It 'says how it sets the space aside, and that it can be given back' {
+        ((Get-MakeRoomSteps '').Steps -join ' ') | Should -BeLike '*set the space aside for Linux*give the space back*'
+    }
+}
+
 Describe 'Get-InstallStatus' {
     BeforeAll {
         $installer = [pscustomobject]@{ Partition = $null; Label = 'HOPINSTALL'; Letter = 'H' }

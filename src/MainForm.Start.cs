@@ -21,6 +21,8 @@ namespace Hop
                 {
                     BeginWork(new[] { new[] { Run.Black("Moving files"), Run.Gray("out of the way") } }, "Starting…");
                     Footer("You can keep using your PC while this runs.", null, null, null);
+                    // The size it was for, which closing hop before the restart forgot.
+                    roomWantedGB = startup.RoomWantedGB;
                     if (await engine.CompleteMakeRoomAsync())
                         roomLetter = string.IsNullOrEmpty(startup.RoomLetter) ? WindowsLetter : startup.RoomLetter;
                     else
@@ -53,6 +55,9 @@ namespace Hop
             selected = catalog[0];
             int max = MaxLinuxGB;
             linuxGB = Math.Max(MinLinuxGB, Math.Min(max, Math.Max(60, (max / 2) / 10 * 10)));
+            // Back from Make room, or with space it set aside: the size it was for.
+            int wanted = roomWantedGB > 0 ? roomWantedGB : startup.RoomAsideLetter == target.Letter ? startup.RoomAsideWantedGB : 0;
+            if (wanted > 0) linuxGB = wanted;
 
             await ShowStartScreenAsync();
         }

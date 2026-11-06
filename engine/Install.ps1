@@ -64,8 +64,15 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
             OnWindowsDisk = $plan.DiskNumber -eq (Get-WindowsPartition).DiskNumber
             TargetKind = $plan.Kind; TargetLetter = $plan.Letter; TargetOffset = $plan.TargetOffset; AlongsideOk = $null
         }
+        # What Make room set aside after this drive is the drive's to have back, as if this install had shrunk it.
+        $aside = Read-RoomAside
+        if ($aside -and -not $FullDisk -and [int]$aside.DiskNumber -eq [int]$plan.DiskNumber -and [int64]$aside.Offset -eq [int64]$plan.TargetOffset) {
+            $state.WindowsShrunk = $true
+            $state | Add-Member -NotePropertyName SizeBeforeShrink -NotePropertyValue ([int64]$aside.SizeBefore) -Force
+        }
         $diskChanged = $true
         Save-State $state
+        if ($aside -and $state.WindowsShrunk) { Remove-RoomAside }
         $state.BitLockerPaused = Suspend-BitLockerForSetup
         Disable-FastStartup
         Save-State $state
@@ -158,6 +165,8 @@ function Get-StartupInfo {
             BlockerKind = Get-BlockerKind $blocker
         }
         RoomPhase = Get-RoomPhase
+        RoomAside = $(try { Get-RoomAside } catch { Write-Log "Could not check what Make room set aside: $($_.Exception.Message)" })
+        RoomWantedGB = [int](Read-RoomState).WantedLinuxGB
         RoomNotice = $(try { Get-RoomNotice } catch { Write-Log "Could not check Make room's record: $($_.Exception.Message)" })
         Other     = $other
         Status    = $status

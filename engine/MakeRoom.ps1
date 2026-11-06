@@ -8,6 +8,7 @@
 # function takes a drive letter, and without one means C:.
 
 $RoomPath = Join-Path $StateDir 'make-room.json'
+$AsidePath = Join-Path $StateDir 'room-aside.json'   # the space Make room set aside, until an install takes it or Windows has it back
 $RunOnceKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce'   # builds before the tasks used this
 $ResumeTaskName = 'hop resume'
 $RestoreTaskName = 'hop restore settings'
@@ -192,7 +193,8 @@ function Get-MakeRoomSteps([string]$Drive) {
     if ($pagingOff) { $steps += "On drive $room turns off the **paging file**." }
     $byItself = Test-OpensAgainByItself
     $steps += if ($restart -and -not $byItself) { 'Restarts this PC. Open hop again within 20 minutes, and it moves what''s left out of the way.' } elseif ($restart) { 'Restarts this PC, opens again, and moves what''s left out of the way.' } else { 'Moves files out of the way, which can take 15 minutes or more.' }
-    $steps += 'Turns everything back on once Linux has its space, or when you close hop.'
+    $steps += "Shrinks drive $room to set the space aside for Linux, so nothing can take it back, then turns everything back on. If Windows still can't release it all, they stay off until you install or close hop."
+    $steps += 'Until you install, you can give the space back to the drive.'
     $note = if ($restart) { 'Save your work first. Your files aren''t touched.' } else { 'Your files aren''t touched, and this PC doesn''t restart.' }
     $notes = @($note)
     if (-not $pagingOff -and $isWindows) { $notes += 'This PC has too little memory to turn off the paging file safely. If that''s what is in the way, this won''t free much.' }
@@ -200,7 +202,9 @@ function Get-MakeRoomSteps([string]$Drive) {
 }
 
 # Says 'restarting' when the PC is on its way down, or 'done' when another drive didn't need it to be.
-function Start-MakeRoom([string]$Drive) {
+# $WantedBytes is what Linux and its installer need after the drive, and $KeepFreeBytes what has to stay
+# free inside it, for a download going there. Without them, nothing is set aside.
+function Start-MakeRoom([string]$Drive, [int]$WantedLinuxGB = 0, [int64]$WantedBytes = 0, [int64]$KeepFreeBytes = 0) {
     # An earlier run on another drive saved its settings in the same file. They go back first, so
     # none are lost and what's saved next is what's really there.
     if (Test-RoomFileDamaged) {
@@ -216,6 +220,7 @@ function Start-MakeRoom([string]$Drive) {
     $state = [pscustomobject]@{
         Phase = 'restarting'; Saved = (Get-Date).ToString('s'); Hibernation = $isWindows -and (Test-HibernationOn)
         Paging = @(Get-PagingSettings); PagingOff = $pagingOff; Drive = $room
+        WantedLinuxGB = $WantedLinuxGB; WantedBytes = $WantedBytes; KeepFreeBytes = $KeepFreeBytes
     }
     Save-RoomState $state
     try {
@@ -235,6 +240,7 @@ function Start-MakeRoom([string]$Drive) {
         Invoke-Defrag $room
         $state.Phase = 'ready'
         Save-RoomState $state
+        if (Set-RoomAside $state) { Restore-RoomSettings }
         'done'
     } catch {
         Write-Log "Failed: $($_.Exception.Message)"
@@ -368,8 +374,69 @@ function Complete-MakeRoom {
     if ($state) {
         $state.Phase = 'ready'
         Save-RoomState $state
+        # With all Linux asked for set aside, nothing is left for the settings to be off for.
+        if (Set-RoomAside $state) { Restore-RoomSettings }
     }
     'done'
+}
+
+function Read-RoomAside {
+    if (-not (Test-Path -LiteralPath $AsidePath)) { return }
+    try { Get-Content -LiteralPath $AsidePath -Raw | ConvertFrom-Json } catch { Write-Log "Could not read what Make room set aside: $($_.Exception.Message)" }
+}
+
+function Remove-RoomAside { Remove-Item -LiteralPath $AsidePath -Force -ErrorAction SilentlyContinue }
+
+# Moving files only counts once the drive is smaller. Until then the paging file, hibernation or a new restore
+# point can take the space again, as the paging file did on the PC in issue #6 once its settings were back.
+# So the drive shrinks by what Linux asked for, or as far as it now can, and the space waits after it, where
+# nothing in Windows can take it. Says whether all of it is there. Not managing it only leaves things as they
+# were, with the settings still off for the install's own shrink.
+function Set-RoomAside($State) {
+    if (-not $State -or -not [int64]$State.WantedBytes) { return $false }
+    try {
+        $room = Get-RoomDrive $State.Drive
+        $c = Get-Partition -DriveLetter $room.TrimEnd(':')
+        $missing = [int64]$State.WantedBytes - (Get-TailFree $c)
+        if ($missing -gt 0) {
+            $reserve = [int64]$(if ($room -eq $env:SystemDrive) { $WindowsReserve } else { $DataReserve }) + [int64]$State.KeepFreeBytes
+            $shrinkable = Get-ShrinkableBytes $c (Get-SupportedSize $c) $reserve
+            $take = [int64]([math]::Floor([math]::Min($missing, $shrinkable) / 1MB) * 1MB)
+            if ($take -ge 1GB) {
+                # Written first, so a crash straight after the shrink still knows the space is this drive's.
+                $earlier = Read-RoomAside
+                $before = if ($earlier -and [int64]$earlier.Offset -eq [int64]$c.Offset -and [int]$earlier.DiskNumber -eq [int]$c.DiskNumber) { [int64]$earlier.SizeBefore } else { [int64]$c.Size }
+                Write-StateFile $AsidePath (ConvertTo-Json -InputObject ([pscustomobject]@{
+                    DiskNumber = [int]$c.DiskNumber; Offset = [int64]$c.Offset; SizeBefore = $before; Drive = $room
+                    WantedLinuxGB = [int]$State.WantedLinuxGB; Saved = (Get-Date).ToString('s')
+                }))
+                Set-Status ('Setting aside {0:N0} GB for Linux...' -f ($take / 1GB))
+                try { Resize-Partition -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber -Size ([int64]$c.Size - $take) } catch {
+                    if ($before -eq [int64]$c.Size) { Remove-RoomAside }
+                    throw
+                }
+                Write-Log ('Set aside {0:N1} GB after drive {1}.' -f ($take / 1GB), $room)
+            } else {
+                Write-Log ('Windows can only release {0:N1} GB of drive {1}, so nothing more was set aside.' -f ([math]::Max(0, $shrinkable) / 1GB), $room)
+            }
+        }
+        $after = Get-TailFree (Get-Partition -DriveLetter $room.TrimEnd(':'))
+        $after -ge [int64]$State.WantedBytes
+    } catch {
+        Write-Log "Could not set the space aside: $($_.Exception.Message)"
+        $false
+    }
+}
+
+# How much is set aside now, in whole GB, and what for. A record whose space has since gone, for example to
+# Windows through Disk Management, is forgotten.
+function Get-RoomAside {
+    $aside = Read-RoomAside
+    if (-not $aside) { return }
+    $c = Get-Partition -DiskNumber $aside.DiskNumber -ErrorAction SilentlyContinue | Where-Object { [int64]$_.Offset -eq [int64]$aside.Offset } | Select-Object -First 1
+    $tail = if ($c) { Get-TailFree $c } else { 0 }
+    if ($tail -lt 1GB -or [int64]$c.Size -ge [int64]$aside.SizeBefore) { Remove-RoomAside; return }
+    [pscustomobject]@{ GB = [int][math]::Floor($tail / 1GB); WantedLinuxGB = [int]$aside.WantedLinuxGB; Letter = ($aside.Drive -replace ':', '') }
 }
 
 # It can run for a very long time. Whatever it moved before the limit still counts. Says the code it finished with.

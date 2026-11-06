@@ -228,5 +228,8 @@ function Expand-Windows([string]$Target) {
     if ($max -le $c.Size + 1MB) { throw "The free space isn't next to drive $letter`:, so Windows can't use it directly." }
     Set-Status "Giving the space to drive $letter`:..."
     Resize-Partition -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber -Size $max
+    # What Make room set aside there is the drive's again.
+    $aside = Read-RoomAside
+    if ($aside -and [int]$aside.DiskNumber -eq [int]$c.DiskNumber -and [int64]$aside.Offset -eq [int64]$c.Offset) { Remove-RoomAside }
     Set-Status 'Done.' 100
 }

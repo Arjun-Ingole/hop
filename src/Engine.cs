@@ -91,6 +91,10 @@ namespace Hop
         public List<DriveChoice> Drives;
         public List<DownloadDrive> DownloadDrives;
         public string RoomLetter;       // the drive Make room is working on
+        public int RoomWantedGB;        // the Linux size Make room is working towards, while its settings are off
+        public int RoomAsideGB;         // what Make room has set aside after a drive, until an install takes it
+        public int RoomAsideWantedGB;   // the Linux size it was set aside for
+        public string RoomAsideLetter;  // the drive it's after
         public string RoomNotice;       // something about Make room to say as hop opens, once
         public string StateLetter;      // the drive a setup took its space from, if it took any
         public bool StateDiskMissing;   // that setup's disk isn't connected
@@ -296,6 +300,8 @@ namespace Hop
             var state = stateValue == null ? null : PSObject.AsPSObject(stateValue);
             var otherValue = info.Properties["Other"]?.Value;
             var other = otherValue == null ? null : PSObject.AsPSObject(otherValue);
+            var asideValue = info.Properties["RoomAside"]?.Value;
+            var aside = asideValue == null ? null : PSObject.AsPSObject(asideValue);
             return new StartupInfo
             {
                 WindowsFallback = ToDrive(PSObject.AsPSObject(info.Properties["WindowsFallback"].Value)),
@@ -316,6 +322,10 @@ namespace Hop
                     IsDefault = Get<bool>(o, "IsDefault"),
                 }).ToList(),
                 RoomLetter = Get<string>(info, "RoomLetter"),
+                RoomWantedGB = Get<int>(info, "RoomWantedGB"),
+                RoomAsideGB = aside == null ? 0 : Get<int>(aside, "GB"),
+                RoomAsideWantedGB = aside == null ? 0 : Get<int>(aside, "WantedLinuxGB"),
+                RoomAsideLetter = aside == null ? null : Get<string>(aside, "Letter"),
                 RoomNotice = Get<string>(info, "RoomNotice"),
                 StateLetter = Get<string>(info, "StateLetter"),
                 StateDiskMissing = Get<bool>(info, "StateDiskMissing"),
@@ -410,8 +420,13 @@ namespace Hop
             GetStepsFromAsync("Get-MakeRoomSteps", new Hashtable { ["Drive"] = letter ?? "" });
 
         /// <summary>True when the PC is restarting; another drive may not need that.</summary>
-        public async Task<bool> StartMakeRoomAsync(string letter) =>
-            (await InvokeAsync("Start-MakeRoom", new Hashtable { ["Drive"] = letter ?? "" })).Single.ToString() == "restarting";
+        /// <param name="wantedBytes">What Linux and its installer need after the drive, which it sets aside once there's room.</param>
+        /// <param name="keepFreeBytes">What has to stay free inside the drive, for a download going there.</param>
+        public async Task<bool> StartMakeRoomAsync(string letter, int wantedLinuxGB, long wantedBytes, long keepFreeBytes) =>
+            (await InvokeAsync("Start-MakeRoom", new Hashtable
+            {
+                ["Drive"] = letter ?? "", ["WantedLinuxGB"] = wantedLinuxGB, ["WantedBytes"] = wantedBytes, ["KeepFreeBytes"] = keepFreeBytes,
+            })).Single.ToString() == "restarting";
 
         public Task RestartForRoomAsync() => InvokeAsync("Request-RoomRestart");
 

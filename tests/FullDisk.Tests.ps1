@@ -415,6 +415,20 @@ Describe 'Invoke-Install with -FullDisk' {
         Mock Register-Installer { 7 }
         Mock Invoke-Cleanup { }
         Mock Dismount-DiskImage { }
+        Mock Read-RoomAside { }
+        Mock Remove-RoomAside { }
+    }
+    It 'takes what Make room set aside after the drive as its own shrink, so Undo gives it back' {
+        Mock Read-RoomAside { [pscustomobject]@{ DiskNumber = 0; Offset = [int64]1GB; SizeBefore = [int64]470GB; WantedLinuxGB = 60 } }
+        Invoke-Install 'ubuntu' 'C:\u.iso' 60 '' ''
+        Should -Invoke Save-State -ParameterFilter { $State.WindowsShrunk -eq $true -and $State.SizeBeforeShrink -eq [int64]470GB }
+        Should -Invoke Remove-RoomAside -Times 1
+    }
+    It 'leaves space set aside after another drive alone' {
+        Mock Read-RoomAside { [pscustomobject]@{ DiskNumber = 1; Offset = [int64]1GB; SizeBefore = [int64]470GB; WantedLinuxGB = 60 } }
+        Invoke-Install 'ubuntu' 'C:\u.iso' 60 '' ''
+        Should -Invoke Save-State -ParameterFilter { $State.WindowsShrunk -eq $true } -Times 0
+        Should -Invoke Remove-RoomAside -Times 0
     }
     It 'makes only the installer, asks for the copy to memory and records what it did' {
         Invoke-Install 'ubuntu' 'C:\u.iso' 60 '' '' -FullDisk

@@ -212,7 +212,8 @@ function New-LinuxSpace($Plan, [string]$Strategy, $State) {
         $what = if ($letter -eq $env:SystemDrive.TrimEnd(':')) { 'Windows' } else { "drive $letter`:" }
         Set-Status ('Shrinking {0} to {1:N0} GB to make room (can take a few minutes)...' -f $what, ($Plan.NewWindowsSize / 1GB))
         # The size it was, because a crash can come after the shrink and before saying it happened. See Invoke-Cleanup.
-        $State | Add-Member -NotePropertyName SizeBeforeShrink -NotePropertyValue $Plan.TargetSize -Force
+        # Make room may have shrunk it already, and what it was before that is what Undo gives back.
+        if (-not $State.SizeBeforeShrink) { $State | Add-Member -NotePropertyName SizeBeforeShrink -NotePropertyValue $Plan.TargetSize -Force }
         Save-State $State
         try {
             Resize-Partition -DiskNumber $Plan.DiskNumber -PartitionNumber $Plan.PartitionNumber -Size $Plan.NewWindowsSize

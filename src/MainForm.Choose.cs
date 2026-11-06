@@ -27,12 +27,30 @@ namespace Hop
         /// <summary>Linux's room on the chosen drive, less the download if that's going there too.</summary>
         int MaxLinuxGB => MaxLinuxGBOn(target);
 
-        int MaxLinuxGBOn(DriveChoice drive)
+        int MaxLinuxGBOn(DriveChoice drive) => drive.UsableGB - ExpectedInstallerGB - (DownloadGoesOn(drive) ? IsoDownloadGB : 0);
+
+        bool DownloadGoesOn(DriveChoice drive)
         {
             var download = DownloadSpotFor(drive);
-            bool downloadHere = isoPath == null && (download != null ? download.Letter == drive.Letter : drive.IsWindows);
-            return drive.UsableGB - ExpectedInstallerGB - (downloadHere ? IsoDownloadGB : 0);
+            return isoPath == null && (download != null ? download.Letter == drive.Letter : drive.IsWindows);
         }
+
+        /// <summary>Stuck space under this isn't worth a restart, and Windows' own figures wander by about that much.</summary>
+        const int RoomWorthGB = 5;
+
+        /// <summary>
+        /// More than the installer is expected to take, which Make room sets aside too: Omarchy's needs a second partition,
+        /// and once hibernation is back on, Windows may not shrink the drive any further.
+        /// </summary>
+        const int RoomSpareGB = 4;
+
+        int roomWantedGB;   // the Linux size Make room was for, which it comes back with
+
+        /// <summary>Make room can still get Linux more of this drive than Windows releases now.</summary>
+        bool RoomCanHelp => target.Blocker == null && !target.IsFreeSpace && !fullDisk && target.StuckGB >= RoomWorthGB && (!RoomMadeHere || MovingUnfinished);
+
+        /// <summary>The most Linux could have here: what Windows releases now, and with Make room, the stuck space too.</summary>
+        int ReachLinuxGB => MaxLinuxGB + (RoomCanHelp ? target.StuckGB : 0);
 
         /// <summary>What the engine will make. A download's real size isn't known until it's here.</summary>
         int ExpectedInstallerGB
@@ -138,11 +156,17 @@ namespace Hop
             bool unmeasured = usable && target.Estimated && measureError != null;
             bool refused = selected != null && selected.Refused != null;
             bool systemStops = refused || secureBootStops || secondDiskStops || unmeasured;
-            linuxGB = enoughSpace ? Math.Max(MinLinuxGB, Math.Min(MaxLinuxGB, linuxGB)) : MinLinuxGB;
+            // One size to pick, whether Windows releases it now or Make room has to get it first.
+            bool roomCanHelp = usable && RoomCanHelp;
+            bool reachable = usable && ReachLinuxGB >= MinLinuxGB;
+            linuxGB = reachable ? Math.Max(MinLinuxGB, Math.Min(ReachLinuxGB, linuxGB)) : MinLinuxGB;
+            bool needRoom = roomCanHelp && linuxGB > MaxLinuxGB && !systemStops;
 
             // The drive has the room, but Windows can't release it. Deleting files wouldn't help.
             bool stuck = usable && !enoughSpace && !target.IsFreeSpace && MaxLinuxGB + target.StuckGB >= MinLinuxGB;
             var better = enoughSpace ? null : BetterDrive;
+            // What Make room was for, once it's done: all of it, or what Windows still keeps.
+            int wanted = RoomMadeHere || AsideHere ? Math.Max(roomWantedGB, startup.RoomAsideWantedGB) : 0;
             bool otherDrive = startup.Drives.Any(d => d.Id != target.Id);
 
             string noteText;
@@ -156,8 +180,16 @@ namespace Hop
                 noteText = $"hop hasn't got {system.Name} to finish on a second disk yet. Choose a drive on the disk Windows is on, or another system.";
             else if (unmeasured)
                 noteText = $"hop couldn't work out how much room {target.InSentence} can give up. {measureError} {(otherDrive ? "Choose another drive, or open hop again." : "Open hop again.")}";
+            else if (needRoom && MovingUnfinished && enoughSpace)
+                noteText = $"Windows has released {MaxLinuxGB} GB for Linux so far, not the {linuxGB} GB you chose. {StuckReason()}";
+            else if (needRoom && !(!enoughSpace && better != null))
+                noteText = RoomNeededNote();
             else if (stuck)
                 noteText = StuckNote(better);
+            else if (enoughSpace && wanted > MaxLinuxGB && linuxGB == MaxLinuxGB)
+                noteText = $"Windows released {MaxLinuxGB} GB for Linux, not the {wanted} GB you chose. {StuckReason()}";
+            else if (enoughSpace && AsideHere)
+                noteText = $"hop set aside {startup.RoomAsideGB} GB for Linux after {target.InSentence}. Nothing else changes until you click Install.";
             else if (!enoughSpace && better != null)
                 noteText = $"{target.Title} doesn't have room for Linux. {better.Title} on {better.DiskName} has {(better.Estimated ? "about " : "")}{better.UsableGB} GB to spare.";
             else if (!enoughSpace && target.IsFreeSpace)
@@ -174,19 +206,17 @@ namespace Hop
             }
 
             // Nothing has gone wrong yet if hop can still clear the way, so it doesn't read as an error.
-            bool calm = (enoughSpace || (stuck && (!RoomMadeHere || target.BlockerKind == "restore"))) && !systemStops;
-            ConfigureDrive(stuck ? DriveMode.Stuck : DriveMode.Edit, system);
+            bool calm = (enoughSpace || needRoom || (stuck && (!RoomMadeHere || target.BlockerKind == "restore"))) && !systemStops;
+            ConfigureDrive(stuck && !roomCanHelp ? DriveMode.Stuck : DriveMode.Edit, system);
             Arrange(new[]
             {
                 new[] { Run.Gray("Install"), new Run { Text = system.Name, Color = Ink, Logo = LogoFor(selected), Picker = true, Underline = system.Color } },
                 WhereLine(true, Hairline),
             }, noteText, calm ? Secondary : Danger, usable ? drive : null, 64);
 
-            Action install = enoughSpace && !systemStops ? () => _ = CheckThenConfirmAsync() : (Action)null;
+            Action install = enoughSpace && !needRoom && !systemStops ? () => _ = CheckThenConfirmAsync() : (Action)null;
             string primaryText = "Install";
             Action primaryAction = install;
-            // Nothing else can happen until there's room, so this is what the button does.
-            bool needRoom = stuck && !RoomMadeHere && !systemStops;
             if (secureBootStops && usable && !refused && !secondDiskStops)
             {
                 primaryText = "Turn off Secure Boot";
@@ -197,15 +227,16 @@ namespace Hop
                 primaryText = $"Use {better.InSentence}";
                 primaryAction = () => _ = UseDriveAsync(better);
             }
-            else if (needRoom)
-            {
-                primaryText = "Make room";
-                primaryAction = () => _ = ShowMakeRoomAsync();
-            }
-            else if (MovingUnfinished && !enoughSpace && !systemStops)
+            else if (needRoom && MovingUnfinished)
             {
                 primaryText = "Move files again";
                 primaryAction = () => _ = MoveFilesAgainAsync();
+            }
+            else if (needRoom)
+            {
+                // The size chosen is past what Windows releases, so getting it is what comes next.
+                primaryText = "Make room";
+                primaryAction = () => _ = ShowMakeRoomAsync();
             }
 
             if (startup.OtherGB > 0)
@@ -217,9 +248,7 @@ namespace Hop
             else if (stuck && RoomMadeHere && otherDrive && better == null)
                 Footer("Choose another drive", OpenDrivePicker, primaryText, primaryAction);
             else if (target.TailFreeGB > 0 && !target.IsFreeSpace)
-                Footer($"Give the free {target.TailFreeGB} GB to {(target.IsWindows ? "Windows" : target.InSentence)}", () => _ = ExpandWindowsAsync(), primaryText, primaryAction);
-            else if (!stuck && target.StuckGB >= StuckWorthExplainingGB && !RoomMadeHere)
-                Footer("Make room", () => _ = ShowMakeRoomAsync(), primaryText, primaryAction);
+                Footer($"Give the free {target.TailFreeGB} GB {(AsideHere ? "back " : "")}to {(target.IsWindows ? "Windows" : target.InSentence)}", () => _ = ExpandWindowsAsync(), primaryText, primaryAction);
             else if ((stuck || target.StuckGB >= StuckWorthExplainingGB) && target.BlockerKind == "restore")
                 Footer("Delete restore points", ShowDeleteRestorePoints, primaryText, primaryAction);
             else
@@ -232,6 +261,27 @@ namespace Hop
 
         Task MoveFilesAgainAsync() => WorkThenChooseAsync(new[] { new[] { Run.Black("Moving files"), Run.Gray("out of the way") } },
             async () => { if (!await engine.CompleteMakeRoomAsync()) { roomFailed = true; roomLetter = null; } }, ex => ShowCouldntMakeRoom(ex));
+
+        /// <summary>Make room has set space aside after the chosen drive, which an install there takes.</summary>
+        bool AsideHere => startup.RoomAsideGB > 0 && startup.RoomAsideLetter == target.Letter && target.TailFreeGB > 0;
+
+        string RoomNeededNote()
+        {
+            string now = MaxLinuxGB >= MinLinuxGB ? $"Windows can release {MaxLinuxGB} GB for Linux now." : "Windows can't release enough for Linux yet.";
+            string how = target.IsWindows ? "with one restart" : "which can take 15 minutes or more";
+            return $"{now} For {linuxGB} GB, Make room first moves what's in the way, {how}, and sets the space aside. Your files aren't touched.";
+        }
+
+        /// <summary>What still stops Windows releasing more, once Make room has been, in plain words.</summary>
+        string StuckReason()
+        {
+            if (MovingUnfinished) return "Windows stopped before it finished moving files. Moving them again may free more.";
+            if (target.BlockerKind == "restore") return $"Restore points on {target.InSentence} are in the way.";
+            if (target.BlockerKind == "file" && target.ShrinkBlocker != null)
+                return $"hop couldn't move {target.Letter}:{target.ShrinkBlocker}, near the end of the drive. If a game or app uses it, close that or move it to another drive, then try again.";
+            if (target.BlockerKind == "ntfs") return "Windows' own file system data, near the end of the drive, is in the way, and Windows can't move it.";
+            return target.ShrinkBlocker != null ? $"{target.ShrinkBlocker} is in the way." : "Something Windows can't move is in the way.";
+        }
 
         string StuckNote(DriveChoice better)
         {
@@ -358,8 +408,8 @@ namespace Hop
             string title = target.InSentence;
             ConfigureDrive(DriveMode.Stuck, Current);
             steps.Set(plan.Steps, plan.Notes.Skip(1).ToArray());
-            Arrange(new[] { new[] { Run.Black($"{target.StuckGB} GB"), Run.Gray($"is stuck on {title}") } },
-                $"Windows can only shrink {title} as far as the last file it can't move. hop can try to clear the way.", Secondary, drive, 24);
+            Arrange(new[] { new[] { Run.Gray("Make room for"), Run.Black($"{linuxGB} GB") } },
+                $"{target.StuckGB} GB of {title} is free, but Windows can only shrink it as far as the last file it can't move. Make room moves what's in the way, then sets {linuxGB} GB aside for Linux.", Secondary, drive, 24);
             PlaceSteps(drive.Bottom + S(24));
             steps.Visible = true;
             Footer(plan.Notes.FirstOrDefault(), null, plan.Restart ? "Make room and restart" : "Make room", () => _ = MakeRoomAsync(), "Back", ShowChoose);
@@ -373,7 +423,9 @@ namespace Hop
             try
             {
                 // The restart is on its way, and Windows closes hop. Only another drive gets past this.
-                if (await engine.StartMakeRoomAsync(target.Letter))
+                roomWantedGB = linuxGB;
+                const long gb = 1024L * 1024 * 1024;
+                if (await engine.StartMakeRoomAsync(target.Letter, linuxGB, (linuxGB + ExpectedInstallerGB + RoomSpareGB) * gb, DownloadGoesOn(target) ? IsoDownloadGB * gb : 0))
                 {
                     await WaitForRoomRestartAsync();
                     return;
@@ -484,7 +536,9 @@ namespace Hop
             // Replacing Windows only makes the installer. Windows stays until the Linux installer erases it.
             drive.Legend = fullDisk ? $"Installer · about {InstallerGB} GB. Windows stays until the Linux installer erases it" : null;
             drive.MinLinuxGB = fullDisk ? 0 : MinLinuxGB;
-            drive.MaxLinuxGB = Math.Max(drive.MinLinuxGB, MaxLinuxGB);
+            bool striped = mode == DriveMode.Edit && RoomCanHelp;
+            drive.MaxLinuxGB = Math.Max(drive.MinLinuxGB, striped ? ReachLinuxGB : MaxLinuxGB);
+            drive.ReleasableGB = striped ? MaxLinuxGB : int.MaxValue;
             drive.LinuxGB = fullDisk ? 0 : linuxGB;
             drive.Invalidate();
         }

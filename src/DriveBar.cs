@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 using static Hop.Theme;
 
@@ -30,6 +31,7 @@ namespace Hop
         public int WindowsGB = 1, UsedGB, InstallerGB = 8;
         public int TailFreeGB;      // free space after the drive, used before it shrinks
         public int MinLinuxGB = 25, MaxLinuxGB = 25;
+        public int ReleasableGB = int.MaxValue;   // Edit: what Windows releases for Linux now. Past it is striped: that needs Make room first
         public string SystemName = "";
         public Color Brand = Ink;
         public DriveMode Mode = DriveMode.Edit;
@@ -92,6 +94,11 @@ namespace Hop
         float InstallerLeft => LinuxLeft - F(Gap) - InstallerGB * PxPerGB;
         float WindowsRight => InstallerLeft - F(Gap);
         float HandleX => InstallerLeft - F(Gap) / 2;
+
+        /// <summary>Where the handle would be for this much Linux.</summary>
+        float HandleXFor(int gb) => Bar.Right - (gb + InstallerGB) * PxPerGB - F(Gap) * 1.5f;
+
+        bool NeedsRoomPast => Mode == DriveMode.Edit && ReleasableGB < MaxLinuxGB;
 
         /// <summary>Size of the drive once Linux has its space: it only shrinks by what the free space can't cover.</summary>
         int WindowsAfterGB => WindowsGB - Math.Max(0, linuxGB + InstallerGB - TailFreeGB);
@@ -164,7 +171,8 @@ namespace Hop
             string size = IsFreeSpace ? $"Free space {TailFreeGB} GB"
                 : TailFreeGB > 0 ? $"{DriveTitle} {WindowsGB} GB + {TailFreeGB} GB free" : $"{DriveTitle} {WindowsGB} GB";
             string header = DiskName.Length > 0 ? $"{DiskName} · {size}" : size;
-            string right = Mode == DriveMode.Edit ? (MinLinuxGB < MaxLinuxGB ? "Drag to resize" : "") : Mode == DriveMode.Stuck ? StuckFile ?? "" : Status;
+            string right = Mode == DriveMode.Edit ? (MinLinuxGB >= MaxLinuxGB ? "" : NeedsRoomPast ? "Drag to resize · the striped part needs Make room" : "Drag to resize")
+                : Mode == DriveMode.Stuck ? StuckFile ?? "" : Status;
             var rightFont = Mode == DriveMode.Edit ? small : smallStrong;
             // The header says which drive, so it comes first: the right side has what it leaves, and at least some.
             float gap = F(16), headerWidth = TextKit.Width(header, smallStrong);
@@ -196,6 +204,16 @@ namespace Hop
             using (var brush = new SolidBrush(linuxFill)) g.FillRectangle(brush, linux);
             using (var brush = new SolidBrush(Mix(Color.White, Brand, 0.42f)))
                 g.FillRectangle(brush, InstallerLeft, bar.Y, LinuxLeft - F(Gap) - InstallerLeft, bar.Height);
+
+            // What Windows can't release yet: Linux can have it, but only after Make room. The line is where it can go now.
+            if (NeedsRoomPast)
+            {
+                float from = HandleXFor(MaxLinuxGB), to = HandleXFor(Math.Max(ReleasableGB, MinLinuxGB - 1));
+                using (var stripes = new HatchBrush(HatchStyle.WideUpwardDiagonal, Color.FromArgb(70, Ink), Color.Transparent))
+                    g.FillRectangle(stripes, from, bar.Y, Math.Max(0, to - from), bar.Height);
+                if (ReleasableGB >= MinLinuxGB)
+                    using (var line = new SolidBrush(Color.FromArgb(150, Ink))) g.FillRectangle(line, to - F(1), bar.Y, F(2), bar.Height);
+            }
 
             // Labels sit on the bottom edge; in progress mode they make room for the progress line.
             float labelBottom = bar.Bottom - F(preparing ? 26 : 14);
