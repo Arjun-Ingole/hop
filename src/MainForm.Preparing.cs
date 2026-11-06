@@ -69,6 +69,8 @@ namespace Hop
             drive.Progress = 0;
             UpdatePreparing();
             poll.Start();
+            // A download can take an hour, and a PC that sleeps through it, or through the shrink, stops it.
+            Native.KeepAwake(true);
             try
             {
                 var download = DownloadSpot;
@@ -105,6 +107,10 @@ namespace Hop
                 busy = installing = false;
                 if (cancelling || ex is PipelineStoppedException) { ShowChoose(); return; }
                 await ShowFailureAsync(Describe(ex));
+            }
+            finally
+            {
+                if (!working) Native.KeepAwake(false);
             }
         }
 
