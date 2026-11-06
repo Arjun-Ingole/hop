@@ -2,9 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- Omarchy 4.5.0, tested installing next to Windows in a virtual PC, with and without encryption, and with 4 GB of memory. When omarchy.org offers a version hop hasn't tried yet, hop now installs the newest one it has, by its own checksum, instead of refusing.
+
 ### Fixed
 
-- **Remove the installer could stop Linux starting.** Windows renumbers every partition after one it removes, and Linux and GRUB find partitions by number, so GRUB stopped at "no such partition". hop now keeps the installer partition when removing it would renumber Linux, and says so. Seen in a real GPT on a virtual disk.
+- **Remove the installer could stop Linux starting.** Windows renumbers every partition after one it removes, and CachyOS's GRUB finds its partition by number, so it stopped at "no such partition". hop now reads Linux's boot files on the EFI partition first. When something there names a partition that would be renumbered, or hop can't tell, it keeps the installer partition, empties it into a drive called SHARED that Windows and Linux can both use, and says why. When they find Linux by ID, as Debian's do, the installer is removed as before. Seen in a real GPT on a virtual disk, and in CachyOS's and Debian's own boot files.
+- An installer partition a Linux installer was told to boot from now stays as it is, instead of being removed with Linux's boot loader on it.
+- hop now keeps the PC awake through the whole install, including the download and the copy, not only Make room and clean-up.
 - Debian's and CachyOS's steps next to Windows now match their real installer screens, as followed to a working install in a virtual PC: ext4 rather than CachyOS's btrfs, the EFI partition warning and what to do about it, and CachyOS's Desktop screen, which starts on No Desktop. Both started with Windows' EFI partition at 100 MB and 200 MB.
 - The steps for Debian, CachyOS and Arch now find Windows' EFI partition by its size and FAT32, as every installer shows it. CachyOS lists it as /dev/nvme0n1p1 or Windows Boot Manager, never "EFI System Partition", and HOPINSTALL is FAT32 too.
 - When an ordinary file limits the shrink, Make room tries to move it too. Something usually keeps a file like that in place, such as the app using it, so this may not work. If it doesn't, hop now names the full path and says what to do.
