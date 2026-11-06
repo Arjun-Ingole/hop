@@ -189,7 +189,7 @@ namespace Hop
             else if (enoughSpace && wanted > MaxLinuxGB && linuxGB == MaxLinuxGB)
                 noteText = $"Windows released {MaxLinuxGB} GB for Linux, not the {wanted} GB you chose. {StuckReason()}";
             else if (enoughSpace && AsideHere)
-                noteText = $"hop set aside {startup.RoomAsideGB} GB for Linux after {target.InSentence}. Nothing else changes until you click Install.";
+                noteText = $"Make room set aside {startup.RoomAsideGB} GB for Linux. Nothing else changes until you click Install.";
             else if (!enoughSpace && better != null)
                 noteText = $"{target.Title} doesn't have room for Linux. {better.Title} on {better.DiskName} has {(better.Estimated ? "about " : "")}{better.UsableGB} GB to spare.";
             else if (!enoughSpace && target.IsFreeSpace)
