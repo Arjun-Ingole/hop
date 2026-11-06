@@ -147,6 +147,8 @@ function Get-Steps($Distro, [int]$LinuxGB, $Place) {
     }
     $steps = @($steps | ForEach-Object { $_ -replace '\{ESP\}', (Get-EspWords $Place) })
     $notes = @('If the PC starts Windows again or shows a security error, turn off Secure Boot in the BIOS, then open hop and restart again.')
+    # Every name in the steps is the installer's English one, and the first step asks for a language.
+    $notes += 'The names here are the installer''s English ones. Keep the installer in English to follow them, and change the language in Linux afterwards.'
     if ($own.Notes) { $notes += @($own.Notes | ForEach-Object { $_ -replace '\{DISK\}', "$($Place.DiskName) ($($Place.DiskGB) GB)" }) }
     if ($otherDisk) { $notes += 'If it stops at a **grub>** prompt, turn off **Fast Boot** in the BIOS, because it can hide a second drive. Hold the power button to get back to Windows.' }
     [pscustomobject]@{ Steps = $steps; Notes = $notes }
