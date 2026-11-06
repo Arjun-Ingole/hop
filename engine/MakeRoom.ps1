@@ -341,7 +341,7 @@ function Restore-RoomFromTask {
     $state = Read-RoomState
     if ($state.Phase -eq 'restarting' -and -not (Get-SignedInUser)) {
         $saved = [datetime]::MinValue
-        if ([datetime]::TryParse([string]$state.Saved, [ref]$saved) -and ((Get-Date) - $saved).TotalHours -lt $RoomWaitForSignInHours) { return }
+        if ([datetime]::TryParse([string]$state.Saved, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$saved) -and ((Get-Date) - $saved).TotalHours -lt $RoomWaitForSignInHours) { return }
     }
     Write-Log 'Putting back what Make room changed, because hop did not.'
     Restore-RoomSettings

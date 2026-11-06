@@ -260,6 +260,16 @@ Describe 'Make room when nobody has signed in' {
         Restore-RoomFromTask
         Should -Invoke Restore-RoomSettings -Times 0
     }
+    It 'waits on a PC set to the <culture> calendar too' -ForEach @(@{ culture = 'th-TH' }, @{ culture = 'ar-SA' }) {
+        Mock Read-RoomState { [pscustomobject]@{ Phase = 'restarting'; Saved = (Get-Date).AddHours(-2).ToString('s', [Globalization.CultureInfo]::InvariantCulture) } }
+        Mock Get-SignedInUser { $null }
+        $was = [Threading.Thread]::CurrentThread.CurrentCulture
+        try {
+            [Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::GetCultureInfo($culture)
+            Restore-RoomFromTask
+        } finally { [Threading.Thread]::CurrentThread.CurrentCulture = $was }
+        Should -Invoke Restore-RoomSettings -Times 0
+    }
     It 'stops waiting after that' {
         Mock Read-RoomState { [pscustomobject]@{ Phase = 'restarting'; Saved = (Get-Date).AddHours(-25).ToString('s') } }
         Mock Get-SignedInUser { $null }
