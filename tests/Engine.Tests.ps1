@@ -1525,11 +1525,11 @@ Describe 'A download with no checksum' {
         [IO.File]::WriteAllBytes($path, $iso); Test-IsoFile $path | Should -BeTrue
         [IO.File]::WriteAllBytes($path, $page); Test-IsoFile $path | Should -BeFalse
     }
-    It 'uses a good copy again' {
+    It 'redownloads even a valid ISO when its release cannot be verified' {
         Mock Invoke-Download { }
         [IO.File]::WriteAllBytes($path, $iso)
         Get-Iso $download $path
-        Should -Invoke Invoke-Download -Times 0
+        Should -Invoke Invoke-Download -Times 1 -Exactly
     }
     It 'replaces a saved web page rather than using it for ever' {
         [IO.File]::WriteAllBytes($path, $page)
