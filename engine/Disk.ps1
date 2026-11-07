@@ -194,6 +194,7 @@ function New-RecordedPartition($Plan, $State, [string]$Role, [int64]$Offset, [in
     $partition = New-Partition -DiskNumber $Plan.DiskNumber -Offset $Offset -Size $Size
     $record.Offset = $partition.Offset
     $record.Size = $partition.Size
+    $record | Add-Member -NotePropertyName Guid -NotePropertyValue $partition.Guid -Force
     Save-State $State
     Set-PartitionOnline $partition
 }

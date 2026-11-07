@@ -1922,6 +1922,7 @@ Describe 'Checking a copy' {
 }
 
 Describe 'Remove-PartitionByGuid' {
+    BeforeEach { Mock Get-WindowsEsp { [pscustomobject]@{ Guid = '{windows-esp}' } } }
     It 'removes it from the disk it was found on, not a clone with the same GUID' {
         Mock Get-Partition {
             if ($DiskNumber -contains 1) { [pscustomobject]@{ Guid = '{same}'; DiskNumber = 1; PartitionNumber = 5 } }

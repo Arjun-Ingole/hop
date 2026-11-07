@@ -596,6 +596,7 @@ Describe 'Limits on moving files' {
 
 Describe 'diskpart' {
     BeforeEach {
+        Mock Get-WindowsEsp { [pscustomobject]@{ Guid = '{windows-esp}' } }
         Mock Start-Sleep { }
         Mock Remove-Partition { throw 'protected' }
         $script:piped = @()

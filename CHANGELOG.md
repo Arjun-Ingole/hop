@@ -12,6 +12,11 @@
 
 ### Fixed
 
+- Cleanup requires creation records bound to the original disk and partition GUID; label-only leftovers require manual inspection.
+- Linux removal confirmation includes disk identity, geometry and startup entries; retries show the partition list again, and Windows boot partitions are protected before removal.
+- Cached and partial ISOs without official checksums are downloaded afresh; an existing complete file survives a failed download.
+- Firmware discovery includes orphaned entries through BootFFFF.
+
 - **Make room's space could be taken again before the install.** It turned off the paging file and hibernation, moved files, and only shrank the drive when you clicked Install. Closing hop, restarting, or waiting too long turned them back on, and the paging file could come back at the end of the drive, as it did in issue #6. Make room now shrinks the drive by the size you chose as soon as there's room, so the space waits after it, and turns everything back on straight away. The install uses that space, Undo gives it back, and until you install, a link gives it back to the drive. hop comes back from the restart with the size you chose, and says plainly when Windows released less.
 - **Remove the installer could stop Linux starting.** Windows renumbers every partition after one it removes, and CachyOS's GRUB finds its partition by number, so it stopped at "no such partition". hop now reads Linux's boot files on the EFI partition first. When something there names a partition that would be renumbered, or hop can't tell, it keeps the installer partition, empties it into a drive called SHARED that Windows and Linux can both use, and says why. When they find Linux by ID, as Debian's do, the installer is removed as before. Seen in a real GPT on a virtual disk, and in CachyOS's and Debian's own boot files.
 - An installer partition a Linux installer was told to boot from now stays as it is, instead of being removed with Linux's boot loader on it.
