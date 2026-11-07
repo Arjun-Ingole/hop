@@ -1,3 +1,7 @@
+BeforeDiscovery {
+    $elevated = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
 # Unit tests for the engine, run by CI on Windows PowerShell 5.1 (Pester 5).
 # Everything that touches the disk, the firmware or the network is mocked: these must be
 # safe to run on any PC. Build first, because they load hop.exe for its C# types.
@@ -2759,7 +2763,7 @@ Describe 'Make room''s tasks and copy' {
 }
 
 Describe 'The copy the tasks run' {
-    It 'is in a new folder that only administrators and SYSTEM can write to' {
+    It 'is in a new folder that only administrators and SYSTEM can write to' -Skip:(-not $elevated) {
         $parent = Join-Path $TestDrive 'data'
         New-Item -ItemType Directory -Path $parent | Out-Null
         $copy = [Hop.RestartCopy]::Create($parent)
@@ -2778,7 +2782,7 @@ Describe 'The copy the tasks run' {
             [IO.Directory]::Delete((Split-Path $copy -Parent), $true)
         }
     }
-    It 'names a different folder each time, so nothing can be waiting in it' {
+    It 'names a different folder each time, so nothing can be waiting in it' -Skip:(-not $elevated) {
         $parent = Join-Path $TestDrive 'data2'
         New-Item -ItemType Directory -Path $parent | Out-Null
         $one = [Hop.RestartCopy]::Create($parent)
