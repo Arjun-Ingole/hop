@@ -17,7 +17,7 @@ namespace Hop
         const uint GenericRead = 0x80000000, GenericWrite = 0x40000000, FileReadAttributes = 0x80, Synchronize = 0x100000;
         const uint ShareAll = 7, OpenExisting = 3, BackupSemantics = 0x02000000;
         const uint GetVolumeBitmap = 0x9006F, GetRetrievalPointers = 0x90073, MoveFile = 0x90074;
-        const int ErrorMoreData = 234, ErrorHandleEof = 38;
+        const int ErrorMoreData = 234, ErrorHandleEof = 38, ErrorInvalidParameter = 87;
         const int MaxFailedMoves = 64;   // a cluster that looked free can be taken by the time it's asked for
 
         /// <summary>Moves each part of the stream past a fraction of the drive to the lowest free space before it. Says how many clusters moved.</summary>
@@ -81,6 +81,9 @@ namespace Hop
                         else
                         {
                             failed++;
+                            // NTFS turns down what it never moves, such as the start of $Mft, the same way every time.
+                            // A cluster taken since the bitmap was read is worth trying elsewhere.
+                            if (error == ErrorInvalidParameter) break;
                             from = start + length;
                         }
                     }
