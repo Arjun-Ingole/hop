@@ -463,7 +463,7 @@ function Invoke-Defrag([string]$Drive) {
         $left = [int][math]::Floor(($deadline - (Get-Date)).TotalSeconds)
         if ($left -le 0) { break }
         $code = Start-DefragRun $room $left
-        Write-Log "Finished moving files (code $code)."
+        if ($null -ne $code) { Write-Log "Finished moving files (code $code)." }
         if ($code -ne $DefragCancelled) { break }
         $cancelled++
         if ($try -lt $DefragTries) { Start-Sleep -Seconds ([math]::Min($DefragRetrySeconds, $left)) }
@@ -479,7 +479,10 @@ function Invoke-Defrag([string]$Drive) {
     # and $Mft::$BITMAP isn't left in the way just because defrag ran out.
     if (Move-SystemFiles $room $c (Get-Date).AddMinutes(5)) {
         $left = [int][math]::Floor(($deadline - (Get-Date)).TotalSeconds)
-        if ($left -gt 0) { Write-Log "Finished moving files (code $(Start-DefragRun $room $left))." }
+        if ($left -gt 0) {
+            $again = Start-DefragRun $room $left
+            if ($null -ne $again) { Write-Log "Finished moving files (code $again)." }
+        }
         Wait-ShrinkLimit $c $deadline
     }
 }
