@@ -40,25 +40,41 @@ namespace Hop
         // Moves of up to this many clusters at a time, so a big file can stop at the time limit.
         const int MovePieceClusters = 16384;
 
+        /// <summary>Why the last MoveDown or MoveToEnd moved less than it tried to, for the log. Empty when nothing went wrong.</summary>
+        public static string LastFailure { get; private set; } = "";
+
         static long Move(string letter, string stream, long low, long above, int seconds)
         {
+            LastFailure = "";
             var deadline = seconds > 0 ? DateTime.UtcNow.AddSeconds(seconds) : DateTime.MaxValue;
             using (var volume = OpenVolume(letter))
             using (var file = OpenStream(letter, stream))
             {
                 long total = TotalClusters(volume), moved = 0;
-                int failed = 0;
+                // NTFS refuses to move the clusters past the end of a stream's data. Trying them used to spend every
+                // attempt, so the part that can move never did.
+                long inData = DataClusters(letter, file);
+                var refused = new List<string>();
                 var extents = Extents(file);
                 extents.Sort((a, b) => b.Lcn.CompareTo(a.Lcn));
-                foreach (var extent in extents)
+                foreach (var whole in extents)
                 {
+                    var extent = whole;
+                    if (inData >= 0 && extent.Vcn + extent.Clusters > inData)
+                    {
+                        long past = extent.Vcn + extent.Clusters - Math.Max(extent.Vcn, inData);
+                        refused.Add($"{past} clusters at {extent.Lcn + extent.Clusters - past} are past the end of its data");
+                        extent.Clusters -= past;
+                        if (extent.Clusters <= 0) continue;
+                    }
                     if (low >= 0 ? extent.Lcn >= low : extent.Lcn + extent.Clusters <= above) continue;
                     long vcn = extent.Vcn, left = extent.Clusters, from = Math.Max(low, 0), before = low >= 0 ? total : extent.Lcn;
+                    int failed = 0, error = 0;
                     while (left > 0 && failed < MaxFailedMoves && DateTime.UtcNow < deadline)
                     {
-                        if (!FindFree(volume, from, before, left, out long start, out long length)) break;
+                        if (!FindFree(volume, from, before, left, out long start, out long length)) { refused.Add($"no free space before cluster {before} for {left} clusters"); break; }
                         int count = (int)Math.Min(Math.Min(left, length), MovePieceClusters);
-                        if (MoveClusters(volume, file, vcn, start, count))
+                        if (MoveClusters(volume, file, vcn, start, count, out error))
                         {
                             moved += count; vcn += count; left -= count; from = start + count;
                         }
@@ -68,9 +84,41 @@ namespace Hop
                             from = start + length;
                         }
                     }
+                    if (failed > 0) refused.Add($"Windows refused {failed} moves of the clusters at {extent.Lcn} (error {error}: {new Win32Exception(error).Message})");
                 }
+                LastFailure = string.Join("; ", refused);
                 return moved;
             }
+        }
+
+        /// <summary>Where each part of a stream is, and how much of it is data, for the log.</summary>
+        public static string Describe(string letter, string stream)
+        {
+            using (var file = OpenStream(letter, stream))
+            {
+                long inData = DataClusters(letter, file);
+                var parts = Extents(file);
+                parts.Sort((a, b) => a.Vcn.CompareTo(b.Vcn));
+                return $"{stream}: {(inData < 0 ? "unknown" : inData.ToString())} clusters of data, in " +
+                    string.Join(", ", parts.ConvertAll(e => $"{e.Clusters} at {e.Lcn}"));
+            }
+        }
+
+        // How many clusters the stream's data reaches into, or -1 when Windows won't say.
+        static long DataClusters(string letter, SafeFileHandle file)
+        {
+            if (!GetFileInformationByHandleEx(file, 1, out StandardInfo info, Marshal.SizeOf(typeof(StandardInfo)))) return -1;
+            if (!GetDiskFreeSpace($@"{letter.TrimEnd(':')}:\", out uint sectors, out uint bytes, out _, out _)) return -1;
+            long cluster = (long)sectors * bytes;
+            return cluster > 0 && info.EndOfFile > 0 ? (info.EndOfFile + cluster - 1) / cluster : -1;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct StandardInfo
+        {
+            public long AllocationSize, EndOfFile;
+            public uint NumberOfLinks;
+            public byte DeletePending, Directory;
         }
 
         struct Extent { public long Vcn, Lcn, Clusters; }
@@ -147,10 +195,12 @@ namespace Hop
             return BitConverter.ToInt64(output, 8);
         }
 
-        static bool MoveClusters(SafeFileHandle volume, SafeFileHandle file, long vcn, long lcn, int count)
+        static bool MoveClusters(SafeFileHandle volume, SafeFileHandle file, long vcn, long lcn, int count, out int error)
         {
             var data = new MoveFileData { File = file.DangerousGetHandle(), StartingVcn = vcn, StartingLcn = lcn, ClusterCount = count };
-            return DeviceIoControl(volume, MoveFile, ref data, Marshal.SizeOf(typeof(MoveFileData)), IntPtr.Zero, 0, out _, IntPtr.Zero);
+            bool ok = DeviceIoControl(volume, MoveFile, ref data, Marshal.SizeOf(typeof(MoveFileData)), IntPtr.Zero, 0, out _, IntPtr.Zero);
+            error = ok ? 0 : Marshal.GetLastWin32Error();
+            return ok;
         }
 
         static SafeFileHandle OpenVolume(string letter)
@@ -177,6 +227,12 @@ namespace Hop
             public long StartingVcn, StartingLcn;
             public int ClusterCount;
         }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool GetFileInformationByHandleEx(SafeFileHandle file, int infoClass, out StandardInfo info, int size);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "GetDiskFreeSpaceW")]
+        static extern bool GetDiskFreeSpace(string root, out uint sectorsPerCluster, out uint bytesPerSector, out uint freeClusters, out uint totalClusters);
 
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "CreateFileW")]
         static extern SafeFileHandle CreateFile(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);

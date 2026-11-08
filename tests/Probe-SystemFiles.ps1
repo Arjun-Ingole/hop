@@ -48,6 +48,7 @@ try {
     Write-Output "Can shrink to $([math]::Round($sizeBefore / 1GB, 2)) GB on a new volume."
     $up = [Hop.NtfsMove]::MoveToEnd($letter, $stream, 0.97)
     Check 'the bitmap moved to the end of the drive' ($up -gt 0) $up
+    Write-Output ([Hop.NtfsMove]::Describe($letter, $stream))
     $stuck = (Get-PartitionSupportedSize -DriveLetter $letter).SizeMin
     Write-Output "Can shrink to $([math]::Round($stuck / 1GB, 2)) GB with it there."
     Check 'that stops the drive shrinking' ($stuck -gt $partition.Size * 0.9) $stuck

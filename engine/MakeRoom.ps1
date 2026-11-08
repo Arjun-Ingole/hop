@@ -525,7 +525,14 @@ function Move-SystemFiles([string]$Room, $Partition, [datetime]$Deadline = [date
             break
         }
         Write-Log "Moved $clusters clusters of $file."
-        if ($clusters -le 0) { break }
+        $why = [Hop.NtfsMove]::LastFailure
+        if ($why) { Write-Log "Not all of it moved: $why." }
+        if ($clusters -le 0) {
+            try { Write-Log ([Hop.NtfsMove]::Describe($Room, $file)) } catch { }
+            # Moving files again won't get past it: defrag leaves these where they are.
+            $Sync.RoomUnfinished = $false
+            break
+        }
         $moved[$file] = $true
     }
     $moved.Count -gt 0
