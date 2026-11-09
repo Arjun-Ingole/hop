@@ -9,6 +9,7 @@
 
 $RoomPath = Join-Path $StateDir 'make-room.json'
 $AsidePath = Join-Path $StateDir 'room-aside.json'   # the space Make room set aside, until an install takes it or Windows has it back
+$TriedPath = Join-Path $StateDir 'room-tried.json'   # the drive Make room couldn't get enough of, for the shrink tool to take over
 $RunOnceKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce'   # builds before the tasks used this
 $ResumeTaskName = 'hop resume'
 $RestoreTaskName = 'hop restore settings'
@@ -254,7 +255,7 @@ function Start-MakeRoom([string]$Drive, [int]$WantedLinuxGB = 0, [int64]$WantedB
 function Request-RoomRestart {
     $Sync.RoomRestarting = $true
     try {
-        Register-RunAfterRestart
+        [void](Register-RunAfterRestart)
         Set-Status 'Restarting...'
         Invoke-Shutdown '/r', '/t', '0'
     } catch {
@@ -283,6 +284,7 @@ function Register-RunAfterRestart {
     Remove-ItemProperty -Path $RunOnceKey -Name 'hop' -ErrorAction SilentlyContinue
     # Nothing starts these any more: one from asking to restart before, and the one running, if it's a copy.
     foreach ($folder in @($earlier)) { Remove-RestartCopy $folder }
+    Split-Path $exe -Parent
 }
 
 # Always a new one. The one hop may be running from can already be set to go as Windows next starts,
@@ -420,12 +422,30 @@ function Set-RoomAside($State) {
                 Write-Log ('Windows can only release {0:N1} GB of drive {1}, so nothing more was set aside.' -f ([math]::Max(0, $shrinkable) / 1GB), $room)
             }
         }
-        $after = Get-TailFree (Get-Partition -DriveLetter $room.TrimEnd(':'))
-        $after -ge [int64]$State.WantedBytes
+        $c = Get-Partition -DriveLetter $room.TrimEnd(':')
+        $enough = (Get-TailFree $c) -ge [int64]$State.WantedBytes
+        # Windows' own way has been tried here and fell short, so next time hop offers its shrink tool straight away.
+        # Only Make room finishing says so: being stopped part way doesn't count.
+        if ($enough) { Remove-Item -LiteralPath $TriedPath -Force -ErrorAction SilentlyContinue }
+        elseif ($Sync.RoomUnfinished -ne $true) {
+            Write-StateFile $TriedPath (ConvertTo-Json -InputObject ([pscustomobject]@{ DiskNumber = [int]$c.DiskNumber; Offset = [int64]$c.Offset; Drive = $room; Saved = (Get-Date).ToString('s') }))
+        }
+        $enough
     } catch {
         Write-Log "Could not set the space aside: $($_.Exception.Message)"
         $false
     }
+}
+
+# The drive Make room fell short on, if it's still where it was: the letter, or nothing.
+function Get-RoomTriedLetter {
+    if (-not (Test-Path -LiteralPath $TriedPath)) { return }
+    try {
+        $tried = Get-Content -LiteralPath $TriedPath -Raw | ConvertFrom-Json
+        $c = Get-PartitionAt ([int]$tried.DiskNumber) ([int64]$tried.Offset)
+        if ($c -and "$(Get-LetterOf $c):" -eq $tried.Drive) { return $tried.Drive.TrimEnd(':') }
+    } catch { Write-Log "Could not read which drive Make room tried: $($_.Exception.Message)" }
+    Remove-Item -LiteralPath $TriedPath -Force -ErrorAction SilentlyContinue
 }
 
 # How much is set aside now, in whole GB, and what for. A record whose space has since gone, for example to

@@ -96,6 +96,10 @@ namespace Hop
         public int RoomAsideWantedGB;   // the Linux size it was set aside for
         public string RoomAsideLetter;  // the drive it's after
         public string RoomNotice;       // something about Make room to say as hop opens, once
+        public string ShrinkPhase;      // shrinking a drive from outside Windows: "waiting" for the restart, "done" after it
+        public int ShrinkWantedGB;      // the Linux size it was for
+        public bool ShrinkReady;        // this build has the shrink tool and this PC can start it
+        public string RoomTriedLetter;  // the drive Windows' own Make room fell short on, so the shrink tool is next
         public string StateLetter;      // the drive a setup took its space from, if it took any
         public bool StateDiskMissing;   // that setup's disk isn't connected
         public string[] Leftovers;      // what Clean up would delete, in words
@@ -327,6 +331,10 @@ namespace Hop
                 RoomAsideWantedGB = aside == null ? 0 : Get<int>(aside, "WantedLinuxGB"),
                 RoomAsideLetter = aside == null ? null : Get<string>(aside, "Letter"),
                 RoomNotice = Get<string>(info, "RoomNotice"),
+                ShrinkPhase = Get<string>(info, "ShrinkPhase"),
+                ShrinkWantedGB = Get<int>(info, "ShrinkWantedGB"),
+                ShrinkReady = Get<bool>(info, "ShrinkReady"),
+                RoomTriedLetter = Get<string>(info, "RoomTriedLetter"),
                 StateLetter = Get<string>(info, "StateLetter"),
                 StateDiskMissing = Get<bool>(info, "StateDiskMissing"),
                 PreparedDistro = state == null ? null : Get<string>(state, "Distro"),
@@ -438,6 +446,25 @@ namespace Hop
             InvokeAsync("Clear-RestorePoints", new Hashtable { ["Drive"] = letter ?? "" });
 
         public Task ClearRoomNoticeAsync() => InvokeAsync("Clear-RoomNotice");
+
+        /// <summary>What shrinking a drive from outside Windows will do. Throws why it can't, in plain words.</summary>
+        public Task<InstallSteps> GetOfflineShrinkStepsAsync(string letter, long wantedBytes, long keepFreeBytes) =>
+            GetStepsFromAsync("Get-OfflineShrinkSteps", new Hashtable { ["Drive"] = letter ?? "", ["WantedBytes"] = wantedBytes, ["KeepFreeBytes"] = keepFreeBytes });
+
+        /// <summary>Sets up the shrink tool and restarts into it.</summary>
+        public Task StartOfflineShrinkAsync(string letter, int wantedLinuxGB, long wantedBytes, long keepFreeBytes) =>
+            InvokeAsync("Start-OfflineShrink", new Hashtable
+            {
+                ["Drive"] = letter ?? "", ["WantedLinuxGB"] = wantedLinuxGB, ["WantedBytes"] = wantedBytes, ["KeepFreeBytes"] = keepFreeBytes,
+            });
+
+        /// <summary>After its restart: "shrunk", or why not in plain words.</summary>
+        public async Task<string> CompleteOfflineShrinkAsync() =>
+            (await InvokeAsync("Complete-OfflineShrink")).Items.Select(o => o?.ToString()).LastOrDefault(o => !string.IsNullOrEmpty(o));
+
+        public Task RestartIntoShrinkAsync() => InvokeAsync("Restart-IntoShrink");
+
+        public Task StopOfflineShrinkAsync() => InvokeAsync("Stop-OfflineShrink");
 
         public Task RestoreRoomSettingsAsync() => InvokeAsync("Restore-RoomSettings");
 

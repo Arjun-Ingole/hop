@@ -168,6 +168,10 @@ function Get-StartupInfo {
         RoomAside = $(try { Get-RoomAside } catch { Write-Log "Could not check what Make room set aside: $($_.Exception.Message)" })
         RoomWantedGB = [int](Read-RoomState).WantedLinuxGB
         RoomNotice = $(try { Get-RoomNotice } catch { Write-Log "Could not check Make room's record: $($_.Exception.Message)" })
+        ShrinkPhase = $(try { Get-ShrinkPhase } catch { Write-Log "Could not check the shrink's record: $($_.Exception.Message)" })
+        ShrinkWantedGB = [int](Read-ShrinkState).WantedLinuxGB
+        ShrinkReady = [bool](Test-ShrinkAvailable)
+        RoomTriedLetter = $(try { Get-RoomTriedLetter } catch { $null })
         Other     = $other
         Status    = $status
         Leftovers = @(if ($status -ne 'none') { try { Get-LeftoverList | Select-Object -Unique } catch { Write-Log "Could not list what hop left: $($_.Exception.Message)" } })

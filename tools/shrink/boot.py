@@ -124,7 +124,8 @@ def make_disk(image):
             f.write(os.urandom(300 << 20))
         stat = os.statvfs(c)
         placeholder = os.path.join(c, 'placeholder.bin')
-        run('fallocate', '-l', str(stat.f_bavail * stat.f_frsize - (900 << 20)), placeholder)
+        # Written out, not fallocated: ntfs3 can leave a fallocated file's clusters unallocated, and then nothing lands at the end.
+        run('dd', 'if=/dev/zero', f'of={placeholder}', 'bs=16M', f'count={(stat.f_bavail * stat.f_frsize - (900 << 20)) >> 24}', 'status=none')
         for i in range(6):
             with open(os.path.join(c, f'Users/hop/Documents/late-{i}.bin'), 'wb') as f:
                 f.write(os.urandom(100 << 20))
@@ -185,9 +186,10 @@ def main():
     write_vars('/usr/share/OVMF/OVMF_VARS_4M.ms.fd' if secure else '/usr/share/OVMF/OVMF_VARS_4M.fd', before[1])
     serial = os.path.join(OUT, 'serial.txt')
     started = time.time()
+    # Secure Boot's firmware needs SMM. The other one keeps its variables only without it.
+    machine = ['-machine', 'q35,smm=on', '-global', 'driver=cfi.pflash01,property=secure,value=on'] if secure else ['-machine', 'q35']
     qemu = subprocess.Popen([
-        'qemu-system-x86_64', '-enable-kvm', '-m', '2048', '-smp', '2', '-no-reboot',
-        '-machine', 'q35,smm=on', '-global', 'driver=cfi.pflash01,property=secure,value=on',
+        'qemu-system-x86_64', '-enable-kvm', '-m', '2048', '-smp', '2', '-no-reboot', *machine,
         '-drive', f'if=pflash,format=raw,readonly=on,file={code}', '-drive', f'if=pflash,format=raw,file={VARS}',
         '-drive', f'file={DISK},if=none,id=os,format=raw,cache=unsafe', '-device', 'nvme,drive=os,serial=hop',
         '-display', 'none', '-serial', f'file:{serial}'])
@@ -211,6 +213,8 @@ def main():
         lines = result.splitlines()
         check('wrote its result for this attempt', len(lines) > 1 and lines[0] == 'id test-1')
         check('says it shrank C:', len(lines) > 1 and lines[1].startswith('ok '), lines[1] if len(lines) > 1 else '')
+        moved = [line for line in lines if line.startswith('Needed relocations')]
+        check('had to move files out of the way to do it', bool(moved) and not moved[-1].startswith('Needed relocations : 0 '), ' | '.join(moved))
         check(f'started with Secure Boot {"on" if secure else "off"}', f'Secure Boot {1 if secure else 0}' in result)
         size = int(run('blockdev', '--getsize64', f'{loop}p3', capture=True))
         check(f'C: is {NEW_GB} GiB now', size == new, str(size))

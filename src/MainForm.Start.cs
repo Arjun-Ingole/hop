@@ -29,6 +29,14 @@ namespace Hop
                         roomFailed = true;
                     startup = await engine.GetStartupInfoAsync();
                 }
+                else if (startup.ShrinkPhase == "done")
+                {
+                    BeginWork(new[] { new[] { Run.Gray("Checking"), Run.Black("the shrink") } }, "Starting…");
+                    roomWantedGB = startup.ShrinkWantedGB;
+                    string result = await engine.CompleteOfflineShrinkAsync();
+                    if (result != "shrunk") shrinkNotice = result ?? "hop's shrink tool didn't say what happened.";
+                    startup = await engine.GetStartupInfoAsync();
+                }
                 else if (startup.RoomPhase == "restore")
                 {
                     reading = false;
@@ -59,8 +67,25 @@ namespace Hop
             int wanted = roomWantedGB > 0 ? roomWantedGB : startup.RoomAsideLetter == target.Letter ? startup.RoomAsideWantedGB : 0;
             if (wanted > 0) linuxGB = wanted;
 
+            if (startup.ShrinkPhase == "waiting")
+            {
+                // Set up, but the PC hasn't restarted into it yet.
+                linuxGB = Math.Max(linuxGB, startup.ShrinkWantedGB);
+                ShowShrinkWaiting(null);
+                return;
+            }
+            if (shrinkNotice != null)
+            {
+                string notice = shrinkNotice;
+                shrinkNotice = null;
+                Arrange(new[] { new[] { Run.Gray("hop"), Run.Black("couldn't shrink the drive.") } }, notice, Danger, null, 0);
+                Footer(ReportLink, () => _ = CopyReportAsync(), "Continue", () => _ = ShowStartScreenAsync());
+                return;
+            }
             await ShowStartScreenAsync();
         }
+
+        string shrinkNotice;   // why the shrink tool didn't shrink the drive, to say once hop is ready
 
         async Task AfterRoomNoticeAsync()
         {

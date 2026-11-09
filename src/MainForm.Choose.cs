@@ -47,10 +47,20 @@ namespace Hop
         int roomWantedGB;   // the Linux size Make room was for, which it comes back with
 
         /// <summary>Make room can still get Linux more of this drive than Windows releases now.</summary>
-        bool RoomCanHelp => target.Blocker == null && !target.IsFreeSpace && !fullDisk && target.StuckGB >= RoomWorthGB && (!RoomMadeHere || MovingUnfinished);
+        bool RoomCanHelp => target.Blocker == null && !target.IsFreeSpace && !fullDisk && target.StuckGB >= RoomWorthGB && (!RoomTriedHere || MovingUnfinished);
+
+        /// <summary>Windows' own Make room has run on this drive, now or before, and fell short: the shrink tool is what's left.</summary>
+        bool RoomTriedHere => RoomMadeHere || (startup.ShrinkReady && startup.RoomTriedLetter != null && startup.RoomTriedLetter == target.Letter);
+
+        /// <summary>
+        /// Once Windows' own way has been tried here and it still keeps space back, hop's shrink tool can get it from outside
+        /// Windows. Encryption is checked again, per drive, before anything changes.
+        /// </summary>
+        bool OfflineCanHelp => startup.ShrinkReady && target.Blocker == null && !target.IsFreeSpace && !fullDisk && target.StuckGB >= RoomWorthGB
+            && !RoomCanHelp && RoomTriedHere && !(target.IsWindows && startup.BitLockerOn);
 
         /// <summary>The most Linux could have here: what Windows releases now, and with Make room, the stuck space too.</summary>
-        int ReachLinuxGB => MaxLinuxGB + (RoomCanHelp ? target.StuckGB : 0);
+        int ReachLinuxGB => MaxLinuxGB + (RoomCanHelp || OfflineCanHelp ? target.StuckGB : 0);
 
         /// <summary>What the engine will make. A download's real size isn't known until it's here.</summary>
         int ExpectedInstallerGB
@@ -157,7 +167,7 @@ namespace Hop
             bool refused = selected != null && selected.Refused != null;
             bool systemStops = refused || secureBootStops || secondDiskStops || unmeasured;
             // One size to pick, whether Windows releases it now or Make room has to get it first.
-            bool roomCanHelp = usable && RoomCanHelp;
+            bool roomCanHelp = usable && (RoomCanHelp || OfflineCanHelp);
             bool reachable = usable && ReachLinuxGB >= MinLinuxGB;
             linuxGB = reachable ? Math.Max(MinLinuxGB, Math.Min(ReachLinuxGB, linuxGB)) : MinLinuxGB;
             bool needRoom = roomCanHelp && linuxGB > MaxLinuxGB && !systemStops;
@@ -236,7 +246,7 @@ namespace Hop
             {
                 // The size chosen is past what Windows releases, so getting it is what comes next.
                 primaryText = "Make room";
-                primaryAction = () => _ = ShowMakeRoomAsync();
+                primaryAction = MakeRoomNext;
             }
 
             if (startup.OtherGB > 0)
@@ -244,7 +254,7 @@ namespace Hop
             else if (!usable || secondDiskStops || unmeasured)
                 Footer(otherDrive ? "Choose another drive" : null, otherDrive ? OpenDrivePicker : (Action)null, primaryText, primaryAction);
             else if (needRoom && better != null)
-                Footer("Make room", () => _ = ShowMakeRoomAsync(), primaryText, primaryAction);
+                Footer("Make room", MakeRoomNext, primaryText, primaryAction);
             else if (stuck && RoomMadeHere && otherDrive && better == null)
                 Footer("Choose another drive", OpenDrivePicker, primaryText, primaryAction);
             else if (target.TailFreeGB > 0 && !target.IsFreeSpace)
@@ -265,8 +275,17 @@ namespace Hop
         /// <summary>Make room has set space aside after the chosen drive, which an install there takes.</summary>
         bool AsideHere => startup.RoomAsideGB > 0 && startup.RoomAsideLetter == target.Letter && target.TailFreeGB > 0;
 
+        /// <summary>Windows' own way first. Once that's been, hop's shrink tool.</summary>
+        void MakeRoomNext()
+        {
+            if (RoomCanHelp) _ = ShowMakeRoomAsync();
+            else _ = ShowShrinkOfflineAsync();
+        }
+
         string RoomNeededNote()
         {
+            if (!RoomCanHelp)
+                return $"Windows can only release {Math.Max(0, MaxLinuxGB)} GB for Linux, because of files it can't move while it runs. For {linuxGB} GB, hop can shrink {target.InSentence} from outside Windows, with one restart.";
             string now = MaxLinuxGB >= MinLinuxGB ? $"Windows can release {MaxLinuxGB} GB for Linux now." : "Windows can't release enough for Linux yet.";
             string how = target.IsWindows ? "with one restart" : "which can take 15 minutes or more";
             return $"{now} For {linuxGB} GB, Make room first moves what's in the way, {how}, and sets the space aside. Your files aren't touched.";
@@ -481,6 +500,79 @@ namespace Hop
                 roomLetter = null;
             },
             ex => ShowRoomRestartStopped(Describe(ex)));
+
+        // --- Shrinking from outside Windows ---------------------------------------------
+
+        long ShrinkWantedBytes => (linuxGB + ExpectedInstallerGB + RoomSpareGB) * 1024L * 1024 * 1024;
+        long ShrinkKeepFreeBytes => DownloadGoesOn(target) ? IsoDownloadGB * 1024L * 1024 * 1024 : 0;
+
+        async Task ShowShrinkOfflineAsync()
+        {
+            int held = HoldScreen();
+            InstallSteps plan;
+            try { plan = await engine.GetOfflineShrinkStepsAsync(target.Letter, ShrinkWantedBytes, ShrinkKeepFreeBytes); }
+            catch (Exception ex)
+            {
+                if (ReleaseScreen(held)) ShowCouldntMakeRoom(ex);
+                return;
+            }
+            if (!ReleaseScreen(held)) return;
+
+            ConfigureDrive(DriveMode.Stuck, Current);
+            steps.Set(plan.Steps, plan.Notes.Skip(1).ToArray());
+            Arrange(new[] { new[] { Run.Gray("Make room for"), Run.Black($"{linuxGB} GB") } },
+                $"Windows can't move some of its own files while it runs, so it can't shrink {target.InSentence} any further. hop's shrink tool can, from outside Windows.", Secondary, drive, 24);
+            PlaceSteps(drive.Bottom + S(24));
+            steps.Visible = true;
+            Footer(plan.Notes.FirstOrDefault(), null, "Shrink and restart", () => _ = ShrinkOfflineAsync(), "Back", ShowChoose);
+        }
+
+        async Task ShrinkOfflineAsync()
+        {
+            BeginWork(new[] { new[] { Run.Gray("Making"), Run.Black("room") } }, "Starting…");
+            try
+            {
+                roomWantedGB = linuxGB;
+                await engine.StartOfflineShrinkAsync(target.Letter, linuxGB, ShrinkWantedBytes, ShrinkKeepFreeBytes);
+                await Task.Delay(RoomRestartWaitSeconds * 1000);
+                EndWork();
+                ShowShrinkWaiting(null);
+            }
+            catch (Exception ex)
+            {
+                EndWork();
+                ShowCouldntMakeRoom(ex);
+            }
+        }
+
+        /// <summary>The shrink tool is set up, but the PC hasn't restarted into it.</summary>
+        void ShowShrinkWaiting(string problem)
+        {
+            Arrange(new[] { new[] { Run.Gray("This PC"), Run.Black("didn't restart.") } },
+                problem ?? "hop's shrink tool is set up, and runs at the next restart. Save your work and restart, or call it off and nothing changes.",
+                problem == null ? Secondary : Danger, null, 0);
+            Footer("Don't shrink", () => _ = StopShrinkAsync(), "Restart now", () => _ = RestartIntoShrinkAsync());
+        }
+
+        async Task RestartIntoShrinkAsync()
+        {
+            BeginWork(new[] { new[] { Run.Gray("Making"), Run.Black("room") } }, "Restarting…");
+            try
+            {
+                await engine.RestartIntoShrinkAsync();
+                await Task.Delay(RoomRestartWaitSeconds * 1000);
+                EndWork();
+                ShowShrinkWaiting(null);
+            }
+            catch (Exception ex)
+            {
+                EndWork();
+                ShowShrinkWaiting(Describe(ex));
+            }
+        }
+
+        Task StopShrinkAsync() => WorkThenChooseAsync(new[] { new[] { Run.Gray("Calling off"), Run.Black("the shrink") } },
+            () => engine.StopOfflineShrinkAsync(), ex => ShowShrinkWaiting(Describe(ex)));
 
         /// <summary>Changes something on the PC, reads it again and goes back to choosing.</summary>
         async Task WorkThenChooseAsync(Run[][] lines, Func<Task> work, Action<Exception> failed)
