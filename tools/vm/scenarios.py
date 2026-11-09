@@ -841,6 +841,17 @@ mountvol S: /s; "EFI hop-shrink: " + $(if (Test-Path S:\EFI\hop-shrink) { (Get-C
 Get-WinEvent -FilterHashtable @{ LogName='Application'; ProviderName='Microsoft-Windows-Wininit' } -MaxEvents 3 -ErrorAction SilentlyContinue | ForEach-Object { "disk check at start, $($_.TimeCreated.ToString('s')): " + (($_.Message -split "`n" | Where-Object { $_ -match 'Windows has|problems|found|clean|correct|KB' }) -join ' | ') }
 '''
 
+VOLUME_HEALTH = r'''
+"dirty: " + (fsutil dirty query C:)
+"Win32_Volume DirtyBitSet: " + (Get-CimInstance Win32_Volume -Filter "DriveLetter='C:'").DirtyBitSet
+"Repair-Volume -Scan: " + (Repair-Volume -DriveLetter C -Scan)
+"--- chkdsk /scan"
+chkdsk C: /scan 2>&1 | Where-Object { $_ -match '\S' } | Select-Object -Last 40
+Get-WinEvent -LogName Application -MaxEvents 400 -ErrorAction SilentlyContinue | Where-Object { $_.ProviderName -match 'Wininit|Chkdsk|Ntfs' } | Select-Object -First 6 | ForEach-Object { "event $($_.ProviderName) $($_.Id) $($_.TimeCreated.ToString('s')): " + (($_.Message -split "`n" | Where-Object { $_ -match '\S' } | Select-Object -Last 12) -join ' | ') }
+Get-WinEvent -LogName System -MaxEvents 400 -ErrorAction SilentlyContinue | Where-Object { $_.ProviderName -match 'Ntfs' } | Select-Object -First 6 | ForEach-Object { "event $($_.ProviderName) $($_.Id) $($_.TimeCreated.ToString('s')): " + ($_.Message -replace '\s+', ' ') }
+"can shrink: " + $(try { "{0:N1} GB of {1:N1}" -f ((Get-PartitionSupportedSize -DriveLetter C -ErrorAction Stop).SizeMin/1GB), ((Get-Partition -DriveLetter C).Size/1GB) } catch { $_.Exception.Message })
+'''
+
 KEEP_FILES = r'''
 New-Item -ItemType Directory -Force C:\probe\kept | Out-Null
 $r = New-Object Random 7
@@ -885,8 +896,14 @@ def scenario_shrinkoffline(bench):
     print(s.names(), flush=True)
     s.facts('after the shrink tool and the restart')
     print(vm.ps(SHRINK_FACTS, timeout=120), flush=True)
-    print(vm.ps(CHECK_DISK, timeout=600), flush=True)
+    print(vm.ps(VOLUME_HEALTH, timeout=900), flush=True)
     s.hop_log()
+    # What it takes for Windows to be happy with the drive again: its own check at the next start.
+    print(vm.ps('cmd /c "echo Y| chkdsk C: /f"', timeout=120), flush=True)
+    restart_and_wait(vm, limit=1800)
+    vm.shot('offline-after-chkdsk')
+    print(vm.ps(VOLUME_HEALTH, timeout=900), flush=True)
+    s.facts('after Windows checked the drive at a start')
 
 
 def scenario_stuckinstall(bench):

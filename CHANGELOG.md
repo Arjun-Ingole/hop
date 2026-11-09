@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Make room can shrink a drive from outside Windows.** On some PCs, Windows can't move a few of its own files, such as `$Mft::$BITMAP`, so it releases almost nothing from a drive with plenty free: 0 GB of 197 GB free on one Dell, about 1 GB in issue #6. When Windows' own way falls short, Make room now offers to restart into hop's shrink tool, which shrinks the drive with `ntfsresize`, as GParted does, and restarts into Windows. It's Fedora's signed startup files and a small Linux that does only that, so it starts with Secure Boot on. It checks everything before writing anything, and changes nothing if Windows is hibernated, the drive is marked to be checked, or the drive changed since. hop then finds the space set aside, as Make room leaves it, and Undo gives it back. It can't shrink an encrypted drive, so it asks for BitLocker or Device encryption to be off first.
+
 - Omarchy 4.5.0, tested installing next to Windows in a virtual PC, with and without encryption, and with 4 GB of memory. When omarchy.org offers a version hop hasn't tried yet, hop now installs the newest one it has, by its own checksum, instead of refusing.
 
 ### Changed
