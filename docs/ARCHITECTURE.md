@@ -447,8 +447,11 @@ hop downloads it once and checks every file against the checksums built into hop
 partition by its GPT ID, its size when hop planned this, the new size and an ID for the attempt. It adds a startup
 entry, `Make room for Linux (hop shrink)`, sets it as the next start only, and restarts.
 
-`shrink.sh` checks everything again before it writes anything: the partition is still the size hop planned for, it's
-NTFS, Windows isn't hibernated (which `ntfsresize` doesn't check), and `ntfsresize --no-action` agrees. Any refusal
+The menu has a GRUB superuser with no password, so nobody at the PC can edit its line or reach GRUB's prompt, while the one
+entry still starts. `shrink.sh` checks everything again before it writes anything: exactly one partition has that ID, it
+starts at the sector hop planned for, as a cloned disk's copy rarely does, it's still the size hop planned for, it's NTFS,
+Windows isn't hibernated (which `ntfsresize` doesn't check) or part way through an update, and `ntfsresize --no-action`
+agrees. Any refusal
 changes nothing. Then `ntfsresize` shrinks the file system, moving what's in the way, and `sfdisk` moves the
 partition's end, keeping its start, type, ID, name and attributes. It writes `result.txt` to its folder on the EFI
 partition and restarts. `ntfsresize` marks the drive for Windows to check, which Windows does as it starts.
@@ -459,7 +462,14 @@ tool's folder and startup entry. The tool says `failed:` when it changed nothing
 and hop says which.
 
 It can't shrink an encrypted drive, so hop refuses one with BitLocker or Device encryption on, and asks for the charger
-on a laptop, a drive Windows hasn't finished checking, and an update waiting for a restart.
+on a laptop, a drive Windows hasn't finished checking, and an update waiting for a restart. It refuses a disk that isn't
+GPT or is on USB, which the tool can't find or reach.
+
+The restart reuses Make room's two tasks and their protected copy of hop. While a shrink is waiting, or waiting for hop to
+open after it, nothing of Make room's takes them away, and a copy is only deleted once no task starts from it: an ordinary
+user can make a folder of that name in ProgramData, which a task left pointing there would then run as SYSTEM. hop goes
+by the drive's GPT ID afterwards, since another disk can change the disks' numbers, and a tool left behind by a crash,
+with no record of it, is removed the next time hop opens.
 
 ## Why the startup entry is written directly
 
