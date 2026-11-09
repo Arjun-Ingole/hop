@@ -68,6 +68,14 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      # A scenario that shrinks C: from outside Windows needs the shrink image, which a test build takes from the VM's own disk.
+      - name: Build the shrink image
+        if: contains(inputs.scenario, 'shrink')
+        run: |
+          docker run --rm -v "$PWD:/w" registry.fedoraproject.org/fedora:44 bash /w/tools/shrink/build.sh /w/shrink-out
+          sudo chown -R "$(id -u):$(id -g)" shrink-out
+          python3 tools/shrink/pin.py shrink-out 'C:\Users\hop\Downloads\hop-shrink.zip'
+
       - name: Build hop
         run: dotnet build Hop.csproj -c Release
 
@@ -86,6 +94,7 @@ jobs:
           SCENARIO: ${{ inputs.scenario }}
         run: |
           cp bin/Release/hop.exe /mnt/hopvm/files/hop.exe
+          if [ -f shrink-out/hop-shrink.zip ]; then cp shrink-out/hop-shrink.zip /mnt/hopvm/files/; fi
           python3 tools/vm/hopvm.py run $SCENARIO
 
       - uses: actions/upload-artifact@v4

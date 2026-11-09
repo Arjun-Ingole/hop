@@ -165,13 +165,13 @@ class Bench:
         self.secure_boot = secure_boot
         self.vm = None
 
-    def fresh(self, second_disk=False):
+    def fresh(self, second_disk=False, memory_gb=12):
         """Back to Windows as it was installed, with a new VM."""
         if self.vm:
             self.vm.stop()
             self.vm.server.shutdown()
             self.vm.server.server_close()
-        vm = hopvm.Vm(secure_boot=self.secure_boot)
+        vm = hopvm.Vm(secure_boot=self.secure_boot, memory_gb=memory_gb)
         if second_disk:
             path = os.path.join(hopvm.RUN, 'second.qcow2')
             os.makedirs(hopvm.RUN, exist_ok=True)
@@ -830,6 +830,63 @@ def undo_after_linux(vm, s, before):
     restart_and_wait(vm)
     vm.shot('undo-windows-still-starts')
     s.facts('after Undo and a restart')
+
+
+SHRINK_FACTS = r'''
+"shrink.json: " + $(if (Test-Path C:\ProgramData\hop\shrink.json) { Get-Content C:\ProgramData\hop\shrink.json -Raw } else { 'none' })
+"room-tried.json: " + $(if (Test-Path C:\ProgramData\hop\room-tried.json) { Get-Content C:\ProgramData\hop\room-tried.json -Raw } else { 'none' })
+"firmware entries: " + ((bcdedit /enum firmware | Select-String 'description') -join ' ; ')
+mountvol S: /s; "EFI hop-shrink: " + $(if (Test-Path S:\EFI\hop-shrink) { (Get-ChildItem S:\EFI\hop-shrink).Name -join ', ' } else { 'gone' }); mountvol S: /d
+"kept files: " + $(if (Test-Path C:\probe\kept.txt) { $now = Get-ChildItem C:\probe\kept -File | Sort-Object Name | Get-FileHash | ForEach-Object { "$($_.Hash) $(Split-Path $_.Path -Leaf)" }; if ((Compare-Object (Get-Content C:\probe\kept.txt) $now).Count -eq 0) { "all $(@($now).Count) the same" } else { 'CHANGED' } } else { 'none' })
+Get-WinEvent -FilterHashtable @{ LogName='Application'; ProviderName='Microsoft-Windows-Wininit' } -MaxEvents 3 -ErrorAction SilentlyContinue | ForEach-Object { "disk check at start, $($_.TimeCreated.ToString('s')): " + (($_.Message -split "`n" | Where-Object { $_ -match 'Windows has|problems|found|clean|correct|KB' }) -join ' | ') }
+'''
+
+KEEP_FILES = r'''
+New-Item -ItemType Directory -Force C:\probe\kept | Out-Null
+$r = New-Object Random 7
+foreach ($i in 1..40) { $b = New-Object byte[] (8MB); $r.NextBytes($b); [IO.File]::WriteAllBytes("C:\probe\kept\file$i.bin", $b) }
+Get-ChildItem C:\probe\kept -File | Sort-Object Name | Get-FileHash | ForEach-Object { "$($_.Hash) $(Split-Path $_.Path -Leaf)" } | Set-Content C:\probe\kept.txt
+"kept {0} files" -f (Get-ChildItem C:\probe\kept -File).Count
+'''
+
+
+def scenario_shrinkoffline(bench):
+    """The paging file stuck near the end of C:, on a PC with too little memory for Make room to turn it off, so Windows'
+    own way falls short. hop's shrink tool then restarts the PC, shrinks C: from outside Windows with Secure Boot on, and
+    restarts into Windows, which checks the drive. hop comes back with the space set aside, and nothing of the tool left."""
+    vm, s = bench.fresh(memory_gb=4)
+    s.desktop()
+    print(vm.ps(KEEP_FILES, timeout=300), flush=True)
+    make_space_stuck(vm)
+    s.facts('after moving the paging file to the end')
+    s.get_hop()
+    print(vm.ps(f'(New-Object Net.WebClient).DownloadFile("http://10.0.2.2:{hopvm.PORT}/file/hop-shrink.zip", "C:\\Users\\hop\\Downloads\\hop-shrink.zip"); Get-Item C:\\Users\\hop\\Downloads\\hop-shrink.zip | Select-Object Length', timeout=120), flush=True)
+    make_room(vm, s)
+    print(vm.ps(SHRINK_FACTS, timeout=120), flush=True)
+    vm.shot('offline-choose')
+    print(s.names(), flush=True)
+    s.press('Make room', limit=60)
+    time.sleep(6)
+    vm.shot('offline-steps')
+    print(s.names(), flush=True)
+    before = vm.agent_boot.get('user')
+    s.press('Shrink and restart', limit=60)
+    for second in range(0, 120, 4):
+        vm.shot(f'offline-restarting-{second:03}s')
+        time.sleep(4)
+    vm.wait_agent('user', limit=1800, not_boot=before)
+    vm.shot('offline-signed-in-again')
+    for second in range(0, 300, 10):
+        ui = s.ui()
+        if ui.get('found') and any(n in ('Install', 'Close', 'Continue') for n in s.names()):
+            break
+        time.sleep(10)
+    vm.shot('offline-hop-back')
+    print(s.names(), flush=True)
+    s.facts('after the shrink tool and the restart')
+    print(vm.ps(SHRINK_FACTS, timeout=120), flush=True)
+    print(vm.ps(CHECK_DISK, timeout=600), flush=True)
+    s.hop_log()
 
 
 def scenario_stuckinstall(bench):
