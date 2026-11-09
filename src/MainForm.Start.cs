@@ -24,6 +24,7 @@ namespace Hop
                     roomWantedGB = startup.ShrinkWantedGB;
                     string result = await engine.CompleteOfflineShrinkAsync();
                     if (result != "shrunk") shrinkNotice = result ?? "hop's shrink tool didn't say what happened.";
+                    else shrinkCheckNote = engine.ShrinkNote;
                     startup = await engine.GetStartupInfoAsync();
                 }
                 if (startup.RoomPhase == "continue")
@@ -87,6 +88,7 @@ namespace Hop
         }
 
         string shrinkNotice;   // why the shrink tool didn't shrink the drive, to say once hop is ready
+        string shrinkCheckNote;   // Windows checking the drive at its next start, after the shrink tool
 
         async Task AfterRoomNoticeAsync()
         {

@@ -245,6 +245,7 @@ function Complete-OfflineShrink {
             WantedLinuxGB = [int]$state.WantedLinuxGB; Saved = (Get-Date).ToString('s')
         }))
         Write-Log ('Drive {0} is {1:N1} GB now, and the space after it is set aside for Linux.' -f $state.Drive, ($size / 1GB))
+        Test-ShrunkDrive $state.Drive
         Remove-Item -LiteralPath $TriedPath -Force -ErrorAction SilentlyContinue
         return 'shrunk'
     }
@@ -276,6 +277,22 @@ function Restart-IntoShrink {
     try { Invoke-Shutdown '/r', '/t', '0' } catch { $Sync.RoomRestarting = $false; throw }
 }
 
+# Windows' own disk check, online, of a drive the tool shrank. It found nothing in testing, but it's Windows' view that
+# counts. Should it find something, Windows fixes it as it next starts, and hop says so.
+function Test-ShrunkDrive([string]$Drive) {
+    $Sync.ShrinkNote = $null
+    $letter = (Get-RoomDrive $Drive).TrimEnd(':')
+    Set-Status "Having Windows check drive $letter`:..."
+    $scan = try { [string](Repair-Volume -DriveLetter $letter -Scan -ErrorAction Stop) } catch { "couldn't: $($_.Exception.Message)" }
+    Write-Log "Windows' disk check of drive $letter`: after the shrink: $scan"
+    if ($scan -eq 'NoErrorsFound') { return }
+    try {
+        $fix = Repair-Volume -DriveLetter $letter -OfflineScanAndFix -ErrorAction Stop
+        Write-Log "Asked Windows to fix drive $letter`: as it next starts: $fix"
+    } catch { Write-Log "Could not ask Windows to fix drive $letter`:: $($_.Exception.Message)" }
+    $Sync.ShrinkNote = "Windows wants to check drive $letter`: after the shrink, and does that the next time it starts. It can take a few minutes."
+}
+
 # Calls it off before the restart: nothing has changed on the drive.
 function Stop-OfflineShrink {
     $state = Read-ShrinkState
@@ -294,13 +311,16 @@ function Get-OfflineShrinkSteps([string]$Drive, [int64]$WantedBytes, [int64]$Kee
     if ($problem) { throw $problem }
     $c = Get-Partition -DriveLetter $room.TrimEnd(':')
     $new = Get-ShrinkTarget $c $WantedBytes
+    # Whole GB down, as the drive bar shows them.
+    $sizes = '{0} GB to {1} GB' -f [math]::Floor($c.Size / 1GB), [math]::Floor($new / 1GB)
     $steps = @(
         "Puts hop's shrink tool on the EFI partition. It's Fedora Linux's signed startup files and **ntfsresize**, which GParted uses, and nothing else."
-        ('Restarts into it. It shrinks drive {0} from {1:N0} GB to {2:N0} GB from outside Windows, where every file can move. That can take from a few minutes to half an hour. Don''t turn off the PC.' -f $room, ($c.Size / 1GB), ($new / 1GB))
-        "Restarts into Windows, which checks drive $room as it starts. hop opens again with the space set aside for Linux."
+        "Restarts into it. It shrinks drive $room from $sizes from outside Windows, where every file can move. That can take from a few minutes to half an hour. Don't turn off the PC."
+        "Restarts into Windows. hop opens again with the space set aside for Linux."
     )
     $notes = @(
-        'Save your work and back up anything important first. Losing power while a drive shrinks can damage it.'
+        'Save your work first.'
+        'Back up anything important, and keep the charger in. Losing power while a drive shrinks can damage it.'
         'If anything looks wrong before it starts, it changes nothing and goes back to Windows.'
     )
     if (Test-SecureBoot) { $notes += 'It starts with Secure Boot on.' }

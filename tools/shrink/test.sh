@@ -114,8 +114,12 @@ diff -q "$WORK/files.before" "$WORK/files.after" >/dev/null; check "every file o
 ntfsfix --no-action "${LOOP}p3"; check 'ntfsfix finds nothing to fix' $?
 SIZE2=$(blockdev --getsize64 "${LOOP}p3")
 detach
-# ntfsresize leaves the volume marked for Windows to check, so a second go before Windows has been must be refused.
-refuses 'a second shrink before Windows has checked the drive' "$SIZE2" $((SIZE2 - 1073741824))
+# ntfsresize refuses a drive marked for a check, so its dry run says whether the mark went.
+attach; ntfsresize --no-action --no-progress-bar --size $((SIZE2 - 1073741824)) "${LOOP}p3" >/dev/null 2>&1; marked=$?; detach
+[ $marked -eq 0 ]; check "isn't left marked for a disk check" $?
+# A drive Windows marked to be checked must be refused. ntfsfix without --clear-dirty marks it.
+attach; ntfsfix "${LOOP}p3" >/dev/null; detach
+refuses 'a drive marked for a disk check' "$SIZE2" $((SIZE2 - 1073741824))
 
 echo "$FAILS failed"
 exit $FAILS

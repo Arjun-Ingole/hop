@@ -898,12 +898,12 @@ def scenario_shrinkoffline(bench):
     print(vm.ps(SHRINK_FACTS, timeout=120), flush=True)
     print(vm.ps(VOLUME_HEALTH, timeout=900), flush=True)
     s.hop_log()
-    # What it takes for Windows to be happy with the drive again: its own check at the next start.
-    print(vm.ps('cmd /c "echo Y| chkdsk C: /f"', timeout=120), flush=True)
+    # hop's way of having Windows fix the drive should its scan find something: what it does to C:, and at the next start.
+    print(vm.ps('"OfflineScanAndFix: " + $(try { Repair-Volume -DriveLetter C -OfflineScanAndFix -ErrorAction Stop } catch { $_.Exception.Message })', timeout=300), flush=True)
     restart_and_wait(vm, limit=1800)
-    vm.shot('offline-after-chkdsk')
+    vm.shot('offline-after-next-start')
     print(vm.ps(VOLUME_HEALTH, timeout=900), flush=True)
-    s.facts('after Windows checked the drive at a start')
+    s.facts('after the next start')
 
 
 def scenario_stuckinstall(bench):

@@ -83,6 +83,7 @@ Describe 'After the shrink tool has run' {
         Mock Remove-RoomTask { }
         Mock Remove-RestartCopy { }
         Mock Read-RoomState { }
+        Mock Test-ShrunkDrive { }
     }
     It 'sets the space aside for Linux, as Make room does, and tidies up' {
         Complete-OfflineShrink | Should -Be 'shrunk'
@@ -93,6 +94,7 @@ Describe 'After the shrink tool has run' {
         Test-Path $TriedPath | Should -BeFalse
         Should -Invoke Clear-OfflineShrink -Times 1
         Should -Invoke Remove-RestartCopy -ParameterFilter { $Folder -eq 'X' } -Times 1
+        Should -Invoke Test-ShrunkDrive -ParameterFilter { $Drive -eq 'C:' } -Times 1
     }
     It 'keeps the size from before an earlier Make room, for Undo' {
         Write-StateFile $AsidePath (@{ DiskNumber = 0; Offset = [int64]1GB; SizeBefore = [int64]480GB; Drive = 'C:'; WantedLinuxGB = 25 } | ConvertTo-Json)
@@ -213,5 +215,47 @@ Describe 'Make room asking to restart' {
         Mock Set-Status { }
         $out = @(Request-RoomRestart)
         $out.Count | Should -Be 0
+    }
+}
+
+Describe 'Windows checking a drive the tool shrank' {
+    BeforeEach {
+        Mock Set-Status { }
+        Mock Repair-Volume { 'NoErrorsFound' } -ParameterFilter { $Scan }
+        Mock Repair-Volume { 'Scheduled' } -ParameterFilter { $OfflineScanAndFix }
+    }
+    It 'says nothing when Windows finds nothing' {
+        Test-ShrunkDrive 'C:'
+        $Sync.ShrinkNote | Should -BeNullOrEmpty
+        Should -Invoke Repair-Volume -ParameterFilter { $OfflineScanAndFix } -Times 0
+    }
+    It 'has Windows fix the drive as it next starts, and says so, when it finds something' {
+        Mock Repair-Volume { 'NeedOfflineScanAndFix' } -ParameterFilter { $Scan }
+        Test-ShrunkDrive 'C:'
+        Should -Invoke Repair-Volume -ParameterFilter { $OfflineScanAndFix -and $DriveLetter -eq 'C' } -Times 1
+        $Sync.ShrinkNote | Should -BeLike '*next time it starts*'
+    }
+    It 'says so too when Windows can''t scan it' {
+        Mock Repair-Volume { throw 'busy' } -ParameterFilter { $Scan }
+        Test-ShrunkDrive 'C:'
+        $Sync.ShrinkNote | Should -BeLike '*next time it starts*'
+    }
+}
+
+Describe 'A drive Windows wants to check first' {
+    It 'counts only the free space after it, instead of failing' {
+        Mock Resolve-Target { [pscustomobject]@{ Kind = 'volume'; IsWindows = $true; Partition = [pscustomobject]@{ DiskNumber = 0; PartitionNumber = 3; Offset = [int64]1GB; Size = [int64]90GB } } }
+        Mock Get-SupportedSize { $ex = New-Object Exception 'Cannot shrink a partition containing a volume with errors.'; $ex.Data['ErrorId'] = 'StorageWMI 42008,Get-PartitionSupportedSize'; throw $ex }
+        Mock Get-TailFree { [int64]37GB }
+        Mock Get-LetterOf { 'C' }
+        Mock Get-VolumeOf { [pscustomobject]@{ Size = [int64]90GB; SizeRemaining = [int64]71GB } }
+        $space = Get-SpaceInfo ''
+        $space.UsableGB | Should -Be 37
+        $space.MinSize | Should -Be ([int64]90GB)
+    }
+    It 'still fails for anything else' {
+        Mock Resolve-Target { [pscustomobject]@{ Kind = 'volume'; IsWindows = $true; Partition = [pscustomobject]@{ DiskNumber = 0; PartitionNumber = 3; Offset = [int64]1GB; Size = [int64]90GB } } }
+        Mock Get-SupportedSize { throw 'Windows took too long' }
+        { Get-SpaceInfo '' } | Should -Throw '*too long*'
     }
 }

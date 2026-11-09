@@ -32,7 +32,13 @@ function Get-SpaceInfo([string]$Target) {
             UsableGB = [int][math]::Floor($place.Gap.Size / 1GB); Kind = 'gap'; Name = 'that free space'; Letter = ''
         }
     }
-    $supported = Get-SupportedSize $c
+    $supported = try { Get-SupportedSize $c } catch {
+        # 42008: Windows won't say how far a drive shrinks while it's marked for a disk check. It can't shrink it
+        # either, so nothing more can come from it until then, but free space after it still can.
+        if ("$($_.Exception.Data['ErrorId'])" -notlike 'StorageWMI 42008*') { throw }
+        Write-Log "Windows won't shrink drive $(Get-LetterOf $c): until it has checked it."
+        [pscustomobject]@{ SizeMin = [int64]$c.Size; SizeMax = [int64]$c.Size }
+    }
     $tail = Get-TailFree $c
     $reserve = if ($place.IsWindows) { $WindowsReserve } else { $DataReserve }
     $letter = Get-LetterOf $c

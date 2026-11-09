@@ -70,5 +70,10 @@ shrink_partition() {
         echo "partial: the partition table doesn't read as planned: before [$before], after [$after]"
         return 1
     fi
+    # ntfsresize marks the drive for a disk check, for safety. Windows 11 doesn't check it as it starts, though: it
+    # waits for an online scan, and until then refuses to shrink the drive or say how far it would. The check this
+    # needs has been made, and hop has Windows scan the drive once it's back, so the mark goes.
+    say "Clearing the mark for a disk check..."
+    if ! ntfsfix --clear-dirty "$dev"; then say "ntfsfix couldn't clear it, so Windows will want to check the drive."; fi
     echo "ok $size $new"
 }

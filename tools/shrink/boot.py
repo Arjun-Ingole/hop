@@ -230,6 +230,8 @@ def main():
         for n in (2, 4):
             check(f'partition {n} is untouched', run('sha256sum', f'{loop}p{n}', capture=True).split()[0] == hashes[n])
         check('ntfsfix finds nothing to fix', run('ntfsfix', '--no-action', f'{loop}p3', check_=False) == 0)
+        # ntfsresize refuses a drive marked for a check, so its dry run says whether the mark went.
+        check("isn't left marked for a disk check", run('ntfsresize', '--no-action', '--no-progress-bar', '--size', str(new - (1 << 30)), f'{loop}p3', check_=False) == 0)
         c = mount(f'{loop}p3', os.path.join(WORK, 'c'), '-t', 'ntfs3', '-o', 'ro')
         now = tree(c)
         run('umount', c)

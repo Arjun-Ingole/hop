@@ -294,7 +294,12 @@ function Get-SupportedSize($Partition) {
     }
     try {
         $result = $query.EndInvoke($running)
-        if ($query.Streams.Error.Count) { throw $query.Streams.Error[0].Exception }
+        if ($query.Streams.Error.Count) {
+            # Kept, so a caller can tell Windows' reasons apart without reading its words, which change with its language.
+            $err = $query.Streams.Error[0]
+            $err.Exception.Data['ErrorId'] = $err.FullyQualifiedErrorId
+            throw $err.Exception
+        }
         $result | Select-Object -First 1
     } finally {
         $query.Dispose()

@@ -294,6 +294,28 @@ disk wasn't tried, and both are still refused there. The runs are
 [41551488195](https://github.com/Arjun-Ingole/hop/actions/runs/41551488195) and
 [41554439860](https://github.com/Arjun-Ingole/hop/actions/runs/41554439860).
 
+## Shrinking from outside Windows
+
+`.github/workflows/shrink.yml` builds hop's shrink tool in a Fedora container and tests it three ways. See
+[Shrinking from outside Windows](ARCHITECTURE.md#shrinking-from-outside-windows) for what it is.
+
+- **`tools/shrink/test.sh`** runs `shrink.sh` itself against real NTFS on a loop device, laid out as Windows lays out a
+  disk, with files written through `ntfs-3g` near the end of C: so they have to move. Each refusal has to leave the disk
+  byte for byte as it was: a size that changed since hop planned, one smaller than the files, one that isn't whole MiB,
+  growing, a hibernated Windows, BitLocker, and a second shrink before Windows has checked the drive. A hibernation file
+  Windows woke from mustn't stop it. Then the real shrink: the partition's start, type, ID, name and attributes the same,
+  the GPT sound, the other partitions untouched, `ntfsfix` happy and every file the same.
+- **`tools/shrink/boot.py`** starts the built tool in QEMU with OVMF, through a startup entry and `BootNext` as hop
+  writes them, with the engine's own `grub.cfg`, on NVMe. Once with Secure Boot on and Microsoft's keys, once with it off.
+- **`shrinkoffline`** in the Windows VM, below.
+
+In [42569775995](https://github.com/Arjun-Ingole/hop/actions/runs/42569775995): every check passed. With Secure Boot on
+and off, Fedora 44's shim, GRUB and kernel 7.2.15 started the tool, which moved 630 MB out of the way and shrank C: from
+11.9 to 6 GB in about 10 seconds. All 3,007 files were the same afterwards.
+
+`ntfsresize` doesn't refuse a hibernated Windows. The first run of `test.sh` showed it shrinking one, so `shrink.sh`
+checks `hiberfil.sys` itself, as ntfs-3g does when it mounts.
+
 ## On a real Windows, in a virtual PC
 
 `.github/workflows/windows-vm.yml`, started by hand, runs the real `hop.exe` on a real Windows: the Windows 11 Enterprise 24H2 evaluation, installed
