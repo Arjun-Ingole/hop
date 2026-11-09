@@ -151,13 +151,9 @@ namespace Hop
         /// <summary>Numbers of the entries whose description contains <paramref name="text"/>.</summary>
         public static int[] FindEntries(string text)
         {
-            EnablePrivilege();
             var found = new List<int>();
-            for (int number = 0; number <= 0xFF; number++)
-            {
-                var data = TryRead(EntryName(number));
-                if (data != null && Description(data).Contains(text)) found.Add(number);
-            }
+            foreach (var entry in ListEntries())
+                if (entry.Description.Contains(text)) found.Add(entry.Number);
             return found.ToArray();
         }
 
@@ -165,10 +161,20 @@ namespace Hop
         public static BootEntry[] ListEntries()
         {
             EnablePrivilege();
+            // Reuse the native read buffer across 65,536 names instead of allocating
+            // half a gigabyte of temporary buffers for every inventory.
+            var buffer = new byte[8192];
+            return ReadEntries(name => TryRead(name, buffer));
+        }
+
+        // Include entries outside BootOrder too: a failed BootOrder write can leave
+        // a newly created entry orphaned anywhere in the 16-bit allocation range.
+        internal static BootEntry[] ReadEntries(Func<string, byte[]> read)
+        {
             var entries = new List<BootEntry>();
-            for (int number = 0; number <= 0xFF; number++)
+            for (int number = 0; number <= 0xFFFF; number++)
             {
-                var data = TryRead(EntryName(number));
+                var data = read(EntryName(number));
                 if (data == null || data.Length < 8) continue;
                 var entry = new BootEntry { Number = number, Description = Description(data) };
                 int pathLength = BitConverter.ToUInt16(data, 4);
@@ -283,9 +289,10 @@ namespace Hop
             }
         }
 
-        static byte[] Read(string name)
+        static byte[] Read(string name) => Read(name, new byte[8192]);
+
+        static byte[] Read(string name, byte[] buffer)
         {
-            var buffer = new byte[8192];
             uint length = GetFirmwareEnvironmentVariable(name, GlobalVariables, buffer, (uint)buffer.Length);
             if (length == 0)
             {
@@ -302,6 +309,12 @@ namespace Hop
         static byte[] TryRead(string name)
         {
             try { return Read(name); }
+            catch (Win32Exception) { return null; }
+        }
+
+        static byte[] TryRead(string name, byte[] buffer)
+        {
+            try { return Read(name, buffer); }
             catch (Win32Exception) { return null; }
         }
 

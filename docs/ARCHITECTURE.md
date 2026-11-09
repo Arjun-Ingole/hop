@@ -93,14 +93,17 @@ A failure in steps 4 to 6 runs `Invoke-Cleanup`, which puts everything back.
 | The copy of hop those tasks start | `%ProgramData%\hop-restart-*`, which it removes itself | Fixed pattern |
 | Casper's partition, only from builds up to 0.2.0 | The end of the disk | See [Casper and the free space](#casper-and-the-free-space) |
 
-Clean-up works from these, not just the state file, so it works after a crash. It looks for labels on
+Discovery works from these, not just the state file, so it works after a crash. It looks for labels on
 the Windows disk and every internal disk. USB drives are skipped, because they could be from another PC,
 and off the Windows disk the format has to match as well as the label. Builds named LinuxHop used
 `LINUXHOP`, `\EFI\linuxhop` and `(LinuxHop)`, which are still recognised.
 
-A label isn't enough on its own, because anyone can name a drive. A partition the state file recorded is hop's.
-Otherwise it has to look as hop leaves it: empty apart from what Windows puts on every drive, or for the installer,
-holding `EFI`. Clean up lists what it will delete first, with its size and drive.
+A label or an `EFI` directory cannot authorize deletion, because either can belong to someone else's files.
+Automatic cleanup requires a creation record matching the original disk, offset and size, and the partition
+GUID when recorded by a new build. Labels and installer-looking contents still identify possible leftovers,
+but cleanup stops before changing anything if any discovered partition lacks a matching record, and asks
+for manual inspection in Disk Management. Records are written before creating partitions and updated with
+their actual geometry and GUID afterwards, so interrupted preparation remains recoverable.
 
 `state.json` names the disk by its GUID and the volume by where it starts, because disk and partition
 numbers change, especially with a second disk. A file with neither is from an older build, which only

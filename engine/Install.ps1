@@ -323,6 +323,11 @@ function Get-DriveBytes([string]$Letter) { [int64](Get-Partition -DriveLetter $L
 function Invoke-Cleanup([switch]$InstallerOnly) {
     $state = Read-State
     $Sync.SpaceNote = $null
+    # Discovery is not proof of ownership; stop before any disk or boot changes.
+    $discovered = @(Get-HopPartitions)
+    if (@($discovered | Where-Object { $_.Recorded -eq $false }).Count) {
+        throw "hop found partitions with its labels but no matching creation record. Nothing has been removed. Inspect them in Disk Management and remove them manually only if you recognize them as hop's installer."
+    }
     # What it can't do doesn't stop the rest, but it does stop it saying it all went.
     $problems = New-Object Collections.ArrayList
     $Sync.CleanupProblems = $problems

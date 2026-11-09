@@ -1,3 +1,7 @@
+BeforeDiscovery {
+    $elevated = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
 # Unit tests for the engine, run by CI on Windows PowerShell 5.1 (Pester 5).
 # Everything that touches the disk, the firmware or the network is mocked: these must be
 # safe to run on any PC. Build first, because they load hop.exe for its C# types.
@@ -1525,11 +1529,11 @@ Describe 'A download with no checksum' {
         [IO.File]::WriteAllBytes($path, $iso); Test-IsoFile $path | Should -BeTrue
         [IO.File]::WriteAllBytes($path, $page); Test-IsoFile $path | Should -BeFalse
     }
-    It 'uses a good copy again' {
+    It 'redownloads even a valid ISO when its release cannot be verified' {
         Mock Invoke-Download { }
         [IO.File]::WriteAllBytes($path, $iso)
         Get-Iso $download $path
-        Should -Invoke Invoke-Download -Times 0
+        Should -Invoke Invoke-Download -Times 1 -Exactly
     }
     It 'replaces a saved web page rather than using it for ever' {
         [IO.File]::WriteAllBytes($path, $page)
@@ -1922,6 +1926,7 @@ Describe 'Checking a copy' {
 }
 
 Describe 'Remove-PartitionByGuid' {
+    BeforeEach { Mock Get-WindowsEsp { [pscustomobject]@{ Guid = '{windows-esp}' } } }
     It 'removes it from the disk it was found on, not a clone with the same GUID' {
         Mock Get-Partition {
             if ($DiskNumber -contains 1) { [pscustomobject]@{ Guid = '{same}'; DiskNumber = 1; PartitionNumber = 5 } }
@@ -2758,7 +2763,7 @@ Describe 'Make room''s tasks and copy' {
 }
 
 Describe 'The copy the tasks run' {
-    It 'is in a new folder that only administrators and SYSTEM can write to' {
+    It 'is in a new folder that only administrators and SYSTEM can write to' -Skip:(-not $elevated) {
         $parent = Join-Path $TestDrive 'data'
         New-Item -ItemType Directory -Path $parent | Out-Null
         $copy = [Hop.RestartCopy]::Create($parent)
@@ -2777,7 +2782,7 @@ Describe 'The copy the tasks run' {
             [IO.Directory]::Delete((Split-Path $copy -Parent), $true)
         }
     }
-    It 'names a different folder each time, so nothing can be waiting in it' {
+    It 'names a different folder each time, so nothing can be waiting in it' -Skip:(-not $elevated) {
         $parent = Join-Path $TestDrive 'data2'
         New-Item -ItemType Directory -Path $parent | Out-Null
         $one = [Hop.RestartCopy]::Create($parent)

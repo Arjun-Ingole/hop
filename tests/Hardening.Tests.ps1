@@ -400,8 +400,8 @@ Describe 'Putting Make room back' {
 
 Describe 'Telling someone about Make room as hop opens' {
     BeforeEach {
-        $script:RoomPath = Join-Path $TestDrive 'notice.json'
-        Remove-Item "$script:RoomPath*" -ErrorAction SilentlyContinue
+        $RoomPath = Join-Path $TestDrive 'notice.json'
+        Remove-Item "$RoomPath*" -ErrorAction SilentlyContinue
         Mock Unregister-ResumeTask { }
         Mock Unregister-RunAfterRestart { }
     }
@@ -596,6 +596,7 @@ Describe 'Limits on moving files' {
 
 Describe 'diskpart' {
     BeforeEach {
+        Mock Get-WindowsEsp { [pscustomobject]@{ Guid = '{windows-esp}' } }
         Mock Start-Sleep { }
         Mock Remove-Partition { throw 'protected' }
         $script:piped = @()
@@ -806,7 +807,7 @@ Describe 'Make room''s steps' {
 }
 
 Describe 'Saying when Make room gave up' {
-    BeforeEach { $script:RoomPath = Join-Path $TestDrive 'room.json' }
+    BeforeEach { $RoomPath = Join-Path $TestDrive 'room.json' }
 
     It 'says nothing when it did not' {
         Get-RoomGaveUpWarning | Should -BeNullOrEmpty
