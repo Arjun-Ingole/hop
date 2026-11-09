@@ -8,6 +8,11 @@ on:
     branches: ['probe/calamares*']
     paths-ignore: ['**.md', 'docs/**']
   workflow_dispatch:
+    inputs:
+      shrink:
+        description: "No free space: Calamares shrinks C:, as for a drive Windows couldn't shrink"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -45,7 +50,7 @@ jobs:
           echo "$sha  /mnt/cvm/linux.iso" | sha256sum -c - | tee /mnt/cvm/out/iso-checksum.txt
 
       - name: Lay out the disk as hop does
-        run: sudo python3 tools/vm/calamares/calamaresvm.py prepare --distro ${{ matrix.distro }} --iso /mnt/cvm/linux.iso --esp-mb ${{ matrix.esp }}
+        run: sudo python3 tools/vm/calamares/calamaresvm.py prepare --distro ${{ matrix.distro }} --iso /mnt/cvm/linux.iso --esp-mb ${{ matrix.esp }} ${{ inputs.shrink && '--shrink' || '' }}
 
       - name: Install with Calamares and restart
         id: install

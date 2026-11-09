@@ -70,6 +70,29 @@ def partition_hashes(loop, names):
     return {name: sha256_of(f'{loop}p{NUMBERS[name]}') if os.path.exists(f'{loop}p{NUMBERS[name]}') else None for name in names}
 
 
+def windows_files(target):
+    """Files where Windows can't move them, near the end of C:, so the shrink has to move them. A placeholder takes
+    the space before them, then goes."""
+    stat = os.statvfs(target)
+    free = stat.f_bavail * stat.f_frsize
+    placeholder = os.path.join(target, 'placeholder.bin')
+    late = free - (3 << 30)
+    try:
+        run('fallocate', '-l', str(late), placeholder)
+    except subprocess.CalledProcessError:
+        note('fallocate failed on ntfs3, so the placeholder is written out')
+        run('dd', 'if=/dev/zero', f'of={placeholder}', 'bs=16M', f'count={late >> 24}', 'status=none')
+    os.makedirs(os.path.join(target, 'Users/hop/Documents'))
+    for i in range(8):
+        with open(os.path.join(target, f'Users/hop/Documents/late-{i}.bin'), 'wb') as f:
+            f.write(os.urandom(64 << 20))
+    os.unlink(placeholder)
+    for i in range(2000):
+        with open(os.path.join(target, f'Users/hop/Documents/small-{i}.txt'), 'w') as f:
+            f.write(f'contents {i}\n')
+    run('sync')
+
+
 def esp_hashes(loop):
     folder = mount(f'{loop}p1', os.path.join(WORK, 'esp-read'), '-o', 'ro')
     try:
@@ -116,7 +139,8 @@ def prepare(args):
     last = total - 34
     rec_start = (last - mib(RECOVERY_MB)) // 2048 * 2048
     inst = sizes['InstallerGB'] << 30 >> 9
-    free_start = rec_start - (LINUX_GB << 30 >> 9)
+    # With --shrink, as hop leaves a drive Windows couldn't shrink: no free space, so the installer has to shrink C:.
+    free_start = rec_start if args.shrink else rec_start - (LINUX_GB << 30 >> 9)
     inst_start = free_start - inst
     esp_start, msr_start = 2048, 2048 + mib(args.esp_mb)
     note(f'EFI partition: {args.esp_mb} MiB')
@@ -161,7 +185,15 @@ def prepare(args):
             os.makedirs(os.path.join(target, folder))
             with open(os.path.join(target, folder, name), 'wb') as f:
                 f.write(os.urandom((256 if number == 3 else 64) << 20))
+            if number == 3 and args.shrink:
+                windows_files(target)
             run('umount', target)
+        windows = {}
+        if args.shrink:
+            target = mount(f'{loop}p3', os.path.join(WORK, 'ntfs3'), '-t', 'ntfs3', '-o', 'ro')
+            windows = tree_hashes(target)
+            run('umount', target)
+            note(f'C: holds {len(windows)} files, hashed to compare afterwards.')
 
         # What Copy-Installer copies: every file Windows can see.
         installer = mount(f'{loop}p5', os.path.join(WORK, 'installer'))
@@ -204,7 +236,8 @@ def prepare(args):
         for folder in (esp, installer):
             run('umount', folder)
         state = {'distro': args.distro, 'esp': esp_hashes(loop), 'partitions': partition_hashes(loop, NUMBERS),
-                 'sizes': sizes, 'steps': steps}
+                 'sizes': sizes, 'steps': steps, 'shrink': args.shrink, 'windows': windows,
+                 'c_sectors': inst_start - c_start}
     finally:
         run('losetup', '-d', loop, check=False)
         run('umount', iso, check=False)
@@ -439,7 +472,7 @@ def install(args):
         shell(vm)
         note(f'Root shell up {time.time() - started:.0f} s after starting')
         record(vm, 'live system', ('cat /proc/cmdline', 'findmnt -R /run/live /run/archiso', 'lsblk -o NAME,SIZE,FSTYPE,LABEL,PARTLABEL,MOUNTPOINTS',
-                                   'free -m'), report=('cat /proc/cmdline', 'findmnt -R /run/live /run/archiso'))
+                                   'free -m', 'command -v ntfsresize; ntfsresize --version 2>&1 | head -n 1'), report=('cat /proc/cmdline', 'findmnt -R /run/live /run/archiso'))
         wait_desktop(vm, distro)
         open_installer(vm, distro)
         drive(vm, distro, state)
@@ -691,6 +724,8 @@ def field_right_of(vm, screen, label, what, match=None):
 
 def manual(vm, screen, state):
     note('Partition list: ' + ' | '.join(screen.lines_with('nvme', 'Free Space', 'Windows', 'Boot Manager', 'EFI', 'Storage')))
+    if state.get('shrink'):
+        screen = shrink_windows(vm, screen, state)
     # Step: "Click the {GB} GB of Free Space, click Create and make an ext4 partition mounted at /".
     free = screen.find('Free Space', line_has=str(LINUX_GB), pick='bottom') or screen.find('Free Space', pick='bottom')
     if not free:
@@ -752,6 +787,37 @@ def manual(vm, screen, state):
         screen = vm.look('esp-edited-2')
     note('Partition list now: ' + ' | '.join(screen.lines_with('nvme', 'Free Space', 'New partition', 'ext4', 'fat32', '/boot/efi')))
     click_next(vm, screen)
+
+
+def shrink_windows(vm, screen, state):
+    """Step: "Click Windows' drive, the ntfs partition of N GB, then Edit. Set Size to M MiB and click OK"."""
+    row = screen.find('nvme0n1p3', pick='bottom') or screen.find('/dev/nvme0n1p3', pick='bottom')
+    if not row:
+        raise RuntimeError('No nvme0n1p3 row:\n' + screen.text())
+    vm.click_on(row, "Windows' drive")
+    screen = vm.look('windows-chosen')
+    vm.click_on(screen.find('Edit', exact=True, pick='bottom'), 'Edit')
+    screen = wait_for(vm, ['Edit Existing Partition', 'Keep'], 30, 'shrink-dialog')
+    note('Edit dialog for C: ' + ' | '.join(screen.lines_with('Content', 'Keep', 'Format', 'Mount', 'File', 'Size', 'Flags')))
+    size_mib = state['c_sectors'] * SECTOR >> 20
+    target = size_mib - (LINUX_GB << 10)
+    field_right_of(vm, screen, 'Size', 'the size')
+    vm.key('ctrl', 'a')
+    vm.type(str(target))
+    vm.key('tab')
+    screen = vm.look('size-typed')
+    note(f'Size now, for {target} MiB of {size_mib}: ' + ' | '.join(screen.lines_with('Size', 'MiB')))
+    ok = screen.find('OK', exact=True, pick='right')
+    if ok:
+        vm.click_on(ok, 'OK')
+    else:
+        vm.key('ret')
+    screen = vm.look('windows-shrunk')
+    if screen.has('Edit Existing Partition'):
+        vm.key('ret')
+        screen = vm.look('windows-shrunk-2')
+    note('After the shrink: ' + ' | '.join(screen.lines_with('nvme', 'Free Space', 'ntfs')))
+    return screen
 
 
 def users(vm, screen):
@@ -907,7 +973,7 @@ def check(args):
     with open(os.path.join(OUT, f'layout-{args.stage}.txt'), 'w') as f:
         f.write(layout)
     note(f'--- the disk, {args.stage}\n' + layout)
-    names = [n for n in NUMBERS if not (args.stage == 'renumbered' and n == 'HOPINSTALL')]
+    names = [n for n in NUMBERS if not (args.stage == 'renumbered' and n == 'HOPINSTALL') and not (state.get('shrink') and n == 'C:')]
     loop = attach(read_only=True)
     try:
         after = partition_hashes(loop, names)
@@ -916,6 +982,8 @@ def check(args):
             note(f'{name}: {"byte for byte the same" if same else "CHANGED"}')
             if not same:
                 failures.append(name)
+        if state.get('shrink'):
+            check_windows(loop, state, failures)
         esp_after = esp_hashes(loop)
         for path, digest in sorted(state['esp'].items()):
             same = esp_after.get(path) == digest
@@ -962,6 +1030,28 @@ def check(args):
             note('NVRAM ' + line.strip())
     note(f'RESULT {args.stage}: ' + ('pass' if not failures else 'FAIL ' + '; '.join(failures)))
     sys.exit(1 if failures else 0)
+
+
+def check_windows(loop, state, failures):
+    """C: after the installer shrank it: smaller by what Linux got, every file the same, and NTFS sound."""
+    size = int(run('blockdev', '--getsz', f'{loop}p3', capture=True).strip())
+    note(f'C: {state["c_sectors"] * SECTOR >> 20} MiB before, {size * SECTOR >> 20} MiB now')
+    if size >= state['c_sectors']:
+        failures.append('C: did not shrink')
+    info = run('ntfsresize', '--info', '--force', '--no-action', f'{loop}p3', check=False, capture=True)
+    note('ntfsresize --info: ' + ' | '.join(line for line in info.splitlines() if line.strip())[:1500])
+    fix = run('ntfsfix', '--no-action', f'{loop}p3', check=False, capture=True)
+    note('ntfsfix --no-action: ' + ' | '.join(line for line in fix.splitlines() if line.strip()))
+    target = mount(f'{loop}p3', os.path.join(WORK, 'chk-c'), '-t', 'ntfs3', '-o', 'ro')
+    try:
+        after = tree_hashes(target)
+    finally:
+        run('umount', target, check=False)
+    lost = [p for p, h in state['windows'].items() if after.get(p) != h]
+    note(f'C: files: {len(state["windows"]) - len(lost)} of {len(state["windows"])} the same')
+    if lost:
+        note('Changed or gone: ' + ', '.join(lost[:20]))
+        failures.append(f'{len(lost)} files on C: changed')
 
 
 def inspect_root(system, failures, stage):
@@ -1019,6 +1109,7 @@ def main():
     p.add_argument('--distro', required=True, choices=sorted(NAMES))
     p.add_argument('--iso', required=True)
     p.add_argument('--esp-mb', type=int, default=ESP_MB)
+    p.add_argument('--shrink', action='store_true', help="no free space: the installer shrinks C:, as for a drive Windows couldn't shrink")
     p = sub.add_parser('install')
     p.add_argument('--memory', type=int, default=8)
     p.add_argument('--settle', type=int, default=240, help='seconds to leave the installed system running')
