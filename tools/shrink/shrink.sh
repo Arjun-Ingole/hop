@@ -38,8 +38,13 @@ shrink_partition() {
     [ -n "$before" ] || { echo "failed: $dev isn't in the partition table of $PART_DISK"; return 1; }
     start=$(field "$before" start)
 
+    # ntfsresize doesn't look at this, and resizing under a hibernated Windows loses what it was in the middle of.
+    # Its first bytes say so, as ntfs-3g reads them: hibr or HIBR while hibernated. After waking, Windows clears them.
+    hib=$(ntfscat "$dev" hiberfil.sys 2>/dev/null | head -c 4)
+    case "$hib" in hibr|HIBR) echo "failed: Windows is hibernated, not shut down, so nothing changed"; return 1 ;; esac
+
     say "Checking drive C: can shrink to $((new >> 20)) MiB..."
-    # Refuses a volume Windows left hibernated or marked for a disk check, and a size its files don't fit in.
+    # Refuses a volume marked for a disk check, and a size its files don't fit in.
     if ! ntfsresize --no-action --no-progress-bar --size "$new" "$dev"; then
         echo "failed: ntfsresize would not shrink it, so nothing changed"
         return 1

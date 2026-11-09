@@ -67,12 +67,20 @@ refuses 'a size smaller than its files' "$SIZE" 1048576
 refuses 'a size that isn''t whole MiB' "$SIZE" $((NEW + 512))
 refuses 'growing' "$SIZE" $((SIZE + 1048576))
 
-# Windows left hibernated: ntfsresize must refuse to touch it.
+# Windows left hibernated: nothing may change. ntfsresize itself doesn't check. A hibernation file Windows woke from is fine.
+cp "$IMG" "$WORK/plain.img"
 attach; mount -t ntfs3 "${LOOP}p3" "$WORK/c"
 { printf 'HIBR'; head -c 4092 /dev/zero; } > "$WORK/c/hiberfil.sys"
 umount "$WORK/c"; detach
 refuses 'a hibernated Windows' "$SIZE" "$NEW"
-attach; mount -t ntfs3 "${LOOP}p3" "$WORK/c"; rm "$WORK/c/hiberfil.sys"; umount "$WORK/c"; detach
+cp "$WORK/plain.img" "$IMG"
+attach; mount -t ntfs3 "${LOOP}p3" "$WORK/c"
+head -c 4096 /dev/zero > "$WORK/c/hiberfil.sys"
+umount "$WORK/c"
+out=$(shrink_partition "${LOOP}p3" "$SIZE" "$NEW" 2>&1 | tail -n 1)
+detach
+case "$out" in ok*) check 'shrinks with a hibernation file Windows woke from' 0 ;; *) check 'shrinks with a hibernation file Windows woke from' 1 "said: $out" ;; esac
+mv "$WORK/plain.img" "$IMG"
 
 # BitLocker's signature where NTFS's would be.
 cp "$IMG" "$WORK/plain.img"

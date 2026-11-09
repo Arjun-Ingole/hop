@@ -27,7 +27,7 @@ copy_bin() {
     done
 }
 install -m 0755 "$(command -v busybox)" "$ROOT/bin/busybox"
-for tool in ntfsresize ntfsfix sfdisk blkid blockdev; do copy_bin "$tool"; done
+for tool in ntfsresize ntfsfix ntfscat sfdisk blkid blockdev; do copy_bin "$tool"; done
 
 # The drivers for the disks a PC might have and for the EFI partition, with what they need.
 MODS=$WORK/lib/modules/$KVER
@@ -55,8 +55,10 @@ install -m 0644 "$HERE/shrink.sh" "$ROOT/shrink.sh"
 DEST=$OUT/hop-shrink
 rm -rf "$DEST"; mkdir -p "$DEST"
 cp "$MODS/vmlinuz" "$DEST/vmlinuz"
-cp boot/efi/EFI/fedora/shimx64.efi "$DEST/shimx64.efi"
-cp boot/efi/EFI/fedora/grubx64.efi "$DEST/grubx64.efi"
+find "$WORK" -path "$ROOT" -prune -o -iname '*.efi' -print
+one() { local found; found=$(find "$WORK" -path "$ROOT" -prune -o -type f -name "$1" -print | head -n 1); [ -n "$found" ] || { echo "no $1 in the packages" >&2; exit 1; }; echo "$found"; }
+cp "$(one shimx64.efi)" "$DEST/shimx64.efi"
+cp "$(one grubx64.efi)" "$DEST/grubx64.efi"
 cp "$WORK/initrd.img" "$DEST/initrd.img"
 {
     echo "hop shrink image"
