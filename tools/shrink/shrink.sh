@@ -23,7 +23,8 @@ part_disk() {
 # The partition's line in sfdisk's dump, which has every field it keeps.
 part_line() { sfdisk --dump "$PART_DISK" 2>/dev/null | grep -E "^$1[[:space:]]*:" ; }
 
-field() { echo "$1" | tr ',' '\n' | sed -n "s/^[[:space:]]*$2=[[:space:]]*//p" | head -n 1; }
+# A field of that line. The first shares the line with the device's name, "/dev/sda3 : start=...", which goes first.
+field() { echo "$1" | sed 's/^[^:]*:[[:space:]]*//' | tr ',' '\n' | sed -n "s/^[[:space:]]*$2=[[:space:]]*//p" | head -n 1; }
 
 shrink_partition() {
     dev=$1; first=$2; was=$3; new=$4
@@ -41,6 +42,7 @@ shrink_partition() {
     before=$(part_line "$dev")
     [ -n "$before" ] || { echo "failed: $dev isn't in the partition table of $PART_DISK"; return 1; }
     start=$(field "$before" start)
+    case "$start" in ''|*[!0-9]*) echo "failed: can't read where $dev starts"; return 1 ;; esac
     # A cloned disk's copy has the same ID and size, but rarely the same start too.
     [ "$start" = "$first" ] || { echo "failed: $dev starts at sector $start, not the $first hop planned for"; return 1; }
 
