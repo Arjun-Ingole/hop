@@ -57,6 +57,7 @@ in a runspace and calls their functions one at a time. Progress comes back throu
 | `OtherLinux.ps1` | Finds and removes another Linux, such as Pond |
 | `Install.ps1` | The main flows: install, restart and undo |
 | `MakeRoom.ps1` | Clears what stops a drive shrinking, across a restart if it must, and puts it all back |
+| `Shrink.ps1` | Shrinks a drive from outside Windows when Windows can't: see [Shrinking from outside Windows](#shrinking-from-outside-windows) |
 | `Steps.ps1` | What to click in each Linux installer |
 | `Report.ps1` | The bug report |
 
@@ -425,6 +426,40 @@ A startup entry only says which partition and file it starts, and Windows' EFI p
 systems. So `Find-OtherSystem` ties an entry there to the Linux being removed only if there's no other Linux it could
 belong to, or if the small `grub.cfg` next to it names the file system of a partition being removed. Anything else
 stays, with its name in `Kept`, and the screen says so. A leftover entry is much easier to fix than another system's.
+
+## Shrinking from outside Windows
+
+Windows only shrinks a drive as far as the last file it can't move while it runs. On some PCs that's one of NTFS's
+own, such as `$Mft::$BITMAP`, near the end of a drive with plenty free, and Windows releases next to nothing: 0 GB of
+197 GB free on one Dell, about 1 GB in issue #6. Make room clears the usual causes, and moves `$Mft::$BITMAP` itself
+when NTFS lets it. When that still falls short, hop shrinks the drive from outside Windows, where nothing has those
+files open, the way GParted does.
+
+`tools/shrink` builds the tool that does it, about 27 MB:
+
+- **Fedora's signed shim, GRUB and kernel,** taken unchanged from Fedora's packages, so it starts with Secure Boot on
+  wherever Fedora's installer would. Fedora's GRUB reads `grub.cfg` from its own folder, `\EFI\hop-shrink` on Windows'
+  EFI partition.
+- **A small initramfs:** busybox, `ntfsresize`, `ntfscat`, `sfdisk` and `blkid`, the disk drivers a PC might need,
+  and `init` and `shrink.sh`. shim doesn't check an initramfs, and nothing else runs.
+
+hop downloads it once and checks every file against the checksums built into hop. It writes a `grub.cfg` that names the
+partition by its GPT ID, its size when hop planned this, the new size and an ID for the attempt. It adds a startup
+entry, `Make room for Linux (hop shrink)`, sets it as the next start only, and restarts.
+
+`shrink.sh` checks everything again before it writes anything: the partition is still the size hop planned for, it's
+NTFS, Windows isn't hibernated (which `ntfsresize` doesn't check), and `ntfsresize --no-action` agrees. Any refusal
+changes nothing. Then `ntfsresize` shrinks the file system, moving what's in the way, and `sfdisk` moves the
+partition's end, keeping its start, type, ID, name and attributes. It writes `result.txt` to its folder on the EFI
+partition and restarts. `ntfsresize` marks the drive for Windows to check, which Windows does as it starts.
+
+Back in Windows, hop reads the drive's real size, not only what the tool said. A drive that shrank to the new size has
+the space after it recorded as Make room records it, so the install takes it and Undo gives it back. hop then removes the
+tool's folder and startup entry. The tool says `failed:` when it changed nothing and `partial:` when it stopped part way,
+and hop says which.
+
+It can't shrink an encrypted drive, so hop refuses one with BitLocker or Device encryption on, and asks for the charger
+on a laptop, a drive Windows hasn't finished checking, and an update waiting for a restart.
 
 ## Why the startup entry is written directly
 

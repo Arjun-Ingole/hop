@@ -27,7 +27,8 @@ make_disk() {
     mkntfs -Q -L Windows "${LOOP}p3" >/dev/null
     mkntfs -Q -L Recovery "${LOOP}p4" >/dev/null
     mkdir -p "$WORK/c"
-    mount -t ntfs3 "${LOOP}p3" "$WORK/c"
+    # ntfs-3g, which fills a drive in order: the kernel's ntfs3 can put the files meant for the end anywhere.
+    ntfs-3g "${LOOP}p3" "$WORK/c"
     mkdir -p "$WORK/c/Windows/System32" "$WORK/c/Users/hop/Documents"
     head -c 300M /dev/urandom > "$WORK/c/Windows/System32/stand-in.bin"
     # A placeholder takes the middle, so what's written next lands near the end, where only a move gets it out of the way.
@@ -58,12 +59,14 @@ refuses() {
 
 make_disk
 SIZE=$(blockdev --getsize64 "${LOOP}p3")
+LEAST=$(ntfsresize --info --force --no-action "${LOOP}p3" | sed -n 's/.*resize at \([0-9]*\) bytes.*/\1/p')
 INFO3=$(sgdisk -i 3 "$IMG"); P1=$(sha256sum "${LOOP}p1" | cut -d' ' -f1); P4=$(sha256sum "${LOOP}p4" | cut -d' ' -f1)
 echo "C: is $((SIZE >> 20)) MiB"
 ntfsresize --info --force --no-action "${LOOP}p3" | grep -iE 'resize at|current volume size'
 detach
 
 NEW=$(( (SIZE - 3 * 1073741824) / 1048576 * 1048576 ))
+[ -n "$LEAST" ] && [ "$LEAST" -gt "$NEW" ]; check "files lie past where C: will end, from $((${LEAST:-0} >> 20)) MiB" $?
 refuses 'a size that changed since hop planned' $((SIZE + 1048576)) "$NEW"
 refuses 'a size smaller than its files' "$SIZE" 1048576
 refuses 'a size that isn''t whole MiB' "$SIZE" $((NEW + 512))

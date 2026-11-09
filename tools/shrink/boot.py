@@ -117,7 +117,10 @@ def make_disk(image):
         run('mkfs.fat', '-F', '32', f'{loop}p1')
         run('mkntfs', '-Q', '-L', 'Windows', f'{loop}p3')
         run('mkntfs', '-Q', '-L', 'Recovery', f'{loop}p4')
-        c = mount(f'{loop}p3', os.path.join(WORK, 'c'), '-t', 'ntfs3')
+        # ntfs-3g, which fills a drive in order: the kernel's ntfs3 can put the files meant for the end anywhere.
+        c = os.path.join(WORK, 'c')
+        os.makedirs(c, exist_ok=True)
+        run('ntfs-3g', f'{loop}p3', c)
         os.makedirs(os.path.join(c, 'Windows/System32'))
         os.makedirs(os.path.join(c, 'Users/hop/Documents'))
         with open(os.path.join(c, 'Windows/System32/stand-in.bin'), 'wb') as f:
@@ -139,6 +142,8 @@ def make_disk(image):
         run('umount', c)
         info = run('ntfsresize', '--info', '--force', '--no-action', f'{loop}p3', capture=True)
         log('Before: ' + ' | '.join(line for line in info.splitlines() if 'resize at' in line or 'volume size' in line))
+        least = int(next(line for line in info.splitlines() if 'resize at' in line).split('resize at ')[1].split()[0])
+        check('files lie past where C: will end', least > NEW_GB << 30, str(least))
         esp = mount(f'{loop}p1', os.path.join(WORK, 'esp'))
         folder = os.path.join(esp, 'EFI/hop-shrink')
         os.makedirs(folder)
