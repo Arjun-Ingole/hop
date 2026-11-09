@@ -5,7 +5,7 @@ name: Shrink image
 # OVMF, Secure Boot on, against a disk laid out as Windows lays one out. See tools/shrink.
 on:
   push:
-    branches: [main]
+    branches: [main, 'probe/shrink*']
     paths: ['tools/shrink/**', '.github/workflows/shrink.yml']
   workflow_dispatch:
 
