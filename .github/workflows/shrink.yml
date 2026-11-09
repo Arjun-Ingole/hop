@@ -2,12 +2,17 @@ name: Shrink image
 
 # hop's shrink image: Fedora's signed boot chain and a small initramfs that shrinks drive C: with ntfsresize from outside
 # Windows. test runs shrink.sh against real NTFS on loop devices. build makes the image, and boot starts it in QEMU with
-# OVMF, Secure Boot on, against a disk laid out as Windows lays one out. See tools/shrink.
+# OVMF, Secure Boot on, against a disk laid out as Windows lays one out. publish, only when asked, puts the image that
+# passed all of that up as a pre-release, where hop downloads it from. See tools/shrink.
 on:
   push:
     branches: [main, 'probe/shrink*']
     paths: ['tools/shrink/**', '.github/workflows/shrink.yml']
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'Publish the tested image as this pre-release tag, such as shrink-1 (empty: just test)'
+        default: ''
 
 permissions:
   contents: read
@@ -60,3 +65,28 @@ jobs:
         with:
           name: boot-secure-${{ matrix.secure }}
           path: /mnt/shrink/out
+
+  publish:
+    if: github.event_name == 'workflow_dispatch' && inputs.release != ''
+    needs: [test, build, boot]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: hop-shrink
+          path: out
+      - name: Publish the pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release }}
+        run: |
+          cd out
+          [[ "$TAG" =~ ^shrink-[0-9]+$ ]] || { echo "tag must look like shrink-1"; exit 1; }
+          sha256sum hop-shrink.zip >> manifest.txt
+          cat manifest.txt
+          gh release create "$TAG" hop-shrink.zip manifest.txt --repo "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+            --title "hop shrink tool ($TAG)" \
+            --notes "The tool hop starts once to shrink drive C: from outside Windows, when Windows can't shrink it far enough itself. hop downloads it only when it's needed and checks it against checksums built into hop. Built from Fedora 44's signed shim, GRUB and kernel; manifest.txt lists every package and checksum. This isn't something to download by hand."
