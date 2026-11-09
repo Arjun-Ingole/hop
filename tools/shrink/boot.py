@@ -124,8 +124,10 @@ def make_disk(image):
             f.write(os.urandom(300 << 20))
         stat = os.statvfs(c)
         placeholder = os.path.join(c, 'placeholder.bin')
-        # Written out, not fallocated: ntfs3 can leave a fallocated file's clusters unallocated, and then nothing lands at the end.
-        run('dd', 'if=/dev/zero', f'of={placeholder}', 'bs=16M', f'count={(stat.f_bavail * stat.f_frsize - (900 << 20)) >> 24}', 'status=none')
+        # Written out, since ntfs3 can leave a fallocated file's clusters unallocated. And it leaves free more than NTFS's
+        # reserved zone near the start, 12.5% of the drive, which a nearly full drive's new files would go into instead.
+        keep = stat.f_blocks * stat.f_frsize * 15 // 100 + (900 << 20)
+        run('dd', 'if=/dev/zero', f'of={placeholder}', 'bs=16M', f'count={(stat.f_bavail * stat.f_frsize - keep) >> 24}', 'status=none')
         for i in range(6):
             with open(os.path.join(c, f'Users/hop/Documents/late-{i}.bin'), 'wb') as f:
                 f.write(os.urandom(100 << 20))

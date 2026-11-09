@@ -31,9 +31,11 @@ make_disk() {
     mkdir -p "$WORK/c/Windows/System32" "$WORK/c/Users/hop/Documents"
     head -c 300M /dev/urandom > "$WORK/c/Windows/System32/stand-in.bin"
     # A placeholder takes the middle, so what's written next lands near the end, where only a move gets it out of the way.
+    # Written out, since ntfs3 can leave a fallocated file's clusters unallocated. And it leaves free more than NTFS's
+    # reserved zone near the start, 12.5% of the drive, which a nearly full drive's new files would go into instead.
     free=$(df -B1 --output=avail "$WORK/c" | tail -n 1)
-    # Written out: ntfs3 can leave a fallocated file's clusters unallocated, and then nothing lands at the end.
-    dd if=/dev/zero of="$WORK/c/placeholder.bin" bs=16M count=$(((free - 900 * 1048576) >> 24)) status=none
+    total=$(df -B1 --output=size "$WORK/c" | tail -n 1)
+    dd if=/dev/zero of="$WORK/c/placeholder.bin" bs=16M count=$(((free - total * 15 / 100 - 900 * 1048576) >> 24)) status=none
     for i in 1 2 3 4 5 6; do head -c 100M /dev/urandom > "$WORK/c/Users/hop/Documents/late-$i.bin"; done
     rm "$WORK/c/placeholder.bin"
     for i in $(seq 1 3000); do echo "contents $i" > "$WORK/c/Users/hop/Documents/small-$i.txt"; done
