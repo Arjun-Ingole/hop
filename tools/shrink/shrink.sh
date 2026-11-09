@@ -4,7 +4,10 @@
 # Every check comes before anything is written, and a failure changes nothing, except one: ntfsresize failing part way
 # through a real resize. Then the partition table is left alone, so Windows' own disk check sees the file system it knows.
 #
-# shrink_partition DEVICE WAS_BYTES NEW_BYTES prints one line, "ok ..." or "failed: why", and returns 0 only for ok.
+# shrink_partition DEVICE WAS_BYTES NEW_BYTES ends with one line and returns 0 only for the first:
+#   ok WAS NEW          it shrank
+#   failed: why         it changed nothing
+#   partial: why        it changed something, then stopped
 
 say() { echo "hop: $*"; }
 
@@ -41,30 +44,30 @@ shrink_partition() {
     # ntfsresize doesn't look at this, and resizing under a hibernated Windows loses what it was in the middle of.
     # Its first bytes say so, as ntfs-3g reads them: hibr or HIBR while hibernated. After waking, Windows clears them.
     hib=$(ntfscat "$dev" hiberfil.sys 2>/dev/null | head -c 4)
-    case "$hib" in hibr|HIBR) echo "failed: Windows is hibernated, not shut down, so nothing changed"; return 1 ;; esac
+    case "$hib" in hibr|HIBR) echo "failed: Windows is hibernated, not shut down"; return 1 ;; esac
 
     say "Checking drive C: can shrink to $((new >> 20)) MiB..."
     # Refuses a volume marked for a disk check, and a size its files don't fit in.
     if ! ntfsresize --no-action --no-progress-bar --size "$new" "$dev"; then
-        echo "failed: ntfsresize would not shrink it, so nothing changed"
+        echo "failed: it didn't pass the check ntfsresize makes first, which the report has the details of"
         return 1
     fi
     say "Moving files and shrinking drive C:. Don't turn off the PC."
     if ! printf 'y\n' | ntfsresize --no-progress-bar --size "$new" "$dev"; then
-        echo "failed: ntfsresize stopped part way. The partition table is as it was, and Windows will check the drive when it starts"
+        echo "partial: shrinking stopped part way through. The partition is the size it was, and Windows checks the drive as it starts"
         return 1
     fi
     say "Shrinking the partition to match..."
     sectors=$((new / ss))
     if ! echo ",$sectors" | sfdisk --no-reread --no-tell-kernel --quiet -N "$PART_NUMBER" "$PART_DISK"; then
-        echo "failed: the file system shrank but the partition didn't, which Windows can still use"
+        echo "partial: the file system shrank but the partition didn't. Windows can still use the drive"
         return 1
     fi
     after=$(part_line "$dev")
     # Only the size may differ.
     if [ "$(field "$after" start)" != "$start" ] || [ "$(field "$after" size)" != "$sectors" ] ||
        [ "$(echo "$before" | sed 's/size=[^,]*,//')" != "$(echo "$after" | sed 's/size=[^,]*,//')" ]; then
-        echo "failed: the partition table doesn't read as planned: before [$before], after [$after]"
+        echo "partial: the partition table doesn't read as planned: before [$before], after [$after]"
         return 1
     fi
     echo "ok $size $new"

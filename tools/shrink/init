@@ -43,14 +43,14 @@ sb=$(od -An -tu1 /sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00
     if [ -z "$PART" ] || [ -z "$WAS" ] || [ -z "$NEW" ]; then
         echo "failed: the startup line doesn't say what to shrink"
     elif [ -z "$DEV" ]; then
-        echo "failed: this PC's drive didn't appear in Linux, so nothing changed"
+        echo "failed: this PC's drive didn't appear in Linux"
         ls /sys/class/block
     else
         shrink_partition "$DEV" "$WAS" "$NEW"
     fi
 } 2>&1 | tee "$LOG"
 
-RESULT=$(grep -E '^(ok|failed)' "$LOG" | tail -n 1)
+RESULT=$(grep -E '^(ok|failed|partial)' "$LOG" | tail -n 1)
 [ -n "$RESULT" ] || RESULT="failed: hop's shrink stopped without saying why"
 echo
 say "$RESULT"

@@ -136,6 +136,13 @@ function Clear-OfflineShrink {
     } catch { Write-Log "Could not remove \$ShrinkFolder from the EFI partition: $($_.Exception.Message)" }
 }
 
+# The image's words, as a sentence of hop's.
+function ConvertTo-Sentence([string]$Text) {
+    $text = $Text.Trim().TrimEnd('.')
+    if (-not $text) { return '' }
+    $text.Substring(0, 1).ToUpperInvariant() + $text.Substring(1) + '.'
+}
+
 # What the image wrote to the EFI partition: its first line is the attempt's ID, then ok or why not, then its log.
 function Read-ShrinkResult {
     try {
@@ -246,9 +253,10 @@ function Complete-OfflineShrink {
         Write-Log ('Drive {0} is {1:N1} GB, which is neither the size it was nor the one planned.' -f $state.Drive, ($size / 1GB))
         return "Drive $($state.Drive) changed size, but not to what hop planned. Nothing else was changed. Copy the report and send it to hop's GitHub page."
     }
-    if ($said -like 'failed:*') { return "hop's shrink tool didn't shrink drive $($state.Drive): $($said.Substring(8).Trim()). Nothing changed." }
-    if (-not $text) { return "This PC started Windows instead of hop's shrink tool, so nothing changed. Secure Boot or the BIOS may have stopped it." }
-    "hop's shrink tool didn't say it finished, and drive $($state.Drive) is the size it was. Nothing changed."
+    if ($said -like 'partial:*') { return "hop's shrink tool stopped part way through drive $($state.Drive). $(ConvertTo-Sentence $said.Substring(8)) Copy the report and send it to hop's GitHub page." }
+    if ($said -like 'failed:*') { return "hop's shrink tool left drive $($state.Drive) as it was. $(ConvertTo-Sentence $said.Substring(7))" }
+    if (-not $text) { return "This PC started Windows without hop's shrink tool saying what it did, and drive $($state.Drive) is the size it was. Secure Boot or the BIOS may have stopped the tool starting." }
+    "hop's shrink tool didn't say it finished, and drive $($state.Drive) is the size it was."
 }
 
 # 'waiting' when the restart hasn't happened yet, 'done' once it has, or nothing.
