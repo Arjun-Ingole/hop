@@ -14,12 +14,17 @@ $ShrinkStatePath = Join-Path $StateDir 'shrink.json'
 $ShrinkCache = Join-Path $StateDir 'shrink-image'
 # Not hop's install marker, so nothing that tidies the installer's entries mistakes it for one, or leaves it.
 $ShrinkEntryMarker = '(hop shrink)'
-# The release asset, and each file's checksum, as tools/shrink/build.sh wrote them in manifest.txt. Until a release has
-# one, this build offers nothing. A test build can name a local zip here: see tools/vm.
+# The release asset (the shrink-1 pre-release), and each file's checksum, as tools/shrink/build.sh wrote them in
+# manifest.txt; tools/shrink/pin.py writes this block. A test build can name a local zip here: see tools/vm.
 $ShrinkImage = [pscustomobject]@{
-    Url    = ''
-    Sha256 = ''
-    Files  = @{}
+    Url    = 'https://github.com/Arjun-Ingole/hop/releases/download/shrink-1/hop-shrink.zip'
+    Sha256 = '0643FBC16905D26719C090F2A52AB64B9AF6EA8BF6C95CE438492CF5BF4F483A'
+    Files  = @{
+        'shimx64.efi' = '351E131D3C4A636704E9CAE7D1296BAF8A05BECA9922CFEBBFA48933C9BF1AD3'
+        'grubx64.efi' = '937365096BCB96B6A1FD79C772D11460E0A8CC0031B6596AF7A9AD28C7DCD02F'
+        'vmlinuz' = 'CF54563ED16A752EAF7D458026A8D654D4B775D923A018270EF348AB204D9503'
+        'initrd.img' = 'B0882D34580D220339788F853006304F1C99734D8A7E5E17D5D5649F13EA21F9'
+    }
 }
 
 function Test-ShrinkAvailable {
