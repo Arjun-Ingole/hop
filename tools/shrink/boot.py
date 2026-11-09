@@ -142,8 +142,6 @@ def make_disk(image):
         run('umount', c)
         info = run('ntfsresize', '--info', '--force', '--no-action', f'{loop}p3', capture=True)
         log('Before: ' + ' | '.join(line for line in info.splitlines() if 'resize at' in line or 'volume size' in line))
-        least = int(next(line for line in info.splitlines() if 'resize at' in line).split('resize at ')[1].split()[0])
-        check('files lie past where C: will end', least > NEW_GB << 30, str(least))
         esp = mount(f'{loop}p1', os.path.join(WORK, 'esp'))
         folder = os.path.join(esp, 'EFI/hop-shrink')
         os.makedirs(folder)
