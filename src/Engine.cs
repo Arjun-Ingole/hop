@@ -217,7 +217,7 @@ namespace Hop
         public long Bytes => Convert.ToInt64(Sync["Bytes"] ?? 0L);
         public long TotalBytes => Convert.ToInt64(Sync["TotalBytes"] ?? 0L);
         public string SpaceNote => Sync["SpaceNote"] as string;   // why Undo left the space free, if it had to
-        public string ShrinkNote => Sync["ShrinkNote"] as string;   // Windows checking the drive after the shrink tool, if it wants to
+        public string ShrinkNote => Sync["ShrinkNote"] as string;   // what to do when Windows' disk check wants a look after the shrink tool
         public bool KeptForLinux => Sync["KeptForLinux"] is bool kept && kept;   // Undo emptied the installer and left it, so Linux keeps starting
         public bool RoomRestarting => Sync["RoomRestarting"] is bool restarting && restarting;
 

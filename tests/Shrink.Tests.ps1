@@ -222,23 +222,20 @@ Describe 'Windows checking a drive the tool shrank' {
     BeforeEach {
         Mock Set-Status { }
         Mock Repair-Volume { 'NoErrorsFound' } -ParameterFilter { $Scan }
-        Mock Repair-Volume { 'Scheduled' } -ParameterFilter { $OfflineScanAndFix }
     }
     It 'says nothing when Windows finds nothing' {
         Test-ShrunkDrive 'C:'
         $Sync.ShrinkNote | Should -BeNullOrEmpty
-        Should -Invoke Repair-Volume -ParameterFilter { $OfflineScanAndFix } -Times 0
     }
-    It 'has Windows fix the drive as it next starts, and says so, when it finds something' {
+    It 'says how to have Windows fix it when it finds something' {
         Mock Repair-Volume { 'NeedOfflineScanAndFix' } -ParameterFilter { $Scan }
         Test-ShrunkDrive 'C:'
-        Should -Invoke Repair-Volume -ParameterFilter { $OfflineScanAndFix -and $DriveLetter -eq 'C' } -Times 1
-        $Sync.ShrinkNote | Should -BeLike '*next time it starts*'
+        $Sync.ShrinkNote | Should -BeLike '*chkdsk C: /f*'
     }
     It 'says so too when Windows can''t scan it' {
         Mock Repair-Volume { throw 'busy' } -ParameterFilter { $Scan }
         Test-ShrunkDrive 'C:'
-        $Sync.ShrinkNote | Should -BeLike '*next time it starts*'
+        $Sync.ShrinkNote | Should -BeLike '*chkdsk C: /f*'
     }
 }
 

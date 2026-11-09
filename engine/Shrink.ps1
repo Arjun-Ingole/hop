@@ -278,7 +278,8 @@ function Restart-IntoShrink {
 }
 
 # Windows' own disk check, online, of a drive the tool shrank. It found nothing in testing, but it's Windows' view that
-# counts. Should it find something, Windows fixes it as it next starts, and hop says so.
+# counts. Should it find something, hop can't book the repair for the next start: Repair-Volume -OfflineScanAndFix
+# fails on the drive Windows runs from, and chkdsk asks its question in Windows' own language. So it says how.
 function Test-ShrunkDrive([string]$Drive) {
     $Sync.ShrinkNote = $null
     $letter = (Get-RoomDrive $Drive).TrimEnd(':')
@@ -286,11 +287,7 @@ function Test-ShrunkDrive([string]$Drive) {
     $scan = try { [string](Repair-Volume -DriveLetter $letter -Scan -ErrorAction Stop) } catch { "couldn't: $($_.Exception.Message)" }
     Write-Log "Windows' disk check of drive $letter`: after the shrink: $scan"
     if ($scan -eq 'NoErrorsFound') { return }
-    try {
-        $fix = Repair-Volume -DriveLetter $letter -OfflineScanAndFix -ErrorAction Stop
-        Write-Log "Asked Windows to fix drive $letter`: as it next starts: $fix"
-    } catch { Write-Log "Could not ask Windows to fix drive $letter`:: $($_.Exception.Message)" }
-    $Sync.ShrinkNote = "Windows wants to check drive $letter`: after the shrink, and does that the next time it starts. It can take a few minutes."
+    $Sync.ShrinkNote = "Windows' disk check wants a look at drive $letter`: after the shrink. Run chkdsk $letter`: /f in an administrator terminal, agree to check it at the next start, and restart."
 }
 
 # Calls it off before the restart: nothing has changed on the drive.

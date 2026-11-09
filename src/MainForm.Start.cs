@@ -88,7 +88,7 @@ namespace Hop
         }
 
         string shrinkNotice;   // why the shrink tool didn't shrink the drive, to say once hop is ready
-        string shrinkCheckNote;   // Windows checking the drive at its next start, after the shrink tool
+        string shrinkCheckNote;   // what to do when Windows' disk check wants a look after the shrink tool
 
         async Task AfterRoomNoticeAsync()
         {

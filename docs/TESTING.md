@@ -313,6 +313,14 @@ In [42569775995](https://github.com/Arjun-Ingole/hop/actions/runs/42569775995): 
 and off, Fedora 44's shim, GRUB and kernel 7.2.15 started the tool, which moved 630 MB out of the way and shrank C: from
 11.9 to 6 GB in about 10 seconds. All 3,007 files were the same afterwards.
 
+On a real Windows 11, `shrinkoffline` in the table below: in [42568786823](https://github.com/Arjun-Ingole/hop/actions/runs/42568786823)
+the shrink itself worked, but Windows then called C: "a volume with errors" and wouldn't say how far it shrinks, so hop
+offered the free space after it instead of C:. [42570258979](https://github.com/Arjun-Ingole/hop/actions/runs/42570258979)
+showed why: `ntfsresize` marks the drive for a check, and Windows 11 doesn't check it as it starts. It queues an online
+scan for its maintenance instead, and until then refuses. `chkdsk /scan` found no problems, and after a `chkdsk /f` at
+the next start the mark had gone. So the tool now clears the mark with `ntfsfix --clear-dirty`, hop has Windows scan the
+drive once it's back. `Repair-Volume -OfflineScanAndFix` fails on the drive Windows runs from, so if that scan ever finds something, hop says how to run `chkdsk /f` instead of promising a repair it can't book.
+
 `ntfsresize` doesn't refuse a hibernated Windows. The first run of `test.sh` showed it shrinking one, so `shrink.sh`
 checks `hiberfil.sys` itself, as ntfs-3g does when it mounts.
 
