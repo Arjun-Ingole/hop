@@ -4,7 +4,7 @@
 # Every check comes before anything is written, and a failure changes nothing, except one: ntfsresize failing part way
 # through a real resize. Then the partition table is left alone, so Windows' own disk check sees the file system it knows.
 #
-# shrink_partition DEVICE WAS_BYTES NEW_BYTES ends with one line and returns 0 only for the first:
+# shrink_partition DEVICE START_SECTOR WAS_BYTES NEW_BYTES ends with one line and returns 0 only for the first:
 #   ok WAS NEW          it shrank
 #   failed: why         it changed nothing
 #   partial: why        it changed something, then stopped
@@ -25,7 +25,7 @@ part_line() { sfdisk --dump "$PART_DISK" 2>/dev/null | grep -E "^$1[[:space:]]*:
 field() { echo "$1" | tr ',' '\n' | sed -n "s/^[[:space:]]*$2=[[:space:]]*//p" | head -n 1; }
 
 shrink_partition() {
-    dev=$1; was=$2; new=$3
+    dev=$1; first=$2; was=$3; new=$4
     [ -b "$dev" ] || { echo "failed: no partition at $dev"; return 1; }
     part_disk "$dev" || { echo "failed: $dev isn't a partition"; return 1; }
     ss=$(blockdev --getss "$PART_DISK") || { echo "failed: can't read the disk's sector size"; return 1; }
@@ -40,6 +40,8 @@ shrink_partition() {
     before=$(part_line "$dev")
     [ -n "$before" ] || { echo "failed: $dev isn't in the partition table of $PART_DISK"; return 1; }
     start=$(field "$before" start)
+    # A cloned disk's copy has the same ID and size, but rarely the same start too.
+    [ "$start" = "$first" ] || { echo "failed: $dev starts at sector $start, not the $first hop planned for"; return 1; }
 
     # ntfsresize doesn't look at this, and resizing under a hibernated Windows loses what it was in the middle of.
     # Its first bytes say so, as ntfs-3g reads them: hibr or HIBR while hibernated. After waking, Windows clears them.

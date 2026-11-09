@@ -161,7 +161,7 @@ def make_disk(image):
 def grub_cfg(c, esp, was, new):
     """The engine's own menu, with the serial console added for this test."""
     script = (f". '{HERE}/../../engine/Common.ps1'; . '{HERE}/../../engine/Shrink.ps1'; "
-              f"(Get-ShrinkGrubConfig '{c['guid']}' {was} {new} '{esp['guid']}' 'test-1' 'console=ttyS0,115200') -join \"`n\"")
+              f"(Get-ShrinkGrubConfig '{c['guid']}' {c['first']} {was} {new} '{esp['guid']}' 'test-1' 'console=ttyS0,115200') -join \"`n\"")
     env = dict(os.environ, HOP_TEST='1')
     return subprocess.run(['pwsh', '-NoProfile', '-Command', '$Sync = @{ Log = [Collections.ArrayList]@() }; ' + script],
                           check=True, text=True, capture_output=True, env=env).stdout

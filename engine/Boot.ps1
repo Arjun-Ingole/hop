@@ -13,9 +13,13 @@ function Use-Esp([scriptblock]$Action) {
     $letter = [char[]](90..68) | Where-Object { $_ -notin $taken -and -not (Test-Path "$($_):\") } | Select-Object -First 1
     if (-not $letter) { throw 'Every drive letter is in use, so the EFI system partition cannot be opened. Remove a network drive or USB drive and try again.' }
     & mountvol.exe "$($letter):" /s | Out-Null
-    if (-not (Test-Path "$($letter):\EFI")) {
-        # Under 'Stop', a native program's stderr would replace this message.
-        try { & mountvol.exe "$($letter):" /d 2>$null | Out-Null } catch { }
+    $mounted = $LASTEXITCODE -eq 0
+    # Something else, such as a USB stick plugged in just then, can take the letter. Only the EFI partition will do.
+    $partition = if ($mounted) { Get-Partition -DriveLetter $letter -ErrorAction SilentlyContinue }
+    $foreign = $partition -and $partition.GptType -and $partition.GptType -ne '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}'
+    if (-not $mounted -or $foreign -or -not (Test-Path "$($letter):\EFI")) {
+        # Under 'Stop', a native program's stderr would replace this message. Someone else's drive keeps its letter.
+        if (-not $foreign) { try { & mountvol.exe "$($letter):" /d 2>$null | Out-Null } catch { } }
         throw 'Could not open the EFI system partition. Security software may be blocking it: turn that off for a moment and try again.'
     }
     try { & $Action "$($letter):\" } finally { & mountvol.exe "$($letter):" /d | Out-Null }

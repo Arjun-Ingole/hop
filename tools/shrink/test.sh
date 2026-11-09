@@ -51,7 +51,7 @@ refuses() {
     name=$1; shift
     before=$(image_sum)
     attach
-    out=$(shrink_partition "${LOOP}p3" "$@" 2>&1 | tail -n 1)
+    out=$(shrink_partition "${LOOP}p3" "${FIRST:-$START}" "$@" 2>&1 | tail -n 1)
     detach
     case "$out" in failed:*) check "refuses $name: $out" 0 ;; *) check "refuses $name" 1 "said: $out" ;; esac
     [ "$(image_sum)" = "$before" ]; check "  and $name leaves the disk as it was" $?
@@ -59,7 +59,7 @@ refuses() {
 
 make_disk
 SIZE=$(blockdev --getsize64 "${LOOP}p3")
-INFO3=$(sgdisk -i 3 "$IMG"); P1=$(sha256sum "${LOOP}p1" | cut -d' ' -f1); P4=$(sha256sum "${LOOP}p4" | cut -d' ' -f1)
+INFO3=$(sgdisk -i 3 "$IMG"); START=$(echo "$INFO3" | sed -n 's/^First sector: \([0-9]*\).*/\1/p'); P1=$(sha256sum "${LOOP}p1" | cut -d' ' -f1); P4=$(sha256sum "${LOOP}p4" | cut -d' ' -f1)
 echo "C: is $((SIZE >> 20)) MiB"
 ntfsresize --info --force --no-action "${LOOP}p3" | grep -iE 'resize at|current volume size'
 detach
@@ -69,6 +69,7 @@ refuses 'a size that changed since hop planned' $((SIZE + 1048576)) "$NEW"
 refuses 'a size smaller than its files' "$SIZE" 1048576
 refuses 'a size that isn''t whole MiB' "$SIZE" $((NEW + 512))
 refuses 'growing' "$SIZE" $((SIZE + 1048576))
+FIRST=$((START + 2048)) refuses 'a partition that starts somewhere else, as on a cloned disk' "$SIZE" "$NEW"
 
 # Windows left hibernated: nothing may change. ntfsresize itself doesn't check. A hibernation file Windows woke from is fine.
 cp "$IMG" "$WORK/plain.img"
@@ -80,7 +81,7 @@ cp "$WORK/plain.img" "$IMG"
 attach; mount -t ntfs3 "${LOOP}p3" "$WORK/c"
 head -c 4096 /dev/zero > "$WORK/c/hiberfil.sys"
 umount "$WORK/c"
-out=$(shrink_partition "${LOOP}p3" "$SIZE" "$NEW" 2>&1 | tail -n 1)
+out=$(shrink_partition "${LOOP}p3" "$START" "$SIZE" "$NEW" 2>&1 | tail -n 1)
 detach
 case "$out" in ok*) check 'shrinks with a hibernation file Windows woke from' 0 ;; *) check 'shrinks with a hibernation file Windows woke from' 1 "said: $out" ;; esac
 mv "$WORK/plain.img" "$IMG"
@@ -93,7 +94,7 @@ mv "$WORK/plain.img" "$IMG"
 
 # The real thing.
 attach
-out=$(shrink_partition "${LOOP}p3" "$SIZE" "$NEW" 2>&1); code=$?
+out=$(shrink_partition "${LOOP}p3" "$START" "$SIZE" "$NEW" 2>&1); code=$?
 echo "$out" | tail -n 20
 check "shrinks C: to $((NEW >> 20)) MiB: $(echo "$out" | tail -n 1)" $code
 moved=$(echo "$out" | grep 'Needed relocations' | tail -n 1)

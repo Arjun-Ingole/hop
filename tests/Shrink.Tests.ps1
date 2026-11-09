@@ -5,10 +5,15 @@ BeforeAll {
 
 Describe 'The menu the shrink image starts with' {
     It 'names the partition, both sizes, the EFI partition and the attempt, as blkid has them' {
-        $menu = Get-ShrinkGrubConfig '{3A5CF585-E347-4D46-A996-DA1791947F18}' 500107862016 400000000000 '{C215B42C-73AC-4794-A4D8-A5B35E54219B}' 'abc123'
-        $menu[0] | Should -Be 'set timeout=0'
-        $menu | Should -Contain '    linux /EFI/hop-shrink/vmlinuz hop.part=3a5cf585-e347-4d46-a996-da1791947f18 hop.was=500107862016 hop.size=400000000000 hop.esp=c215b42c-73ac-4794-a4d8-a5b35e54219b hop.id=abc123 quiet loglevel=3'
+        $menu = Get-ShrinkGrubConfig '{3A5CF585-E347-4D46-A996-DA1791947F18}' 239616 500107862016 400000000000 '{C215B42C-73AC-4794-A4D8-A5B35E54219B}' 'abc123'
+        $menu | Should -Contain '    linux /EFI/hop-shrink/vmlinuz hop.part=3a5cf585-e347-4d46-a996-da1791947f18 hop.start=239616 hop.was=500107862016 hop.size=400000000000 hop.esp=c215b42c-73ac-4794-a4d8-a5b35e54219b hop.id=abc123 quiet loglevel=3'
         $menu | Should -Contain '    initrd /EFI/hop-shrink/initrd.img'
+    }
+    It 'can''t be edited at the PC, and still starts' {
+        $menu = Get-ShrinkGrubConfig '{A}' 2048 2 1 '{B}' 'x'
+        $menu[0] | Should -Be 'set superusers="hop"'
+        $menu | Should -Not -Match 'password'
+        $menu | Should -Contain "menuentry 'hop: make room for Linux' --unrestricted {"
     }
 }
 
@@ -140,6 +145,8 @@ Describe 'After the shrink tool has run' {
         Mock Read-RoomState { [pscustomobject]@{ Phase = 'ready' } }
         Complete-OfflineShrink | Out-Null
         Should -Invoke Remove-RoomTask -ParameterFilter { $Name -eq $RestoreTaskName } -Times 0
+        # That task runs hop from the copy both share. Deleting it would let anyone put a program there for SYSTEM to run.
+        Should -Invoke Remove-RestartCopy -Times 0
     }
 }
 
@@ -254,5 +261,19 @@ Describe 'A drive Windows wants to check first' {
         Mock Resolve-Target { [pscustomobject]@{ Kind = 'volume'; IsWindows = $true; Partition = [pscustomobject]@{ DiskNumber = 0; PartitionNumber = 3; Offset = [int64]1GB; Size = [int64]90GB } } }
         Mock Get-SupportedSize { throw 'Windows took too long' }
         { Get-SpaceInfo '' } | Should -Throw '*too long*'
+    }
+}
+
+Describe 'Removing a restart copy' {
+    It 'keeps one a hop task still starts from' {
+        Mock Get-ScheduledTask { [pscustomobject]@{ Actions = @([pscustomobject]@{ Execute = 'C:\ProgramData\hop-restart-abc\hop.exe' }) } }
+        Mock Write-Log { }
+        Remove-RestartCopy 'C:\ProgramData\hop-restart-abc'
+        Should -Invoke Write-Log -ParameterFilter { $Message -like '*still starts from it*' } -Times 1
+    }
+    It 'tells a folder from another that starts the same' {
+        Mock Get-ScheduledTask { [pscustomobject]@{ Actions = @([pscustomobject]@{ Execute = 'C:\ProgramData\hop-restart-abcd\hop.exe' }) } }
+        Test-TaskUsesFolder 'C:\ProgramData\hop-restart-abc' | Should -BeFalse
+        Test-TaskUsesFolder 'C:\ProgramData\hop-restart-abcd' | Should -BeTrue
     }
 }

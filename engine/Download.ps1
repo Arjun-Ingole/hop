@@ -214,7 +214,8 @@ function Invoke-Curl([string]$Url, [string]$Part, [int64]$Total, [string]$Name, 
     while (-not $proc.HasExited) {
         if ($Total -and (Test-Path -LiteralPath $Part)) {
             $done = (Get-Item -LiteralPath $Part).Length
-            $Sync.Status = 'Downloading {0}... {1:N1} of {2:N1} GB' -f $Name, ($done / 1GB), ($Total / 1GB)
+            # In MB for something small, which in GB would read 0.0 of 0.0.
+            $Sync.Status = if ($Total -lt 1GB) { 'Downloading {0}... {1:N0} of {2:N0} MB' -f $Name, ($done / 1MB), ($Total / 1MB) } else { 'Downloading {0}... {1:N1} of {2:N1} GB' -f $Name, ($done / 1GB), ($Total / 1GB) }
             Set-ByteProgress $done $Total
         }
         Start-Sleep -Milliseconds 700

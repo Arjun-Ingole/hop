@@ -74,7 +74,8 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/w" registry.fedoraproject.org/fedora:44 bash /w/tools/shrink/build.sh /w/shrink-out
           sudo chown -R "$(id -u):$(id -g)" shrink-out
-          python3 tools/shrink/pin.py shrink-out 'C:\Users\hop\Downloads\hop-shrink.zip'
+          # A build with the published tool pinned downloads that, as a PC would. Otherwise this one, from the VM's disk.
+          if grep -q "Url    = ''" engine/Shrink.ps1; then python3 tools/shrink/pin.py shrink-out 'C:\Users\hop\Downloads\hop-shrink.zip'; fi
 
       - name: Build hop
         run: dotnet build Hop.csproj -c Release

@@ -2,7 +2,8 @@
 # The whole of hop's shrink image: started once by the firmware, through Fedora's signed shim and GRUB and kernel,
 # it shrinks drive C: from outside Windows, where every file can move, writes what happened to the EFI partition
 # and restarts into Windows. The kernel's line says what to do:
-#   hop.part=PARTUUID   the partition to shrink      hop.was=BYTES   its size when hop planned this
+#   hop.part=PARTUUID   the partition to shrink      hop.start=SECTOR   where it starts
+#   hop.was=BYTES       its size when hop planned this
 #   hop.size=BYTES      its new size                 hop.esp=PARTUUID   where to write the result
 #   hop.id=TOKEN        echoed back, so hop knows the result is this attempt's
 /bin/busybox --install -s /bin
@@ -20,13 +21,14 @@ say "Making room for Linux. This can take a few minutes. Don't turn off the PC."
 echo
 
 arg() { tr ' ' '\n' < /proc/cmdline | sed -n "s/^$1=//p" | head -n 1; }
-PART=$(arg hop.part); WAS=$(arg hop.was); NEW=$(arg hop.size); ESP=$(arg hop.esp); ID=$(arg hop.id)
+PART=$(arg hop.part); START=$(arg hop.start); WAS=$(arg hop.was); NEW=$(arg hop.size); ESP=$(arg hop.esp); ID=$(arg hop.id)
 
 for module in nvme vmd ahci sd_mod virtio_blk virtio_scsi virtio_pci mmc_block sdhci_pci vfat nls_cp437 nls_iso8859_1 nls_ascii; do
     modprobe -q "$module" 2>/dev/null
 done
 
 find_part() { blkid -t "PARTUUID=$1" -o device 2>/dev/null | head -n 1; }
+count_part() { blkid -t "PARTUUID=$1" -o device 2>/dev/null | wc -l; }
 # Disks can take a moment to appear.
 DEV=; ESPDEV=
 for i in $(seq 1 60); do
@@ -42,13 +44,15 @@ sb=$(od -An -tu1 /sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00
 {
     echo "hop shrink, kernel $(uname -r), Secure Boot ${sb:-unknown}"
     echo "cmdline: $(cat /proc/cmdline)"
-    if [ -z "$PART" ] || [ -z "$WAS" ] || [ -z "$NEW" ]; then
+    if [ -z "$PART" ] || [ -z "$START" ] || [ -z "$WAS" ] || [ -z "$NEW" ]; then
         echo "failed: the startup line doesn't say what to shrink"
+    elif [ -n "$DEV" ] && [ "$(count_part "$PART")" -ne 1 ]; then
+        echo "failed: more than one partition has drive C:'s ID, as a cloned disk would, so hop can't tell which is this PC's"
     elif [ -z "$DEV" ]; then
         echo "failed: this PC's drive didn't appear in Linux"
         ls /sys/class/block
     else
-        shrink_partition "$DEV" "$WAS" "$NEW"
+        shrink_partition "$DEV" "$START" "$WAS" "$NEW"
     fi
 } 2>&1 | tee "$LOG"
 

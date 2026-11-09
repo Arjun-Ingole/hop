@@ -26,16 +26,19 @@ function Test-ShrinkAvailable {
     $ShrinkImage.Url -and $ShrinkImage.Sha256 -and $ShrinkImage.Files.Count -eq $ShrinkFiles.Count -and (Test-Uefi)
 }
 
-# The menu Fedora's GRUB reads next to itself. It starts the one entry at once. The line says exactly what to shrink and
-# from what size, so a drive that changed since can't be shrunk by an old plan. Partition IDs in lower case, as blkid has them.
-function Get-ShrinkGrubConfig([string]$PartitionGuid, [int64]$Was, [int64]$NewSize, [string]$EspGuid, [string]$Id, [string]$Extra = '') {
+# The menu Fedora's GRUB reads next to itself. It starts the one entry at once. The line says exactly what to shrink:
+# its ID, the sector it starts at, which a cloned disk's copy can share only by chance, and its size, so a drive that
+# changed since can't be shrunk by an old plan. Partition IDs in lower case, as blkid has them. A superuser with no
+# password means nobody at the PC can edit the line or reach GRUB's prompt, while the one entry still starts.
+function Get-ShrinkGrubConfig([string]$PartitionGuid, [int64]$Start, [int64]$Was, [int64]$NewSize, [string]$EspGuid, [string]$Id, [string]$Extra = '') {
     $part = $PartitionGuid.Trim('{}').ToLowerInvariant()
     $esp = $EspGuid.Trim('{}').ToLowerInvariant()
-    $line = "hop.part=$part hop.was=$Was hop.size=$NewSize hop.esp=$esp hop.id=$Id quiet loglevel=3$(if ($Extra) { " $Extra" })"
+    $line = "hop.part=$part hop.start=$Start hop.was=$Was hop.size=$NewSize hop.esp=$esp hop.id=$Id quiet loglevel=3$(if ($Extra) { " $Extra" })"
     $folder = $ShrinkFolder -replace '\\', '/'
     @(
+        'set superusers="hop"'
         'set timeout=0'
-        "menuentry 'hop: make room for Linux' {"
+        "menuentry 'hop: make room for Linux' --unrestricted {"
         "    linux /$folder/vmlinuz $line"
         "    initrd /$folder/initrd.img"
         '}'
@@ -92,8 +95,10 @@ function Get-ShrinkImageFolder {
     New-Item -ItemType Directory -Path $ShrinkCache -Force | Out-Null
     $zip = Join-Path $ShrinkCache 'hop-shrink.zip'
     Set-Status 'Downloading hop''s shrink tool...'
-    if ($ShrinkImage.Url -notmatch '^https://') { Copy-Item -LiteralPath $ShrinkImage.Url -Destination $zip }
-    else { Invoke-Download ([pscustomobject]@{ Url = $ShrinkImage.Url; Sha256 = $ShrinkImage.Sha256 }) $zip }
+    # A test build names a file on the PC itself. Anything else has to come over HTTPS.
+    if ($ShrinkImage.Url -match '^[A-Za-z]:\\') { Copy-Item -LiteralPath $ShrinkImage.Url -Destination $zip }
+    elseif ($ShrinkImage.Url -notmatch '^https://') { throw "hop's shrink tool has to come over HTTPS." }
+    else { Invoke-Download ([pscustomobject]@{ Url = $ShrinkImage.Url; Sha256 = $ShrinkImage.Sha256; FileName = "hop's shrink tool" }) $zip }
     if (-not (Test-FileSha256 $zip $ShrinkImage.Sha256)) { throw 'hop''s shrink tool downloaded damaged. Try again.' }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     [IO.Compression.ZipFile]::ExtractToDirectory($zip, $ShrinkCache)
@@ -113,6 +118,15 @@ function Test-ShrinkImage([string]$Folder) {
 
 function Test-FileSha256([string]$Path, [string]$Expected) {
     $Expected -and (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -eq $Expected.ToUpperInvariant()
+}
+
+# The tasks the restart needed. While Make room's settings are off, its restore task still needs the copy both share,
+# and Make room removes them together once the settings are back.
+function Clear-ShrinkTasks($State) {
+    Unregister-ResumeTask
+    if (Read-RoomState) { return }
+    Remove-RoomTask $RestoreTaskName
+    if ($State) { Remove-RestartCopy $State.CopyFolder }
 }
 
 # The firmware's entries for the shrink tool.
@@ -174,7 +188,8 @@ function Start-OfflineShrink([string]$Drive, [int]$WantedLinuxGB, [int64]$Wanted
     if ($new -ge [int64]$c.Size) { throw "Drive $room already has that much free after it." }
     $esp = Get-WindowsEsp
     $id = [guid]::NewGuid().ToString('N').Substring(0, 12)
-    $menu = Get-ShrinkGrubConfig ([string]$c.Guid) ([int64]$c.Size) $new ([string]$esp.Guid) $id
+    $sector = (Get-Disk -Number $c.DiskNumber).LogicalSectorSize
+    $menu = Get-ShrinkGrubConfig ([string]$c.Guid) ([int64]($c.Offset / $sector)) ([int64]$c.Size) $new ([string]$esp.Guid) $id
 
     Set-Status 'Putting hop''s shrink tool on the EFI partition...'
     Clear-OfflineShrink
@@ -231,10 +246,7 @@ function Complete-OfflineShrink {
     $c = Get-PartitionAt ([int]$state.DiskNumber) ([int64]$state.Offset)
     $size = if ($c) { [int64]$c.Size } else { $null }
     Clear-OfflineShrink
-    Unregister-ResumeTask
-    # Make room's own restore task stays while its settings are off.
-    if (-not (Read-RoomState)) { Remove-RoomTask $RestoreTaskName }
-    Remove-RestartCopy $state.CopyFolder
+    Clear-ShrinkTasks $state
     Remove-ShrinkState
     if ($null -ne $size -and $size -eq [int64]$state.NewSize) {
         # The earliest size is what Undo gives back, if Make room shrank it before this.
@@ -294,9 +306,7 @@ function Test-ShrunkDrive([string]$Drive) {
 function Stop-OfflineShrink {
     $state = Read-ShrinkState
     Clear-OfflineShrink
-    Unregister-ResumeTask
-    if (-not (Read-RoomState)) { Remove-RoomTask $RestoreTaskName }
-    if ($state) { Remove-RestartCopy $state.CopyFolder }
+    Clear-ShrinkTasks $state
     Remove-ShrinkState
     Write-Log 'Called off shrinking the drive from outside Windows.'
 }

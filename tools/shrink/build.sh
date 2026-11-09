@@ -12,6 +12,8 @@ mkdir -p "$OUT"
 dnf -y -q install cpio zstd xz gzip zip findutils kmod busybox ntfsprogs util-linux >/dev/null
 cd "$WORK"
 dnf -q download kernel-core kernel-modules-core shim-x64 grub2-efi-x64 >/dev/null
+# Signed by Fedora, with the keys the container trusts, before anything in them is used.
+for rpm in *.rpm; do rpm -K "$rpm" | grep -q 'signatures OK' || { echo "$rpm isn't signed as Fedora signs it" >&2; exit 1; }; done
 for rpm in *.rpm; do rpm2cpio "$rpm" | cpio -idm --quiet; done
 KVER=$(ls lib/modules | sort -V | tail -n 1)
 echo "kernel $KVER"

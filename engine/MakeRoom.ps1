@@ -330,6 +330,9 @@ function Unregister-RunAfterRestart {
 # deals with the one hop is running from, because a running file can't be deleted.
 function Remove-RestartCopy([string]$Folder) {
     if (-not $Folder) { return }
+    # A task still pointing in here would run whatever was put back in its place, and an ordinary user can make a
+    # folder of this name in ProgramData. The task goes first, then the folder.
+    if (Test-TaskUsesFolder $Folder) { Write-Log "Kept $Folder`: a hop task still starts from it."; return }
     if ($Folder -eq [Hop.RestartCopy]::OwnFolder()) {
         try { [Hop.RestartCopy]::RemoveAtNextStart($Folder) } catch { Write-Log "Could not set $Folder to go at the next start: $($_.Exception.Message)" }
         return
@@ -340,6 +343,15 @@ function Remove-RestartCopy([string]$Folder) {
         if ((Get-Item -LiteralPath $Folder -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { return }
         [IO.Directory]::Delete($Folder, $true)
     } catch { Write-Log "Could not remove $Folder`: $($_.Exception.Message)" }
+}
+
+function Test-TaskUsesFolder([string]$Folder) {
+    $prefix = $Folder.TrimEnd('\') + '\'
+    foreach ($name in @($ResumeTaskName, $RestoreTaskName)) {
+        $task = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+        foreach ($action in @($task.Actions)) { if ($action.Execute -and $action.Execute.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { return $true } }
+    }
+    $false
 }
 
 # What the second task runs, when hop isn't open. Afterwards there's nothing left for it to do.
