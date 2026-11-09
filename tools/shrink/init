@@ -1,0 +1,66 @@
+#!/bin/busybox sh
+# The whole of hop's shrink image: started once by the firmware, through Fedora's signed shim and GRUB and kernel,
+# it shrinks drive C: from outside Windows, where every file can move, writes what happened to the EFI partition
+# and restarts into Windows. The kernel's line says what to do:
+#   hop.part=PARTUUID   the partition to shrink      hop.was=BYTES   its size when hop planned this
+#   hop.size=BYTES      its new size                 hop.esp=PARTUUID   where to write the result
+#   hop.id=TOKEN        echoed back, so hop knows the result is this attempt's
+/bin/busybox --install -s /bin
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+mount -t proc proc /proc
+mount -t sysfs sys /sys
+mount -t devtmpfs dev /dev
+. /shrink.sh
+
+LOG=/tmp/shrink.log
+exec >/dev/console 2>&1
+clear
+echo
+say "Making room for Linux. This can take a few minutes. Don't turn off the PC."
+echo
+
+arg() { tr ' ' '\n' < /proc/cmdline | sed -n "s/^$1=//p" | head -n 1; }
+PART=$(arg hop.part); WAS=$(arg hop.was); NEW=$(arg hop.size); ESP=$(arg hop.esp); ID=$(arg hop.id)
+
+for module in nvme vmd ahci sd_mod virtio_blk virtio_scsi virtio_pci mmc_block sdhci_pci vfat nls_cp437 nls_iso8859_1 nls_ascii; do
+    modprobe -q "$module" 2>/dev/null
+done
+
+find_part() { blkid -t "PARTUUID=$1" -o device 2>/dev/null | head -n 1; }
+# Disks can take a moment to appear.
+DEV=; ESPDEV=
+for i in $(seq 1 60); do
+    DEV=$(find_part "$PART"); ESPDEV=$(find_part "$ESP")
+    [ -n "$DEV" ] && [ -n "$ESPDEV" ] && break
+    sleep 1
+done
+
+{
+    echo "hop shrink, kernel $(uname -r)"
+    echo "cmdline: $(cat /proc/cmdline)"
+    if [ -z "$PART" ] || [ -z "$WAS" ] || [ -z "$NEW" ]; then
+        echo "failed: the startup line doesn't say what to shrink"
+    elif [ -z "$DEV" ]; then
+        echo "failed: this PC's drive didn't appear in Linux, so nothing changed"
+        ls /sys/class/block
+    else
+        shrink_partition "$DEV" "$WAS" "$NEW"
+    fi
+} 2>&1 | tee "$LOG"
+
+RESULT=$(grep -E '^(ok|failed)' "$LOG" | tail -n 1)
+[ -n "$RESULT" ] || RESULT="failed: hop's shrink stopped without saying why"
+echo
+say "$RESULT"
+if [ -n "$ESPDEV" ] && mkdir -p /esp && mount -t vfat "$ESPDEV" /esp; then
+    mkdir -p /esp/EFI/hop-shrink
+    { echo "id $ID"; echo "$RESULT"; echo; cat "$LOG"; } > /esp/EFI/hop-shrink/result.txt
+    sync
+    umount /esp
+else
+    say "Couldn't write the result to the EFI partition."
+fi
+sync
+say "Restarting into Windows..."
+sleep 5
+reboot -f

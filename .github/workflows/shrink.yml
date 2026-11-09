@@ -1,0 +1,34 @@
+name: Shrink image
+
+# hop's shrink image: Fedora's signed boot chain and a small initramfs that shrinks drive C: with ntfsresize from outside
+# Windows. test runs shrink.sh against real NTFS on loop devices. build makes the image, and boot starts it in QEMU with
+# OVMF, Secure Boot on, against a disk laid out as Windows lays one out. See tools/shrink.
+on:
+  push:
+    branches: [main]
+    paths: ['tools/shrink/**', '.github/workflows/shrink.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ntfs-3g gdisk dosfstools >/dev/null
+      - run: sudo bash tools/shrink/test.sh
+
+  build:
+    runs-on: ubuntu-24.04
+    container: registry.fedoraproject.org/fedora:44
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tools/shrink/build.sh out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hop-shrink
+          path: out
