@@ -17,6 +17,15 @@ namespace Hop
                 engine = await Task.Run(() => new Engine());
                 catalog = await Task.Run(() => engine.GetCatalog());
                 startup = await engine.GetStartupInfoAsync();
+                // Make room's settings can still be off from before, which the restore below then puts back.
+                if (startup.ShrinkPhase == "done")
+                {
+                    BeginWork(new[] { new[] { Run.Gray("Checking"), Run.Black("the shrink") } }, "Starting…");
+                    roomWantedGB = startup.ShrinkWantedGB;
+                    string result = await engine.CompleteOfflineShrinkAsync();
+                    if (result != "shrunk") shrinkNotice = result ?? "hop's shrink tool didn't say what happened.";
+                    startup = await engine.GetStartupInfoAsync();
+                }
                 if (startup.RoomPhase == "continue")
                 {
                     BeginWork(new[] { new[] { Run.Black("Moving files"), Run.Gray("out of the way") } }, "Starting…");
@@ -27,14 +36,6 @@ namespace Hop
                         roomLetter = string.IsNullOrEmpty(startup.RoomLetter) ? WindowsLetter : startup.RoomLetter;
                     else
                         roomFailed = true;
-                    startup = await engine.GetStartupInfoAsync();
-                }
-                else if (startup.ShrinkPhase == "done")
-                {
-                    BeginWork(new[] { new[] { Run.Gray("Checking"), Run.Black("the shrink") } }, "Starting…");
-                    roomWantedGB = startup.ShrinkWantedGB;
-                    string result = await engine.CompleteOfflineShrinkAsync();
-                    if (result != "shrunk") shrinkNotice = result ?? "hop's shrink tool didn't say what happened.";
                     startup = await engine.GetStartupInfoAsync();
                 }
                 else if (startup.RoomPhase == "restore")
