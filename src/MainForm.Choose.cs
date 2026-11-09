@@ -199,7 +199,7 @@ namespace Hop
             else if (enoughSpace && wanted > MaxLinuxGB && linuxGB == MaxLinuxGB)
                 noteText = $"Windows released {MaxLinuxGB} GB for Linux, not the {wanted} GB you chose. {StuckReason()}";
             else if (enoughSpace && AsideHere)
-                noteText = $"Make room set aside {startup.RoomAsideGB} GB for Linux. Nothing else changes until you click Install.{(shrinkCheckNote != null ? " " + shrinkCheckNote : "")}";
+                noteText = $"Make room set aside {startup.RoomAsideGB} GB for Linux. Nothing else changes until you click Install.";
             else if (!enoughSpace && better != null)
                 noteText = $"{target.Title} doesn't have room for Linux. {better.Title} on {better.DiskName} has {(better.Estimated ? "about " : "")}{better.UsableGB} GB to spare.";
             else if (!enoughSpace && target.IsFreeSpace)
@@ -503,7 +503,8 @@ namespace Hop
 
         // --- Shrinking from outside Windows ---------------------------------------------
 
-        long ShrinkWantedBytes => (linuxGB + ExpectedInstallerGB + RoomSpareGB) * 1024L * 1024 * 1024;
+        // With the download, as MaxLinuxGB counts it, so that once the drive has shrunk the size chosen fits.
+        long ShrinkWantedBytes => (linuxGB + ExpectedInstallerGB + RoomSpareGB + (DownloadGoesOn(target) ? IsoDownloadGB : 0)) * 1024L * 1024 * 1024;
         long ShrinkKeepFreeBytes => DownloadGoesOn(target) ? IsoDownloadGB * 1024L * 1024 * 1024 : 0;
 
         async Task ShowShrinkOfflineAsync()

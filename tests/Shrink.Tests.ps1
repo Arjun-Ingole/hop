@@ -6,7 +6,7 @@ BeforeAll {
 Describe 'The menu the shrink image starts with' {
     It 'names the partition, both sizes, the EFI partition and the attempt, as blkid has them' {
         $menu = Get-ShrinkGrubConfig '{3A5CF585-E347-4D46-A996-DA1791947F18}' 239616 500107862016 400000000000 '{C215B42C-73AC-4794-A4D8-A5B35E54219B}' 'abc123'
-        $menu | Should -Contain '    linux /EFI/hop-shrink/vmlinuz hop.part=3a5cf585-e347-4d46-a996-da1791947f18 hop.start=239616 hop.was=500107862016 hop.size=400000000000 hop.esp=c215b42c-73ac-4794-a4d8-a5b35e54219b hop.id=abc123 quiet loglevel=3'
+        $menu | Should -Contain '    linux /EFI/hop-shrink/vmlinuz hop.part=3a5cf585-e347-4d46-a996-da1791947f18 hop.start=239616 hop.was=500107862016 hop.size=400000000000 hop.esp=c215b42c-73ac-4794-a4d8-a5b35e54219b hop.id=abc123 hop.drive=C quiet loglevel=3'
         $menu | Should -Contain '    initrd /EFI/hop-shrink/initrd.img'
     }
     It 'can''t be edited at the PC, and still starts' {
@@ -44,6 +44,7 @@ Describe 'What stops a shrink from outside Windows' {
         Mock Test-VolumeDirty { $false }
         Mock Get-CimInstance { } -ParameterFilter { $ClassName -eq 'Win32_Battery' }
         Mock Get-TailFree { [int64]0 }
+        Mock Get-Disk { [pscustomobject]@{ PartitionStyle = 'GPT'; BusType = 'NVMe' } }
     }
     It 'lets a drive like the one in issue #6 through' {
         Get-OfflineShrinkProblem 'C:' ([int64]37GB) | Should -BeNullOrEmpty
@@ -57,6 +58,9 @@ Describe 'What stops a shrink from outside Windows' {
         @{ what = 'a drive Windows has marked to check'; set = { Mock Test-VolumeDirty { $true } }; says = 'marked drive C: to be checked' }
         @{ what = 'a laptop on battery'; set = { Mock Get-CimInstance { [pscustomobject]@{ BatteryStatus = 1 } } -ParameterFilter { $ClassName -eq 'Win32_Battery' } }; says = 'charger' }
         @{ what = 'more than its files leave room for'; set = { }; says = 'needs'; wanted = [int64]300GB }
+        @{ what = 'a disk that isn''t GPT'; set = { Mock Get-Disk { [pscustomobject]@{ PartitionStyle = 'MBR'; BusType = 'SATA' } } }; says = 'isn''t GPT' }
+        @{ what = 'a USB disk'; set = { Mock Get-Disk { [pscustomobject]@{ PartitionStyle = 'GPT'; BusType = 'USB' } } }; says = 'USB' }
+        @{ what = 'a drive with that much free after it already'; set = { Mock Get-TailFree { [int64]40GB } }; says = 'nothing to shrink' }
     ) {
         & $set
         $wantedBytes = if ($wanted) { $wanted } else { [int64]37GB }
@@ -108,7 +112,14 @@ Describe 'After the shrink tool has run' {
     }
     It 'goes by the drive''s real size, not only what the tool said' {
         $script:size = [int64]475GB
-        Complete-OfflineShrink | Should -BeLike '*the size it was*'
+        Complete-OfflineShrink | Should -BeLike '*still sees it at its old size*'
+        Test-Path $AsidePath | Should -BeFalse
+    }
+    It 'says it can''t find the drive, not what size it is, when it isn''t there' {
+        Mock Get-PartitionAt { }
+        $said = Complete-OfflineShrink
+        $said | Should -BeLike "hop can't find drive C: to see what its shrink tool did*"
+        $said | Should -Not -BeLike '*size it was*'
         Test-Path $AsidePath | Should -BeFalse
     }
     It 'says why the tool refused' {
@@ -152,12 +163,24 @@ Describe 'After the shrink tool has run' {
 
 Describe 'Whether the restart into the shrink tool has happened' {
     BeforeAll { $ShrinkStatePath = Join-Path $TestDrive 'shrink-phase.json' }
+    BeforeEach {
+        $boot = [datetime]::SpecifyKind([datetime]'2026-11-09T05:00:00', 'Local')
+        Write-StateFile $ShrinkStatePath (@{ Id = 'a'; BootedBefore = $boot.ToUniversalTime().ToString('o') } | ConvertTo-Json)
+        Mock Read-ShrinkResult { }
+    }
     It 'waits while Windows hasn''t restarted since, and is done once it has' {
-        $boot = [datetime]'2026-11-09T05:00:00'
         Mock Get-LastBoot { $boot }
-        Write-StateFile $ShrinkStatePath (@{ Id = 'a'; BootedBefore = $boot.ToString('o') } | ConvertTo-Json)
         Get-ShrinkPhase | Should -Be 'waiting'
         Mock Get-LastBoot { $boot.AddMinutes(9) }
+        Get-ShrinkPhase | Should -Be 'done'
+    }
+    It 'isn''t fooled by the clock being set by a few seconds' {
+        Mock Get-LastBoot { $boot.AddSeconds(20) }
+        Get-ShrinkPhase | Should -Be 'waiting'
+    }
+    It 'is done when the tool wrote this attempt''s result, though a Fast Startup shutdown kept the boot time' {
+        Mock Get-LastBoot { $boot }
+        Mock Read-ShrinkResult { "id a`nfailed: Windows is hibernated, not shut down" }
         Get-ShrinkPhase | Should -Be 'done'
     }
     It 'is nothing without a record' {
@@ -275,5 +298,34 @@ Describe 'Removing a restart copy' {
         Mock Get-ScheduledTask { [pscustomobject]@{ Actions = @([pscustomobject]@{ Execute = 'C:\ProgramData\hop-restart-abcd\hop.exe' }) } }
         Test-TaskUsesFolder 'C:\ProgramData\hop-restart-abc' | Should -BeFalse
         Test-TaskUsesFolder 'C:\ProgramData\hop-restart-abcd' | Should -BeTrue
+    }
+}
+
+Describe 'Make room leaving the shrink''s tasks alone' {
+    BeforeAll { $ShrinkStatePath = Join-Path $TestDrive 'shrink-tasks.json' }
+    BeforeEach {
+        Write-StateFile $ShrinkStatePath (@{ Id = 'a'; Saved = (Get-Date).ToString('s') } | ConvertTo-Json)
+        Mock Remove-RoomTask { }
+        Mock Restore-RoomSettings { }
+        Mock Remove-RestartCopy { }
+    }
+    AfterEach { Remove-Item $ShrinkStatePath -ErrorAction SilentlyContinue }
+    It 'keeps them while the shrink still needs hop to open' {
+        Unregister-RunAfterRestart
+        Should -Invoke Remove-RoomTask -Times 0
+        Should -Invoke Remove-RestartCopy -Times 0
+    }
+    It 'doesn''t let the restore task take them before anyone has signed in' {
+        Restore-RoomFromTask
+        Should -Invoke Restore-RoomSettings -Times 0
+        Should -Invoke Remove-RoomTask -Times 0
+    }
+}
+
+Describe 'Finding the drive after the restart' {
+    It 'goes by its GPT ID when the disks were numbered differently' {
+        Mock Get-Partition { @([pscustomobject]@{ Guid = '{B}'; DiskNumber = 0; Offset = [int64]1GB; Size = 1 }, [pscustomobject]@{ Guid = '{A}'; DiskNumber = 1; Offset = [int64]1GB; Size = 2 }) }
+        Mock Get-PartitionAt { throw 'not by number' }
+        (Find-ShrinkPartition ([pscustomobject]@{ PartitionGuid = '{A}'; DiskNumber = 0; Offset = [int64]1GB })).Size | Should -Be 2
     }
 }

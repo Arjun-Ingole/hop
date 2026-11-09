@@ -10,6 +10,7 @@
 #   partial: why        it changed something, then stopped
 
 say() { echo "hop: $*"; }
+DRIVE="drive ${HOP_DRIVE:-C}:"
 
 # The disk a partition is on and its number there, from sysfs.
 part_disk() {
@@ -48,15 +49,18 @@ shrink_partition() {
     hib=$(ntfscat "$dev" hiberfil.sys 2>/dev/null | head -c 4)
     case "$hib" in hibr|HIBR) echo "failed: Windows is hibernated, not shut down"; return 1 ;; esac
 
-    say "Checking drive C: can shrink to $((new >> 20)) MiB..."
+    # Windows part way through an update finishes it as it next starts, from files it expects where they are.
+    if ntfscat "$dev" Windows/WinSxS/pending.xml >/dev/null 2>&1; then echo "failed: Windows is part way through an update"; return 1; fi
+
+    say "Checking $DRIVE can shrink to $((new >> 20)) MiB..."
     # Refuses a volume marked for a disk check, and a size its files don't fit in.
     if ! ntfsresize --no-action --no-progress-bar --size "$new" "$dev"; then
         echo "failed: it didn't pass the check ntfsresize makes first, which the report has the details of"
         return 1
     fi
-    say "Moving files and shrinking drive C:. Don't turn off the PC."
+    say "Moving files and shrinking $DRIVE. Don't turn off the PC."
     if ! printf 'y\n' | ntfsresize --no-progress-bar --size "$new" "$dev"; then
-        echo "partial: shrinking stopped part way through. The partition is the size it was, and Windows checks the drive as it starts"
+        echo "partial: shrinking stopped part way through. The partition is the size it was, and Windows needs to check the drive"
         return 1
     fi
     say "Shrinking the partition to match..."

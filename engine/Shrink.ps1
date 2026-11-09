@@ -30,10 +30,12 @@ function Test-ShrinkAvailable {
 # its ID, the sector it starts at, which a cloned disk's copy can share only by chance, and its size, so a drive that
 # changed since can't be shrunk by an old plan. Partition IDs in lower case, as blkid has them. A superuser with no
 # password means nobody at the PC can edit the line or reach GRUB's prompt, while the one entry still starts.
-function Get-ShrinkGrubConfig([string]$PartitionGuid, [int64]$Start, [int64]$Was, [int64]$NewSize, [string]$EspGuid, [string]$Id, [string]$Extra = '') {
+function Get-ShrinkGrubConfig([string]$PartitionGuid, [int64]$Start, [int64]$Was, [int64]$NewSize, [string]$EspGuid, [string]$Id, [string]$Drive = 'C:', [string]$Extra = '') {
     $part = $PartitionGuid.Trim('{}').ToLowerInvariant()
     $esp = $EspGuid.Trim('{}').ToLowerInvariant()
-    $line = "hop.part=$part hop.start=$Start hop.was=$Was hop.size=$NewSize hop.esp=$esp hop.id=$Id quiet loglevel=3$(if ($Extra) { " $Extra" })"
+    # The letter is only for what the tool says on screen.
+    $letter = ($Drive -replace '[^A-Za-z]', '').ToUpperInvariant()
+    $line = "hop.part=$part hop.start=$Start hop.was=$Was hop.size=$NewSize hop.esp=$esp hop.id=$Id hop.drive=$letter quiet loglevel=3$(if ($Extra) { " $Extra" })"
     $folder = $ShrinkFolder -replace '\\', '/'
     @(
         'set superusers="hop"'
@@ -67,17 +69,27 @@ function Get-OfflineShrinkProblem([string]$Drive, [int64]$WantedBytes, [int64]$K
     $volume = if ($c) { Get-VolumeOf $c }
     if (-not $c -or -not $volume) { return "hop can't find drive $room." }
     if ($volume.FileSystemType -ne 'NTFS') { return "Drive $room isn't NTFS, which is all hop's shrink tool knows." }
+    $disk = Get-Disk -Number $c.DiskNumber
+    # The tool finds the drive by its GPT ID, and has no USB drivers.
+    if ($disk.PartitionStyle -ne 'GPT' -or -not $c.Guid) { return "Drive $room is on a disk that isn't GPT, which hop's shrink tool can't find it on." }
+    if ($disk.BusType -eq 'USB') { return "Drive $room is on a USB disk, which hop's shrink tool can't reach." }
     if ((Get-PartitionSignature $c) -eq 'bitlocker' -or (Test-BitLockerChanging $room.TrimEnd(':'))) {
         return "Drive $room is encrypted, and Linux can't shrink an encrypted drive. Turn off **Device encryption** or **BitLocker** for it in Settings, wait until it says it's decrypted, which can take an hour or more, then try again. You can turn it back on afterwards."
     }
     if (Test-RestartPending) { return 'Windows is waiting to restart for an update. Restart and let it finish first, so the update isn''t in the middle of something when the drive shrinks.' }
-    if (Test-VolumeDirty $room) { return "Windows has marked drive $room to be checked. Restart and let it finish checking, then try again." }
-    $battery = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($battery -and $battery.BatteryStatus -eq 1) { return 'Plug in the charger first. Losing power while the drive shrinks could damage it.' }
+    if (Test-VolumeDirty $room) { return "Windows has marked drive $room to be checked. Run chkdsk $room /f in an administrator terminal, agree to check it at the next start, restart, then try again." }
+    if (Test-OnBattery) { return 'Plug in the charger first. Losing power while the drive shrinks could damage it.' }
     $new = Get-ShrinkTarget $c $WantedBytes
+    if ($new -ge [int64]$c.Size) { return "Drive $room already has that much free after it, so there's nothing to shrink." }
     $used = [int64]$volume.Size - [int64]$volume.SizeRemaining
-    $least = $used + $WindowsReserve + $KeepFreeBytes + $ShrinkMargin
-    if ($new -lt $least) { return ('Drive {0} has {1:N0} GB of files, and needs {2:N0} GB more free for that much Linux.' -f $room, ($used / 1GB), (($least - $new) / 1GB)) }
+    $reserve = if ($room -eq $env:SystemDrive) { $WindowsReserve } else { $DataReserve }
+    $least = $used + $reserve + $KeepFreeBytes + $ShrinkMargin
+    if ($new -lt $least) { return ('Drive {0} has {1:N0} GB of files, and needs {2:N0} GB more free for that much Linux.' -f $room, [math]::Ceiling($used / 1GB), [math]::Ceiling(($least - $new) / 1GB)) }
+}
+
+function Test-OnBattery {
+    $battery = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue | Select-Object -First 1
+    [bool]($battery -and $battery.BatteryStatus -eq 1)
 }
 
 # From WMI, not fsutil, whose words change with Windows' language. Not being able to tell isn't dirty: the image checks again.
@@ -169,7 +181,8 @@ function Read-ShrinkResult {
 }
 
 # Puts the image on the EFI partition, with a menu for this drive and size, adds its startup entry and sets it for the
-# next start only. Then restarts. Says 'restarting'.
+# next start only. Then restarts. Says 'restarting'. The record is written before anything else, so whatever happens
+# from there, hop finds what to take away.
 function Start-OfflineShrink([string]$Drive, [int]$WantedLinuxGB, [int64]$WantedBytes, [int64]$KeepFreeBytes = 0) {
     $room = Get-RoomDrive $Drive
     $problem = Get-OfflineShrinkProblem $room $WantedBytes $KeepFreeBytes
@@ -185,47 +198,49 @@ function Start-OfflineShrink([string]$Drive, [int]$WantedLinuxGB, [int64]$Wanted
     }
     $c = Get-Partition -DriveLetter $room.TrimEnd(':')
     $new = Get-ShrinkTarget $c $WantedBytes
-    if ($new -ge [int64]$c.Size) { throw "Drive $room already has that much free after it." }
+    if ($new -ge [int64]$c.Size) { throw "Drive $room already has that much free after it, so there's nothing to shrink." }
     $esp = Get-WindowsEsp
     $id = [guid]::NewGuid().ToString('N').Substring(0, 12)
     $sector = (Get-Disk -Number $c.DiskNumber).LogicalSectorSize
-    $menu = Get-ShrinkGrubConfig ([string]$c.Guid) ([int64]($c.Offset / $sector)) ([int64]$c.Size) $new ([string]$esp.Guid) $id
-
-    Set-Status 'Putting hop''s shrink tool on the EFI partition...'
-    Clear-OfflineShrink
-    Use-Esp {
-        param($root)
-        $bytes = [int64](Get-ChildItem -LiteralPath $image -File | Measure-Object -Property Length -Sum).Sum + 2MB
-        $free = ([IO.DriveInfo]$root).AvailableFreeSpace
-        if ($free -lt $bytes) { throw ('The EFI system partition is too full: hop''s shrink tool needs {0:N0} MB there and {1:N0} MB is free.' -f ($bytes / 1MB), ($free / 1MB)) }
-        $folder = Join-Path $root $ShrinkFolder
-        New-Item -ItemType Directory -Path $folder -Force | Out-Null
-        foreach ($name in $ShrinkFiles) { Copy-Item -LiteralPath (Join-Path $image $name) -Destination (Join-Path $folder $name) -Force }
-        Set-Content -LiteralPath (Join-Path $folder 'grub.cfg') -Encoding ASCII -Value $menu
-        # What the firmware will read has to be what was checked.
-        if (-not (Test-ShrinkImage $folder)) { throw 'hop''s shrink tool didn''t copy to the EFI partition intact.' }
-    }
-    $sector = (Get-Disk -Number $esp.DiskNumber).LogicalSectorSize
-    $number = [Hop.Firmware]::CreateBootEntry("Make room for Linux $ShrinkEntryMarker", $esp.PartitionNumber,
-        [int64]($esp.Offset / $sector), [int64]($esp.Size / $sector), $esp.Guid, "\$ShrinkFolder\shimx64.efi")
-    Write-Log ('Added startup entry Boot{0:X4} for the shrink tool.' -f $number)
+    $menu = Get-ShrinkGrubConfig ([string]$c.Guid) ([int64]($c.Offset / $sector)) ([int64]$c.Size) $new ([string]$esp.Guid) $id $room
 
     $state = [pscustomobject]@{
-        Id = $id; Drive = $room; DiskNumber = [int]$c.DiskNumber; Offset = [int64]$c.Offset; Was = [int64]$c.Size; NewSize = $new
-        WantedLinuxGB = $WantedLinuxGB; BootNumber = $number; Saved = (Get-Date).ToString('s'); BootedBefore = (Get-LastBoot).ToString('o')
+        Id = $id; Drive = $room; DiskNumber = [int]$c.DiskNumber; Offset = [int64]$c.Offset; PartitionGuid = [string]$c.Guid
+        Was = [int64]$c.Size; NewSize = $new; WantedLinuxGB = $WantedLinuxGB; BootNumber = $null; CopyFolder = $null
+        Saved = (Get-Date).ToString('s'); BootedBefore = (Get-LastBoot).ToUniversalTime().ToString('o', [Globalization.CultureInfo]::InvariantCulture)
     }
     Write-StateFile $ShrinkStatePath ($state | ConvertTo-Json)
-    Write-Log ('Shrinking drive {0} from {1:N1} GB to {2:N1} GB at the next start, from outside Windows.' -f $room, ($c.Size / 1GB), ($new / 1GB))
     try {
-        [Hop.Firmware]::SetBootNext($number)
-        $Sync.RoomRestarting = $true
-        $state | Add-Member -NotePropertyName CopyFolder -NotePropertyValue (Register-RunAfterRestart) -Force
+        Set-Status 'Putting hop''s shrink tool on the EFI partition...'
+        Clear-OfflineShrink
+        Use-Esp {
+            param($root)
+            $bytes = [int64](Get-ChildItem -LiteralPath $image -File | Measure-Object -Property Length -Sum).Sum + 2MB
+            $free = ([IO.DriveInfo]$root).AvailableFreeSpace
+            if ($free -lt $bytes) { throw ('The EFI system partition is too full: hop''s shrink tool needs {0:N0} MB there and {1:N0} MB is free.' -f [math]::Ceiling($bytes / 1MB), [math]::Floor($free / 1MB)) }
+            $folder = Join-Path $root $ShrinkFolder
+            New-Item -ItemType Directory -Path $folder -Force | Out-Null
+            foreach ($name in $ShrinkFiles) { Copy-Item -LiteralPath (Join-Path $image $name) -Destination (Join-Path $folder $name) -Force }
+            Set-Content -LiteralPath (Join-Path $folder 'grub.cfg') -Encoding ASCII -Value $menu
+            # What the firmware will read has to be what was checked.
+            if (-not (Test-ShrinkImage $folder)) { throw 'hop''s shrink tool didn''t copy to the EFI partition intact.' }
+        }
+        $espSector = (Get-Disk -Number $esp.DiskNumber).LogicalSectorSize
+        $state.BootNumber = [Hop.Firmware]::CreateBootEntry("Make room for Linux $ShrinkEntryMarker", $esp.PartitionNumber,
+            [int64]($esp.Offset / $espSector), [int64]($esp.Size / $espSector), $esp.Guid, "\$ShrinkFolder\shimx64.efi")
         Write-StateFile $ShrinkStatePath ($state | ConvertTo-Json)
+        Write-Log ('Added startup entry Boot{0:X4} for the shrink tool.' -f $state.BootNumber)
+        $state.CopyFolder = Register-RunAfterRestart
+        Write-StateFile $ShrinkStatePath ($state | ConvertTo-Json)
+        [Hop.Firmware]::SetBootNext([int]$state.BootNumber)
+        Write-Log ('Shrinking drive {0} from {1:N1} GB to {2:N1} GB at the next start, from outside Windows.' -f $room, ($c.Size / 1GB), ($new / 1GB))
+        $Sync.RoomRestarting = $true
         Set-Status 'Restarting...'
         Invoke-Shutdown '/r', '/t', '0'
     } catch {
         $Sync.RoomRestarting = $false
         Clear-OfflineShrink
+        Clear-ShrinkTasks $state
         Remove-ShrinkState
         throw
     }
@@ -238,52 +253,82 @@ function Start-OfflineShrink([string]$Drive, [int]$WantedLinuxGB, [int64]$Wanted
 function Complete-OfflineShrink {
     $state = Read-ShrinkState
     if (-not $state) { return }
+    $Sync.ShrinkNote = $null
     $text = Read-ShrinkResult
     if ($text) { foreach ($line in ($text -split "`r?`n" | Where-Object { $_ })) { Write-Log "shrink tool: $line" } }
     $lines = @($text -split "`r?`n")
     $mine = $lines.Count -gt 1 -and $lines[0] -eq "id $($state.Id)"
     $said = if ($mine) { $lines[1] } else { $null }
-    $c = Get-PartitionAt ([int]$state.DiskNumber) ([int64]$state.Offset)
+    $c = Find-ShrinkPartition $state
     $size = if ($c) { [int64]$c.Size } else { $null }
     Clear-OfflineShrink
     Clear-ShrinkTasks $state
     Remove-ShrinkState
-    if ($null -ne $size -and $size -eq [int64]$state.NewSize) {
+    $drive = $state.Drive
+    if ($null -eq $size) {
+        return "hop can't find drive $drive to see what its shrink tool did$(if ($said) { ", which said: $(ConvertTo-Sentence ($said -replace '^\w+:\s*', ''))" } else { '.' }) Copy the report and send it to hop's GitHub page."
+    }
+    if ($said -like 'partial:*') {
+        Test-ShrunkDrive $drive
+        return "hop's shrink tool stopped part way through drive $drive. $(ConvertTo-Sentence $said.Substring(8)) Copy the report and send it to hop's GitHub page."
+    }
+    if ($size -eq [int64]$state.NewSize) {
         # The earliest size is what Undo gives back, if Make room shrank it before this.
         $earlier = Read-RoomAside
         $before = if ($earlier -and [int64]$earlier.Offset -eq [int64]$state.Offset -and [int]$earlier.DiskNumber -eq [int]$state.DiskNumber) { [int64]$earlier.SizeBefore } else { [int64]$state.Was }
         Write-StateFile $AsidePath (ConvertTo-Json -InputObject ([pscustomobject]@{
-            DiskNumber = [int]$state.DiskNumber; Offset = [int64]$state.Offset; SizeBefore = $before; Drive = $state.Drive
+            DiskNumber = [int]$c.DiskNumber; Offset = [int64]$c.Offset; SizeBefore = $before; Drive = $drive
             WantedLinuxGB = [int]$state.WantedLinuxGB; Saved = (Get-Date).ToString('s')
         }))
-        Write-Log ('Drive {0} is {1:N1} GB now, and the space after it is set aside for Linux.' -f $state.Drive, ($size / 1GB))
-        Test-ShrunkDrive $state.Drive
+        Write-Log ('Drive {0} is {1:N1} GB now, and the space after it is set aside for Linux.' -f $drive, ($size / 1GB))
+        Test-ShrunkDrive $drive
         Remove-Item -LiteralPath $TriedPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $ShrinkCache -Recurse -Force -ErrorAction SilentlyContinue
         return 'shrunk'
     }
-    if ($null -ne $size -and $size -ne [int64]$state.Was) {
+    if ($size -ne [int64]$state.Was) {
         # Neither what it was nor what was planned: say so plainly, and leave it for a person to look at.
-        Write-Log ('Drive {0} is {1:N1} GB, which is neither the size it was nor the one planned.' -f $state.Drive, ($size / 1GB))
-        return "Drive $($state.Drive) changed size, but not to what hop planned. Nothing else was changed. Copy the report and send it to hop's GitHub page."
+        Write-Log ('Drive {0} is {1:N1} GB, which is neither the size it was nor the one planned.' -f $drive, ($size / 1GB))
+        Test-ShrunkDrive $drive
+        return "Drive $drive changed size, but not to what hop planned. Copy the report and send it to hop's GitHub page."
     }
-    if ($said -like 'partial:*') { return "hop's shrink tool stopped part way through drive $($state.Drive). $(ConvertTo-Sentence $said.Substring(8)) Copy the report and send it to hop's GitHub page." }
-    if ($said -like 'failed:*') { return "hop's shrink tool left drive $($state.Drive) as it was. $(ConvertTo-Sentence $said.Substring(7))" }
-    if (-not $text) { return "This PC started Windows without hop's shrink tool saying what it did, and drive $($state.Drive) is the size it was. Secure Boot or the BIOS may have stopped the tool starting." }
-    "hop's shrink tool didn't say it finished, and drive $($state.Drive) is the size it was."
+    if ($said -like 'failed:*') { return "hop's shrink tool left drive $drive as it was. $(ConvertTo-Sentence $said.Substring(7))" }
+    if ($said -like 'ok *') { return "hop's shrink tool said it shrank drive $drive, but Windows still sees it at its old size. Copy the report and send it to hop's GitHub page." }
+    if (-not $text) { return "This PC started Windows without hop's shrink tool saying what it did, and drive $drive is the size it was. Secure Boot or the BIOS may have stopped the tool starting." }
+    "hop's shrink tool didn't say it finished, and drive $drive is the size it was."
 }
 
-# 'waiting' when the restart hasn't happened yet, 'done' once it has, or nothing.
+# By its GPT ID, which stays the same when another disk changes the disks' numbers, then where it was.
+function Find-ShrinkPartition($State) {
+    if ($State.PartitionGuid) {
+        $found = @(Get-Partition -ErrorAction SilentlyContinue | Where-Object { [string]$_.Guid -eq [string]$State.PartitionGuid })
+        if ($found.Count -eq 1) { return $found[0] }
+    }
+    Get-PartitionAt ([int]$State.DiskNumber) ([int64]$State.Offset)
+}
+
+# 'waiting' when the restart hasn't happened yet, 'done' once it has, or nothing. Windows' boot time can move by
+# seconds when the clock is set, and is compared in UTC, so a new time zone isn't a new start. A shutdown with Fast
+# Startup keeps the boot time though the tool ran, and the tool's own result says so.
 function Get-ShrinkPhase {
     $state = Read-ShrinkState
     if (-not $state) { return }
-    $booted = try { (Get-LastBoot).ToString('o') } catch { $null }
-    if ($booted -and $booted -eq [string]$state.BootedBefore) { 'waiting' } else { 'done' }
+    $before = [datetime]::MinValue
+    $parsed = [datetime]::TryParse([string]$state.BootedBefore, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$before)
+    $booted = try { (Get-LastBoot).ToUniversalTime() } catch { $null }
+    if (-not $parsed -or -not $booted -or ($booted - $before.ToUniversalTime()).TotalMinutes -gt 2) { return 'done' }
+    $text = Read-ShrinkResult
+    if ($text -and ($text -split "`r?`n")[0] -eq "id $($state.Id)") { return 'done' }
+    'waiting'
 }
 
-# Restarts into the shrink tool that's already set up.
+# Restarts into the shrink tool that's already set up, after checking again what can have changed since.
 function Restart-IntoShrink {
     $state = Read-ShrinkState
     if (-not $state) { throw 'hop''s shrink tool isn''t set up any more. Click Make room again.' }
+    if (Test-RestartPending) { throw 'Windows is waiting to restart for an update. Call off the shrink, let the update finish, then try again.' }
+    if (Test-OnBattery) { throw 'Plug in the charger first. Losing power while the drive shrinks could damage it.' }
+    if ((Test-BitLockerChanging $state.Drive.TrimEnd(':'))) { throw "Drive $($state.Drive) is being encrypted, and Linux can't shrink an encrypted drive. Call off the shrink." }
     [Hop.Firmware]::SetBootNext([int]$state.BootNumber)
     $Sync.RoomRestarting = $true
     try { Invoke-Shutdown '/r', '/t', '0' } catch { $Sync.RoomRestarting = $false; throw }
@@ -305,6 +350,7 @@ function Test-ShrunkDrive([string]$Drive) {
 # Calls it off before the restart: nothing has changed on the drive.
 function Stop-OfflineShrink {
     $state = Read-ShrinkState
+    $Sync.RoomRestarting = $false
     Clear-OfflineShrink
     Clear-ShrinkTasks $state
     Remove-ShrinkState
@@ -323,7 +369,7 @@ function Get-OfflineShrinkSteps([string]$Drive, [int64]$WantedBytes, [int64]$Kee
     $steps = @(
         "Puts hop's shrink tool on the EFI partition. It's Fedora Linux's signed startup files and **ntfsresize**, which GParted uses, and nothing else."
         "Restarts into it. It shrinks drive $room from $sizes from outside Windows, where every file can move. That can take from a few minutes to half an hour. Don't turn off the PC."
-        "Restarts into Windows. hop opens again with the space set aside for Linux."
+        $(if (Test-OpensAgainByItself) { "Restarts into Windows. hop opens again with the space set aside for Linux." } else { "Restarts into Windows. Open hop again after signing in, and it finds the space set aside for Linux." })
     )
     $notes = @(
         'Save your work first.'

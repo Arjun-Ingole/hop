@@ -321,6 +321,8 @@ function Unregister-ResumeTask {
 }
 
 function Unregister-RunAfterRestart {
+    # A shrink waiting for its restart, or for hop to open after it, needs them: it takes them away itself.
+    if (Read-ShrinkState) { Write-Log 'Kept the tasks: the shrink tool still needs hop to open after it.'; return }
     Unregister-ResumeTask
     Remove-RoomTask $RestoreTaskName
     Remove-RestartCopy (Read-RoomState).CopyFolder
@@ -358,6 +360,10 @@ function Test-TaskUsesFolder([string]$Folder) {
 function Restore-RoomFromTask {
     # Someone who walked away during the restart hasn't given up on it. Nothing can need these settings
     # at the sign-in screen, so they get a day to come back before hop's work is undone.
+    # The shrink tool's restart is the same: hop has to open after it, to see what it did.
+    $shrink = Read-ShrinkState
+    $since = [datetime]::MinValue
+    if ($shrink -and [datetime]::TryParse([string]$shrink.Saved, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$since) -and ((Get-Date) - $since).TotalHours -lt $RoomWaitForSignInHours) { return }
     $state = Read-RoomState
     if ($state.Phase -eq 'restarting' -and -not (Get-SignedInUser)) {
         $saved = [datetime]::MinValue

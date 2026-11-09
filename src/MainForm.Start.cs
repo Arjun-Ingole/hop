@@ -24,7 +24,8 @@ namespace Hop
                     roomWantedGB = startup.ShrinkWantedGB;
                     string result = await engine.CompleteOfflineShrinkAsync();
                     if (result != "shrunk") shrinkNotice = result ?? "hop's shrink tool didn't say what happened.";
-                    else shrinkCheckNote = engine.ShrinkNote;
+                    // Windows' disk check wanting a look is said on its own screen, whatever comes next.
+                    shrinkCheckNote = engine.ShrinkNote;
                     startup = await engine.GetStartupInfoAsync();
                 }
                 if (startup.RoomPhase == "continue")
@@ -76,11 +77,20 @@ namespace Hop
                 ShowShrinkWaiting(null);
                 return;
             }
+            if (shrinkNotice == null && shrinkCheckNote != null)
+            {
+                string check = shrinkCheckNote;
+                shrinkCheckNote = null;
+                Arrange(new[] { new[] { Run.Gray("Drive"), Run.Black("shrunk.") } }, check, Secondary, null, 0);
+                Footer(ReportLink, () => _ = CopyReportAsync(), "Continue", () => _ = ShowStartScreenAsync());
+                return;
+            }
             if (shrinkNotice != null)
             {
                 string notice = shrinkNotice;
                 shrinkNotice = null;
-                Arrange(new[] { new[] { Run.Gray("hop"), Run.Black("couldn't shrink the drive.") } }, notice, Danger, null, 0);
+                Arrange(new[] { new[] { Run.Gray("hop"), Run.Black("couldn't shrink the drive.") } }, notice + (shrinkCheckNote != null ? " " + shrinkCheckNote : ""), Danger, null, 0);
+                shrinkCheckNote = null;
                 Footer(ReportLink, () => _ = CopyReportAsync(), "Continue", () => _ = ShowStartScreenAsync());
                 return;
             }

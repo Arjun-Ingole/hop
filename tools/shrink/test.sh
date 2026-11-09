@@ -86,6 +86,12 @@ detach
 case "$out" in ok*) check 'shrinks with a hibernation file Windows woke from' 0 ;; *) check 'shrinks with a hibernation file Windows woke from' 1 "said: $out" ;; esac
 mv "$WORK/plain.img" "$IMG"
 
+# Windows part way through an update: nothing may change under it.
+cp "$IMG" "$WORK/plain.img"
+attach; mount -t ntfs3 "${LOOP}p3" "$WORK/c"; mkdir -p "$WORK/c/Windows/WinSxS"; echo '<PendingTransaction/>' > "$WORK/c/Windows/WinSxS/pending.xml"; umount "$WORK/c"; detach
+refuses 'a Windows part way through an update' "$SIZE" "$NEW"
+mv "$WORK/plain.img" "$IMG"
+
 # BitLocker's signature where NTFS's would be.
 cp "$IMG" "$WORK/plain.img"
 attach; printf '\xeb\x58\x90-FVE-FS-' | dd of="${LOOP}p3" conv=notrunc status=none; detach

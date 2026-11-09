@@ -6,11 +6,15 @@
 #   hop.was=BYTES       its size when hop planned this
 #   hop.size=BYTES      its new size                 hop.esp=PARTUUID   where to write the result
 #   hop.id=TOKEN        echoed back, so hop knows the result is this attempt's
+#   hop.drive=LETTER    for what it says on screen
 /bin/busybox --install -s /bin
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 mount -t proc proc /proc
 mount -t sysfs sys /sys
 mount -t devtmpfs dev /dev
+
+arg() { tr ' ' '\n' < /proc/cmdline | sed -n "s/^$1=//p" | head -n 1; }
+HOP_DRIVE=$(arg hop.drive); export HOP_DRIVE
 . /shrink.sh
 
 LOG=/tmp/shrink.log
@@ -20,7 +24,6 @@ echo
 say "Making room for Linux. This can take a few minutes. Don't turn off the PC."
 echo
 
-arg() { tr ' ' '\n' < /proc/cmdline | sed -n "s/^$1=//p" | head -n 1; }
 PART=$(arg hop.part); START=$(arg hop.start); WAS=$(arg hop.was); NEW=$(arg hop.size); ESP=$(arg hop.esp); ID=$(arg hop.id)
 
 for module in nvme vmd ahci sd_mod virtio_blk virtio_scsi virtio_pci mmc_block sdhci_pci vfat nls_cp437 nls_iso8859_1 nls_ascii; do
@@ -47,7 +50,7 @@ sb=$(od -An -tu1 /sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00
     if [ -z "$PART" ] || [ -z "$START" ] || [ -z "$WAS" ] || [ -z "$NEW" ]; then
         echo "failed: the startup line doesn't say what to shrink"
     elif [ -n "$DEV" ] && [ "$(count_part "$PART")" -ne 1 ]; then
-        echo "failed: more than one partition has drive C:'s ID, as a cloned disk would, so hop can't tell which is this PC's"
+        echo "failed: more than one partition has the drive's ID, as a cloned disk would, so hop can't tell which is this PC's"
     elif [ -z "$DEV" ]; then
         echo "failed: this PC's drive didn't appear in Linux"
         ls /sys/class/block

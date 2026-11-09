@@ -126,6 +126,10 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
 
 function Get-StartupInfo {
     Restore-InstallerOrder (Read-State)
+    # A shrink tool with no record of it, left by a crash, would shrink the drive if someone chose it from the boot menu.
+    if (-not (Test-Path -LiteralPath $ShrinkStatePath)) {
+        try { if (@(Get-ShrinkEntries).Count) { Write-Log 'Found the shrink tool with no record of it, so it goes.'; Clear-OfflineShrink } } catch { Write-Log "Could not look for the shrink tool: $($_.Exception.Message)" }
+    }
     $status = Get-InstallStatus
     # Only for a new install: what stops an install must not stop someone undoing one.
     if ($status -eq 'none') { Test-System }
