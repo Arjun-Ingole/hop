@@ -32,3 +32,31 @@ jobs:
         with:
           name: hop-shrink
           path: out
+
+  boot:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        secure: [true, false]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: hop-shrink
+          path: image
+      - name: Get ready to run a VM
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends qemu-system-x86 qemu-utils ovmf gdisk dosfstools ntfs-3g python3-pip >/dev/null
+          sudo pip3 install --break-system-packages -q virt-firmware
+          sudo chmod 666 /dev/kvm
+          sudo mkdir -p /mnt/shrink/out && sudo chown -R "$(id -u):$(id -g)" /mnt/shrink
+      - run: sudo python3 tools/shrink/boot.py image/hop-shrink ${{ matrix.secure && ' ' || '--no-secure-boot' }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: boot-secure-${{ matrix.secure }}
+          path: /mnt/shrink/out
