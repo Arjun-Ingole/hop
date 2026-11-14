@@ -424,6 +424,24 @@ Describe 'Invoke-Install with -FullDisk' {
         Should -Invoke Save-State -ParameterFilter { $State.WindowsShrunk -eq $true -and $State.SizeBeforeShrink -eq [int64]470GB }
         Should -Invoke Remove-RoomAside -Times 1
     }
+    It 'keeps what Make room set aside when the install fails, and doesn''t have the undo give it back' {
+        Mock Read-RoomAside { [pscustomobject]@{ DiskNumber = 0; Offset = [int64]1GB; SizeBefore = [int64]470GB; WantedLinuxGB = 60; Drive = 'C:' } }
+        Mock Copy-Installer { throw 'the copy failed' }
+        Mock Write-StateFile { }
+        $script:atCleanup = $null
+        Mock Save-State { $script:last = [pscustomobject]@{ Shrunk = $State.WindowsShrunk; Before = $State.SizeBeforeShrink } }
+        Mock Invoke-Cleanup { $script:atCleanup = $script:last }
+        { Invoke-Install 'ubuntu' 'C:\u.iso' 60 '' '' } | Should -Throw '*the copy failed*'
+        $script:atCleanup.Shrunk | Should -BeFalse
+        $script:atCleanup.Before | Should -BeNullOrEmpty
+        Should -Invoke Write-StateFile -Times 1 -Exactly -ParameterFilter { $Path -eq $AsidePath -and $Text -like '*470*' }
+    }
+    It 'asks for two free drive letters before the disk changes' {
+        Mock Assert-DriveLetters { throw 'no letters' }
+        { Invoke-Install 'ubuntu' 'C:\u.iso' 60 '' '' } | Should -Throw '*no letters*'
+        Should -Invoke New-LinuxSpace -Times 0
+        Should -Invoke Invoke-Cleanup -Times 0
+    }
     It 'leaves space set aside after another drive alone' {
         Mock Read-RoomAside { [pscustomobject]@{ DiskNumber = 1; Offset = [int64]1GB; SizeBefore = [int64]470GB; WantedLinuxGB = 60 } }
         Invoke-Install 'ubuntu' 'C:\u.iso' 60 '' ''

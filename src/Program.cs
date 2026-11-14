@@ -101,21 +101,22 @@ namespace Hop
         static void ReportCrash(Exception ex)
         {
             string path = LogCrash(ex);
-            MessageBox.Show($"hop ran into a problem it didn't expect.\n\n{ex?.Message}\n\nDetails are in {path}", "hop", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            string where = path != null ? $"\n\nDetails are in {path}" : "";
+            MessageBox.Show($"hop ran into a problem it didn't expect.\n\n{ex?.Message}{where}", "hop", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
         static string LogCrash(Exception ex)
         {
             string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "hop", "logs");
             string path = Path.Combine(folder, "crash.log");
-            if (!StateFolder.Ready) return path;
+            if (!StateFolder.Ready) return null;
             try
             {
                 Directory.CreateDirectory(folder);
                 File.AppendAllText(path, $"{DateTime.Now:s}{Environment.NewLine}{ex}{Environment.NewLine}{Environment.NewLine}");
+                return path;
             }
-            catch { }
-            return path;
+            catch { return null; }
         }
     }
 }

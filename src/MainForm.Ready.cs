@@ -147,7 +147,10 @@ namespace Hop
         async Task RemoveChangesAsync(bool installerOnly)
         {
             string letter = startup.StateLetter, iso = startup.IsoPath;
+            // Nothing on this screen can start it a second time while the drive is measured.
+            int held = HoldScreen();
             long? before = await engine.GetDriveBytesAsync(letter);
+            if (held != screen) return;
             await CleanupAsync(installerOnly, () => _ = ShowRemovedAsync(installerOnly, letter, before, iso));
         }
 

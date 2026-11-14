@@ -888,6 +888,28 @@ Describe 'Get-SupportedSize' {
         (Get-SupportedSize $partition).SizeMin | Should -Be 100GB
         Should -Invoke Start-SizeQuery -Times 2 -Exactly
     }
+    It 'stops one past the limit for a caller that changes the drive too, so the next isn''t refused for good' {
+        $SizeQueryLimitSeconds = 1
+        $SizeQuerySlowSeconds = 0.1
+        Mock Start-SizeQuery { New-TestSizeQuery 30 }
+        { Get-SupportedSize $partition 0.2 -Join } | Should -Throw
+        $err = try { Get-SupportedSize $partition; $null } catch { $_.Exception }
+        $err.Data['ErrorId'] | Should -Be 'hop.SizeTimeout'
+        $SizeQueries['1:2'].Stopped | Should -BeTrue
+    }
+    It 'gives a reader an answer that came while nobody waited, unless it''s old' {
+        $SizeQuerySlowSeconds = 0.1
+        Mock Start-SizeQuery { New-TestSizeQuery 0.5 111GB }
+        { Get-SupportedSize $partition 0.1 -Join } | Should -Throw
+        Start-Sleep -Milliseconds 900
+        (Get-SupportedSize $partition 5 -Join).SizeMin | Should -Be 111GB
+        Should -Invoke Start-SizeQuery -Times 1 -Exactly
+        { Get-SupportedSize $partition 0.1 -Join } | Should -Throw
+        Start-Sleep -Milliseconds 900
+        $SizeAnswerFreshSeconds = 0
+        [void](Get-SupportedSize $partition 5 -Join)
+        Should -Invoke Start-SizeQuery -Times 3 -Exactly
+    }
     It 'stops one past the limit, says so, and asks again only once it has stopped' {
         $SizeQueryLimitSeconds = 1
         $SizeQuerySlowSeconds = 0.1
@@ -919,18 +941,35 @@ Describe 'Get-SupportedSize' {
 }
 
 Describe 'Get-ShrinkBlocker' {
-    It 'reads the event from an answer just had, without asking again' {
-        $SizeAnswered['1:2'] = Get-Date
+    BeforeEach {
+        $SizeAnswered.Clear()
         Mock Get-SupportedSize { }
-        Mock Get-WinEvent { [pscustomobject]@{ Message = 'The last unmovable file appears to be: \pagefile.sys::$DATA' } }
-        Get-ShrinkBlocker (New-TestPartition) | Should -Be '\pagefile.sys'
+        Mock Start-Sleep { }
+    }
+    It 'reads the event from an answer just had, for a caller that changed nothing' {
+        $SizeAnswered['1:2'] = [pscustomobject]@{ Started = [DateTime]::UtcNow.AddMinutes(-3); Finished = [DateTime]::UtcNow }
+        Mock Get-WinEvent { [pscustomobject]@{ Message = 'A volume shrink analysis was initiated on volume Data (D:). The last unmovable file appears to be: \pagefile.sys::$DATA' } }
+        Get-ShrinkBlocker (New-TestPartition) -Reuse | Should -Be '\pagefile.sys'
         Should -Invoke Get-SupportedSize -Times 0 -Exactly
+        Should -Invoke Get-WinEvent -ParameterFilter { $FilterHashtable.StartTime -lt (Get-Date).AddMinutes(-2) }
     }
     It 'asks when the last answer is older' {
-        $SizeAnswered['1:2'] = (Get-Date).AddMinutes(-5)
-        Mock Get-SupportedSize { }
-        Mock Get-WinEvent { [pscustomobject]@{ Message = 'The last unmovable file appears to be: \hiberfil.sys::$DATA' } }
-        Get-ShrinkBlocker (New-TestPartition) | Should -Be '\hiberfil.sys'
+        $SizeAnswered['1:2'] = [pscustomobject]@{ Started = [DateTime]::UtcNow.AddMinutes(-9); Finished = [DateTime]::UtcNow.AddMinutes(-5) }
+        Mock Get-WinEvent { [pscustomobject]@{ Message = 'A volume shrink analysis was initiated on volume (D:). The last unmovable file appears to be: \hiberfil.sys::$DATA' } }
+        Get-ShrinkBlocker (New-TestPartition) -Reuse | Should -Be '\hiberfil.sys'
         Should -Invoke Get-SupportedSize -Times 1 -Exactly -ParameterFilter { $Join }
+    }
+    It 'always asks afresh for Make room, which has just moved a file' {
+        $SizeAnswered['1:2'] = [pscustomobject]@{ Started = [DateTime]::UtcNow.AddSeconds(-3); Finished = [DateTime]::UtcNow }
+        Mock Get-WinEvent { [pscustomobject]@{ Message = 'A volume shrink analysis was initiated on volume (D:). The last unmovable file appears to be: \$Mft::$BITMAP' } }
+        [void](Get-ShrinkBlocker (New-TestPartition))
+        Should -Invoke Get-SupportedSize -Times 1 -Exactly -ParameterFilter { -not $Join }
+    }
+    It 'leaves another drive''s event alone' {
+        Mock Get-WinEvent {
+            [pscustomobject]@{ Message = 'A volume shrink analysis was initiated on volume Windows (C:). The last unmovable file appears to be: \pagefile.sys::$DATA' }
+            [pscustomobject]@{ Message = 'A volume shrink analysis was initiated on volume Data (D:). The last unmovable file appears to be: \games\big.bin::$DATA' }
+        }
+        Get-ShrinkBlocker (New-TestPartition) | Should -Be '\games\big.bin'
     }
 }

@@ -61,6 +61,7 @@ namespace Hop
                 Arrange(new[] { new[] { Run.Black(name), Run.Gray("is gone.") } },
                     $"{freed} GB is free now. Use it for Linux, or give it back to Windows.{kept}{partly}", Secondary, null, 0);
                 target = windows;
+                measureError = null;   // whatever the drive chosen before couldn't say isn't about this one
                 Footer(null, null, "Use it for Linux", ShowChoose, "Give it to Windows", () => _ = ExpandWindowsAsync());
             }
             else
@@ -68,7 +69,7 @@ namespace Hop
                 Arrange(new[] { new[] { Run.Black(name), Run.Gray("is gone.") } }, $"{freed} GB is free now on that disk.{kept}{partly}", Secondary, null, 0);
                 // It isn't next to any drive, so Linux can only have it as free space.
                 var gap = startup.Drives.Where(d => d.IsFreeSpace).OrderByDescending(d => d.UsableGB).FirstOrDefault();
-                if (onWindowsDisk && gap != null) target = gap;
+                if (onWindowsDisk && gap != null) { target = gap; measureError = null; }
                 Footer(null, null, "Done", ShowChoose);
             }
         }

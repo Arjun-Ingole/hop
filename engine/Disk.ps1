@@ -109,6 +109,19 @@ function Get-Plan([int]$LinuxGB, [int]$InstallerGB, [string]$Target, [int]$LiveG
     }
 }
 
+# The installer partition needs a letter while the EFI partition or the live partition has another. Running out
+# is found here, before the disk changes, and not after the copy.
+function Get-FreeDriveLetters {
+    $taken = @([IO.DriveInfo]::GetDrives() | ForEach-Object { $_.Name[0] })
+    @([char[]](68..90) | Where-Object { $_ -notin $taken })
+}
+
+function Assert-DriveLetters([int]$Needed) {
+    if (@(Get-FreeDriveLetters).Count -lt $Needed) {
+        throw "hop needs $Needed free drive letters for a few minutes, and Windows has fewer left. Remove a network drive or USB drive and try again."
+    }
+}
+
 function Get-DriveLetter($Partition) {
     for ($i = 0; $i -lt 20; $i++) {
         $letter = (Get-Partition -DiskNumber $Partition.DiskNumber -PartitionNumber $Partition.PartitionNumber).DriveLetter

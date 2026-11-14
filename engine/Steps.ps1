@@ -85,8 +85,6 @@ function Test-BitLockerHead([byte[]]$Head) {
     $Head.Length -ge 11 -and [Text.Encoding]::ASCII.GetString($Head, 3, 8) -ceq '-FVE-FS-'
 }
 
-function Read-PartitionHead($Partition) { [Hop.DiskProbe]::ReadHead($Partition.DiskNumber, [int64]$Partition.Offset) }
-
 # Omarchy's installer reads every partition on its disk for that mark, and stops if it finds one. Pausing BitLocker, which
 # hop does for everything else, doesn't remove it. So this looks the same way, while nothing has changed. Turning it off is
 # the owner's decision, and hop doesn't make it. Not being able to look counts as a no: the installer would look too.

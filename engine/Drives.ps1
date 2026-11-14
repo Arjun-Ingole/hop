@@ -233,7 +233,7 @@ function Get-DriveSpace([string]$Target) {
     $row.TailFreeGB = [int][math]::Floor($space.TailFree / 1GB)
     $row.StuckGB = Get-StuckGB ([int64]$row.FreeGB * 1GB) $space $space.Reserve
     if ($row.StuckGB -ge 20) {
-        $row.ShrinkBlocker = Get-ShrinkBlocker $space.Partition
+        $row.ShrinkBlocker = Get-ShrinkBlocker $space.Partition -Reuse
         $row.BlockerKind = Get-BlockerKind $row.ShrinkBlocker
     }
     $row.Estimated = $false
@@ -281,12 +281,14 @@ function Assert-StateRoom {
 # Asking Windows how far a volume can shrink has no limit of its own, and takes longer the bigger and fuller
 # the drive is: issue #17 waited 45 minutes. So it runs in a separate runspace, and there's only ever one for a
 # drive. A caller that only reads, with -Join, waits for the one already running instead of asking again behind
-# it, and may wait less than the limit, leaving it running for the next. Others, such as Make room, which change
-# the drive, wait for it to finish and ask afresh, so they never get a figure from before. Past the limit it's
-# stopped, and until it has stopped nobody asks again.
+# it, and may wait less than the limit, leaving it running for the next. It also takes an answer that came while
+# nobody was waiting, if that's recent. Others, such as Make room and Install, which change the drive, wait for
+# it to finish and ask afresh, so they never get a figure from before. Past the limit it's stopped, whoever was
+# waiting, and until it has stopped nobody asks again.
 $SizeQueries = @{}
-$SizeAnswered = @{}   # when the last answer for each drive was asked for, which Get-ShrinkBlocker reads Windows' event from
+$SizeAnswered = @{}   # each drive's last answer: when it was asked for and when it came, for Get-ShrinkBlocker
 $SizeQuerySlowSeconds = 5
+$SizeAnswerFreshSeconds = 120
 
 function Get-SizeQueryKey($Partition) { "$($Partition.DiskNumber):$($Partition.PartitionNumber)" }
 
@@ -297,8 +299,9 @@ function Start-SizeQuery($Partition) {
     $runspace.Open()
     $query = [powershell]::Create()
     $query.Runspace = $runspace
-    [void]$query.AddCommand('Get-PartitionSupportedSize').AddParameter('DiskNumber', $Partition.DiskNumber).AddParameter('PartitionNumber', $Partition.PartitionNumber)
-    [pscustomobject]@{ Query = $query; Runspace = $runspace; Running = $query.BeginInvoke(); Started = Get-Date; Stopped = $false }
+    # When it answered goes with the answer, because nobody may be waiting when it comes.
+    [void]$query.AddScript('param($Disk, $Number) $size = Get-PartitionSupportedSize -DiskNumber $Disk -PartitionNumber $Number; if ($size) { [pscustomobject]@{ SizeMin = [int64]$size.SizeMin; SizeMax = [int64]$size.SizeMax; Finished = [DateTime]::UtcNow } }').AddArgument($Partition.DiskNumber).AddArgument($Partition.PartitionNumber)
+    [pscustomobject]@{ Query = $query; Runspace = $runspace; Running = $query.BeginInvoke(); Started = [DateTime]::UtcNow; Stopped = $false }
 }
 
 function Close-SizeQuery($Entry) {
@@ -306,7 +309,7 @@ function Close-SizeQuery($Entry) {
     try { $Entry.Runspace.Dispose() } catch { }
 }
 
-function Get-SizeQuerySecondsLeft($Entry) { [math]::Max(0, $SizeQueryLimitSeconds - ((Get-Date) - $Entry.Started).TotalSeconds) }
+function Get-SizeQuerySecondsLeft($Entry) { [math]::Max(0, $SizeQueryLimitSeconds - ([DateTime]::UtcNow - $Entry.Started).TotalSeconds) }
 
 function New-SizeQueryError([string]$Message, [string]$Id) {
     $e = New-Object InvalidOperationException $Message
@@ -314,31 +317,76 @@ function New-SizeQueryError([string]$Message, [string]$Id) {
     $e
 }
 
+# In short waits, so that cancelling or closing hop isn't held up behind one long one.
+function Wait-SizeHandle($Handle, [double]$Seconds) {
+    $until = [DateTime]::UtcNow.AddSeconds($Seconds)
+    do {
+        $left = ($until - [DateTime]::UtcNow).TotalMilliseconds
+        if ($Handle.WaitOne([int][math]::Max(0, [math]::Min(250, $left)))) { return $true }
+    } while ($left -gt 250)
+    $false
+}
+
 # Waits up to $Seconds for it, and says what it's waiting for once that's noticeable. True when it's finished.
 function Wait-SizeQuery($Entry, [double]$Seconds, $Partition) {
     $handle = $Entry.Running.AsyncWaitHandle
     $first = [math]::Min($Seconds, $SizeQuerySlowSeconds)
-    if ($handle.WaitOne([int]($first * 1000))) { return $true }
+    if (Wait-SizeHandle $handle $first) { return $true }
     if ($Seconds -le $first) { return $false }
     $before = $Sync.Status; $percent = $Sync.Percent
     $letter = Get-LetterOf $Partition
     $Sync.Status = "Asking Windows how much room $(if ($letter) { "drive $letter`:" } else { 'the drive' }) can give up. On a big drive this can take a few minutes..."
-    try { $handle.WaitOne([int](($Seconds - $first) * 1000)) } finally { $Sync.Status = $before; $Sync.Percent = $percent }
+    try { Wait-SizeHandle $handle ($Seconds - $first) } finally { $Sync.Status = $before; $Sync.Percent = $percent }
+}
+
+# Its answer, with when it was asked for and when it came. Throws Windows' reason if it gave one.
+function Receive-SizeQuery($Entry, [string]$Key) {
+    $SizeQueries.Remove($Key)
+    try {
+        $result = $Entry.Query.EndInvoke($Entry.Running) | Select-Object -First 1
+        if ($Entry.Query.Streams.Error.Count) {
+            # Kept, so a caller can tell Windows' reasons apart without reading its words, which change with its language.
+            $err = $Entry.Query.Streams.Error[0]
+            $err.Exception.Data['ErrorId'] = $err.FullyQualifiedErrorId
+            throw $err.Exception
+        }
+        if (-not $result) { throw 'Windows didn''t say how far this drive can shrink.' }
+        $finished = if ($result.Finished) { [DateTime]$result.Finished } else { [DateTime]::UtcNow }
+        [pscustomobject]@{ Result = $result; Started = $Entry.Started; Finished = $finished }
+    } finally {
+        Close-SizeQuery $Entry
+    }
+}
+
+function Stop-SizeQuery($Entry, $Partition) {
+    if (-not $Entry.Stopped) {
+        Write-Log "Windows didn't say how far drive $(Get-LetterOf $Partition): shrinks within $SizeQueryLimitSeconds seconds, so hop stopped asking."
+        [void]$Entry.Query.BeginStop($null, $null)
+        $Entry.Stopped = $true
+    }
+    New-SizeQueryError "Windows took too long to work out how much space this drive can give up. Try again in a few minutes." 'hop.SizeTimeout'
 }
 
 function Get-SupportedSize($Partition, [double]$WaitSeconds = $SizeQueryLimitSeconds, [switch]$Join) {
     $key = Get-SizeQueryKey $Partition
     $entry = $SizeQueries[$key]
-    if ($entry -and $entry.Running.IsCompleted -and $entry.Stopped) {
-        Close-SizeQuery $entry; $SizeQueries.Remove($key); $entry = $null
+    if ($entry -and $entry.Running.IsCompleted) {
+        # It finished while nobody was waiting. A reader takes that if it's recent, and anything else asks again.
+        if ($entry.Stopped) { Close-SizeQuery $entry; $SizeQueries.Remove($key) }
+        else {
+            $got = try { Receive-SizeQuery $entry $key } catch { $null }
+            if ($Join -and $got -and ([DateTime]::UtcNow - $got.Finished).TotalSeconds -le $SizeAnswerFreshSeconds) {
+                $SizeAnswered[$key] = $got
+                return $got.Result
+            }
+        }
+        $entry = $null
     }
     if ($entry -and -not $Join) {
         # Its answer could be from before this caller changed the drive, so it only waits for it to be done.
-        if (-not (Wait-SizeQuery $entry (Get-SizeQuerySecondsLeft $entry) $Partition)) {
-            throw (New-SizeQueryError "Windows took too long to work out how much space this drive can give up. Try again in a few minutes, or choose another drive." 'hop.SizeTimeout')
-        }
-        try { [void]$entry.Query.EndInvoke($entry.Running) } catch { }
-        Close-SizeQuery $entry; $SizeQueries.Remove($key); $entry = $null
+        if (-not (Wait-SizeQuery $entry (Get-SizeQuerySecondsLeft $entry) $Partition)) { throw (Stop-SizeQuery $entry $Partition) }
+        try { [void](Receive-SizeQuery $entry $key) } catch { }
+        $entry = $null
     }
     if (-not $entry) {
         $entry = Start-SizeQuery $Partition
@@ -349,27 +397,11 @@ function Get-SupportedSize($Partition, [double]$WaitSeconds = $SizeQueryLimitSec
         if ($WaitSeconds -lt $left) {
             throw (New-SizeQueryError "Windows is still working out how much space this drive can give up." 'hop.SizePending')
         }
-        if (-not $entry.Stopped) {
-            Write-Log "Windows didn't say how far drive $(Get-LetterOf $Partition): shrinks within $SizeQueryLimitSeconds seconds, so hop stopped asking."
-            [void]$entry.Query.BeginStop($null, $null)
-            $entry.Stopped = $true
-        }
-        throw (New-SizeQueryError "Windows took too long to work out how much space this drive can give up. Try again in a few minutes, or choose another drive." 'hop.SizeTimeout')
+        throw (Stop-SizeQuery $entry $Partition)
     }
-    $SizeQueries.Remove($key)
-    $SizeAnswered[$key] = $entry.Started
-    try {
-        $result = $entry.Query.EndInvoke($entry.Running)
-        if ($entry.Query.Streams.Error.Count) {
-            # Kept, so a caller can tell Windows' reasons apart without reading its words, which change with its language.
-            $err = $entry.Query.Streams.Error[0]
-            $err.Exception.Data['ErrorId'] = $err.FullyQualifiedErrorId
-            throw $err.Exception
-        }
-        $result | Select-Object -First 1
-    } finally {
-        Close-SizeQuery $entry
-    }
+    $got = Receive-SizeQuery $entry $key
+    $SizeAnswered[$key] = $got
+    $got.Result
 }
 
 # Disks hop could have used. Labels on a USB drive mean nothing here, because it could have

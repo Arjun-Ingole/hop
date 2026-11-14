@@ -43,6 +43,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         if ($FullDisk) { Assert-FullDiskIso $distro $iso }
         $plan = Get-Plan $LinuxGB $iso.InstallerGB $Target $iso.LiveGB
         Assert-IsoTriedThere $distro $iso -FullDisk:$FullDisk -SecondDisk:($plan.DiskNumber -ne (Get-WindowsPartition).DiskNumber)
+        Assert-DriveLetters 2
         Use-Esp {
             param($root)
             Assert-EspRoom $root "$($iso.Letter):\EFI\BOOT" $(if ($FullDisk) { 0 } else { Get-EspLinuxMB $distro ($plan.DiskNumber -eq (Get-WindowsPartition).DiskNumber) }) $distro
@@ -72,7 +73,8 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         }
         $diskChanged = $true
         Save-State $state
-        if ($aside -and $state.WindowsShrunk) { Remove-RoomAside }
+        $asideTaken = $aside -and $state.WindowsShrunk
+        if ($asideTaken) { Remove-RoomAside }
         $state.BitLockerPaused = Suspend-BitLockerForSetup
         Disable-FastStartup
         Save-State $state
@@ -80,6 +82,8 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         $state.AlongsideOk = if ($FullDisk) { $null } else { try { Test-AlongsideFindsLinux $plan } catch { $null } }
         Save-State $state
         Restore-RoomSettings
+        # Turning hibernation back on can turn Fast Startup on with it.
+        Disable-FastStartup
         $letter = Get-DriveLetter $installer
 
         Set-Stage 4
@@ -100,6 +104,17 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         if ($diskChanged) {
             Write-Log "Failed: $($_.Exception.Message)"
             Write-Log 'Undoing the changes made so far...'
+            # What Make room set aside took a restart to get, and it wasn't this install's to give back: only Undo
+            # does that. So the record goes back, and the space stays free after the drive for the next try.
+            if ($asideTaken) {
+                try {
+                    $state.WindowsShrunk = $false
+                    $state.PSObject.Properties.Remove('SizeBeforeShrink')
+                    Save-State $state
+                    Write-StateFile $AsidePath (ConvertTo-Json -InputObject $aside)
+                    Write-Log 'Kept the space Make room set aside.'
+                } catch { Write-Log "Could not keep the space Make room set aside: $($_.Exception.Message)" }
+            }
             try { Invoke-Cleanup } catch { Write-Log "Could not undo everything: $($_.Exception.Message)" }
         }
         throw
@@ -146,7 +161,7 @@ function Get-StartupInfo {
     $disk = if ($space) { Get-Disk -Number $space.Partition.DiskNumber }
     $stuck = if ($space) { Get-StuckGB $volume.SizeRemaining $space } else { 0 }
     # Working this out takes a moment, and only matters when a lot is stuck.
-    $blocker = if ($stuck -ge 20) { Get-ShrinkBlocker $space.Partition }
+    $blocker = if ($stuck -ge 20) { Get-ShrinkBlocker $space.Partition -Reuse }
     $drives = @(try { Get-DriveTargets } catch { Write-Log "Could not list the drives: $($_.Exception.Message)" })
     $windowsRow = $drives | Where-Object Id -eq '' | Select-Object -First 1
     if ($windowsRow -and $space) {
@@ -229,6 +244,9 @@ function Restart-IntoInstallerFirst {
     Set-InstallerForNextStart
     $state = Read-State
     if (-not (Move-InstallerInOrder $state.BootNumber -First)) {
+        # No restart follows, so the one-time start would wait for whichever came next, however much later.
+        try { Clear-BootOnce } catch { Write-Log "Could not forget the one-time start: $($_.Exception.Message)" }
+        try { $state.RestartedAt = $null; Save-State $state } catch { Write-Log "Could not save that the PC didn't restart: $($_.Exception.Message)" }
         throw "This PC's firmware wouldn't change its startup order. Restart and keep tapping $(Get-BootMenuKey) as the PC powers on, then choose the installer. If its BIOS has a Boot Order Lock setting, turn that off first."
     }
     $state | Add-Member -NotePropertyName InstallerFirst -NotePropertyValue $true -Force
@@ -422,6 +440,8 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
         $Sync.SpaceNote = "hop left its $(if ($gb) { "$gb GB " })installer partition in place, because removing it would change the number of a Linux partition after it, and that can stop Linux starting.$where Don't delete it."
         $hopPartitions = @(); $leftovers = @()
     }
+    # With no record, free space after the drive is only hop's to hand over if a partition of hop's was in it.
+    $removedCount = @($hopPartitions).Count + @($leftovers).Count
     foreach ($found in $hopPartitions) {
         Set-Status "Removing the $($found.Label) partition..."
         Remove-PartitionAt $found.Partition.DiskNumber $found.Partition.Offset
@@ -432,8 +452,9 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
     }
 
     # Only the disk can say they went.
-    foreach ($record in @($state.Partitions | Where-Object { $_ -and $_.Role -in $roles -and -not $keepForLinux })) {
-        $left = Get-PartitionAt (Get-StateDisk $state) ([int64]$record.Offset)
+    $stateDisk = if ($state) { Get-StateDisk $state }
+    foreach ($record in @($state.Partitions | Where-Object { $_ -and $_.Role -in $roles -and -not $keepForLinux -and $null -ne $stateDisk })) {
+        $left = Get-PartitionAt $stateDisk ([int64]$record.Offset)
         if ($left -and [int64]$left.Size -eq [int64]$record.Size -and -not (Get-VolumeOf $left).FileSystemLabel) {
             [void]$problems.Add(('A {0:N0} GB partition hop made is still on the disk. You can delete it in Disk Management.' -f ($left.Size / 1GB)))
         }
@@ -442,7 +463,7 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
     # Free space that was next to the drive before hop started stays free, unless it was shrunk.
     # With Linux staying, the installer's space goes to that drive, if it's next to it: builds
     # before InstallerNextToWindows put it after Linux, where Windows can't reach it.
-    $growWindows = if ($InstallerOnly) { $state.InstallerNextToWindows } else { $null -eq $state -or $state.WindowsShrunk -ne $false }
+    $growWindows = if ($InstallerOnly) { $state.InstallerNextToWindows } elseif ($null -eq $state) { $removedCount -gt 0 } else { $state.WindowsShrunk -ne $false }
     # Growing over the installer also takes whatever was left free before it. Another drive that
     # never gave anything up keeps its size, so that free space stays free for someone to use.
     if ($owner -and -not $owner.Windows -and $state.WindowsShrunk -eq $false) { $growWindows = $false }

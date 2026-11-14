@@ -103,7 +103,8 @@ namespace Hop
             target = startup.Drives.FirstOrDefault(d => !string.IsNullOrEmpty(startup.RoomLetter) && d.Letter == startup.RoomLetter) ?? WindowsDrive;
             if (target.Blocker != null)
                 target = startup.Drives.FirstOrDefault(d => d.Blocker == null) ?? target;
-            await MeasureTargetAsync();
+            // Restart, Undo and Clean up don't need it, and it can take minutes. ShowChoose asks when it's needed.
+            if (startup.Status == "none") await MeasureTargetAsync();
         }
 
         string measureError;   // why Windows couldn't say how far the chosen drive shrinks
@@ -127,6 +128,8 @@ namespace Hop
         /// <summary>Reads the PC again and keeps the same drive chosen, if it's still there.</summary>
         async Task ReloadAsync()
         {
+            // The work before this is done, so closing hop now is as safe as while it first reads the PC.
+            reading = true;
             startup = await engine.GetStartupInfoAsync();
             target = startup.Drives.FirstOrDefault(d => d.Id == target?.Id) ?? WindowsDrive;
             await MeasureTargetAsync();
@@ -160,6 +163,12 @@ namespace Hop
             fullDisk = false;
             var system = Current;
             bool usable = target.Blocker == null;
+            // Only an estimate so far, and nobody has asked Windows: nothing here is offered on a guess.
+            if (usable && target.Estimated && measureError == null)
+            {
+                _ = UseDriveAsync(target);
+                return;
+            }
             bool enoughSpace = usable && MaxLinuxGB >= MinLinuxGB;
             bool secureBootStops = selected != null && selected.SecureBootOff && startup.SecureBoot;
             bool secondDiskStops = usable && SecondDiskStops(target);
@@ -249,12 +258,13 @@ namespace Hop
                 primaryAction = MakeRoomNext;
             }
 
-            if (startup.OtherGB > 0)
+            // The button is for the other drive then, so this link is the only way to Make room here.
+            if (usable && !secondDiskStops && !unmeasured && needRoom && better != null)
+                Footer("Make room", MakeRoomNext, primaryText, primaryAction);
+            else if (startup.OtherGB > 0)
                 Footer($"Remove {startup.OtherName} ({startup.OtherGB} GB)", ShowRemoveOther, primaryText, primaryAction);
             else if (!usable || secondDiskStops || unmeasured)
                 Footer(otherDrive ? "Choose another drive" : null, otherDrive ? OpenDrivePicker : (Action)null, primaryText, primaryAction);
-            else if (needRoom && better != null)
-                Footer("Make room", MakeRoomNext, primaryText, primaryAction);
             else if (stuck && RoomMadeHere && otherDrive && better == null)
                 Footer("Choose another drive", OpenDrivePicker, primaryText, primaryAction);
             else if (target.TailFreeGB > 0 && !target.IsFreeSpace)
@@ -381,7 +391,9 @@ namespace Hop
             BeginReading(new[] { new[] { Run.Gray("Checking"), Run.Black(choice.InSentence) } }, "Asking Windows how much room it can give up. This can take a minute on a big drive.");
             try
             {
-                target = await engine.GetDriveSpaceAsync(choice.Id);
+                var measured = await engine.GetDriveSpaceAsync(choice.Id);
+                measureError = null;
+                target = measured;
                 DriveChoice.Remember(startup.Drives, target);
                 EndWork();
                 ShowChoose();
@@ -389,6 +401,8 @@ namespace Hop
             catch (Exception ex)
             {
                 EndWork();
+                // Back then says why on the drive itself, and doesn't ask again by itself.
+                if (choice.Id == target.Id) measureError = Describe(ex);
                 Arrange(new[] { new[] { Run.Gray("Couldn't check"), Run.Black(choice.InSentence) } }, Describe(ex), Danger, null, 0);
                 Footer("Back", ShowChoose, null, null);
             }
@@ -450,15 +464,28 @@ namespace Hop
                     return;
                 }
                 roomLetter = target.Letter;
-                await ReloadAsync();
-                EndWork();
-                ShowChoose();
             }
             catch (Exception ex)
             {
                 EndWork();
                 ShowCouldntMakeRoom(ex);
+                return;
             }
+            await ReloadThenChooseAsync();
+        }
+
+        /// <summary>The work is done, so not being able to read the PC again afterwards isn't the work failing.</summary>
+        async Task ReloadThenChooseAsync()
+        {
+            try { await ReloadAsync(); }
+            catch (Exception ex)
+            {
+                EndWork();
+                ShowBlocked("That's done, but hop couldn't read this PC again afterwards. Open hop again. " + Describe(ex));
+                return;
+            }
+            EndWork();
+            ShowChoose();
         }
 
         /// <summary>Windows closes hop as it restarts. If that's cancelled, hop mustn't say "Restarting" for good.</summary>
@@ -579,18 +606,14 @@ namespace Hop
         async Task WorkThenChooseAsync(Run[][] lines, Func<Task> work, Action<Exception> failed)
         {
             BeginWork(lines, "Starting…");
-            try
-            {
-                await work();
-                await ReloadAsync();
-                EndWork();
-                ShowChoose();
-            }
+            try { await work(); }
             catch (Exception ex)
             {
                 EndWork();
                 failed(ex);
+                return;
             }
+            await ReloadThenChooseAsync();
         }
 
         void ShowCouldntMakeRoom(Exception ex)
@@ -629,7 +652,7 @@ namespace Hop
             // Replacing Windows only makes the installer. Windows stays until the Linux installer erases it.
             drive.Legend = fullDisk ? $"Installer · about {InstallerGB} GB. Windows stays until the Linux installer erases it" : null;
             drive.MinLinuxGB = fullDisk ? 0 : MinLinuxGB;
-            bool striped = mode == DriveMode.Edit && RoomCanHelp;
+            bool striped = mode == DriveMode.Edit && (RoomCanHelp || OfflineCanHelp);
             drive.MaxLinuxGB = Math.Max(drive.MinLinuxGB, striped ? ReachLinuxGB : MaxLinuxGB);
             drive.ReleasableGB = striped ? MaxLinuxGB : int.MaxValue;
             drive.LinuxGB = fullDisk ? 0 : linuxGB;

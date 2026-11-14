@@ -46,7 +46,7 @@ function Get-Report {
             "C: free $([math]::Floor((Get-Volume -DriveLetter $env:SystemDrive.TrimEnd(':')).SizeRemaining / 1GB)) GB, can shrink to $([math]::Ceiling($space.MinSize / 1GB)) GB, usable $($space.UsableGB) GB"
         } catch { "(could not measure C: $($_.Exception.Message))" }
         "Storage controllers: $(@(Get-StorageControllers) -join ', ')"
-        "Last file Windows can't move: $(Get-ShrinkBlocker $null 10). Make room: $(Get-RoomPhase)"
+        "Last file Windows can't move: $(Get-ShrinkBlocker $null 10 -Reuse). Make room: $(Get-RoomPhase)"
         foreach ($p in Get-Partition -DiskNumber $c.DiskNumber | Sort-Object Offset) {
             $volume = try { $p | Get-Volume -ErrorAction SilentlyContinue } catch { $null }
             $signature = try { [Hop.DiskProbe]::ReadSignature($p.DiskNumber, [int64]$p.Offset) } catch { 'unread' }

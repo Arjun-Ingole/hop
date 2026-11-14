@@ -24,18 +24,22 @@ $DefragCancelled = 1223
 $RoomWaitForSignInHours = 24
 $RoomRestoreTries = 8   # the task tries every 15 minutes, and each time hop opens or closes
 
-# Windows logs the file that limits a shrink whenever it works out the limit, so ask and read it. An answer
-# from the last minute has just logged it, so that's read instead of asking again, which can take minutes.
-function Get-ShrinkBlocker($Partition, [double]$WaitSeconds = $SizeQueryLimitSeconds) {
+# Windows logs the file that limits a shrink whenever it works out the limit, so ask and read it. With -Reuse, for
+# a caller that has changed nothing, an answer that came in the last minute has just logged it, so that's read
+# instead of asking again, which can take minutes. The event names its volume, as "(C:)" in every language, and
+# another drive's may be logged meanwhile.
+function Get-ShrinkBlocker($Partition, [double]$WaitSeconds = $SizeQueryLimitSeconds, [switch]$Reuse) {
     $c = if ($Partition) { $Partition } else { Get-WindowsPartition }
     $answered = $SizeAnswered[(Get-SizeQueryKey $c)]
-    if ($answered -and ((Get-Date) - $answered).TotalSeconds -lt 60) { $since = $answered.AddSeconds(-5) }
+    if ($Reuse -and $answered -and ([DateTime]::UtcNow - $answered.Finished).TotalSeconds -lt 60) { $since = $answered.Started.ToLocalTime().AddSeconds(-5) }
     else {
         $since = (Get-Date).AddSeconds(-5)
-        try { [void](Get-SupportedSize $c $WaitSeconds -Join) } catch { }
+        try { [void](Get-SupportedSize $c $WaitSeconds -Join:$Reuse) } catch { }
     }
+    $letter = Get-LetterOf $c
     for ($i = 0; $i -lt 3; $i++) {
-        $found = Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = 'Microsoft-Windows-Defrag'; Id = 259; StartTime = $since } -MaxEvents 1 -ErrorAction SilentlyContinue
+        $found = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = 'Microsoft-Windows-Defrag'; Id = 259; StartTime = $since } -MaxEvents 8 -ErrorAction SilentlyContinue) |
+            Where-Object { -not $letter -or $_.Message -match "\($letter`:\)" } | Select-Object -First 1
         if ($found) { return Get-BlockerFile $found.Message }
         Start-Sleep -Seconds 1
     }
@@ -446,7 +450,8 @@ function Set-RoomAside($State) {
             }
         }
         $c = Get-Partition -DriveLetter $room.TrimEnd(':')
-        $enough = (Get-TailFree $c) -ge [int64]$State.WantedBytes
+        # Less a little: free space at the very end of a disk stops short of the GPT's backup.
+        $enough = (Get-TailFree $c) -ge [int64]$State.WantedBytes - 4MB
         # Windows' own way has been tried here and fell short, so next time hop offers its shrink tool straight away.
         # Only Make room finishing says so: being stopped part way doesn't count.
         if ($enough) { Remove-Item -LiteralPath $TriedPath -Force -ErrorAction SilentlyContinue }

@@ -61,6 +61,12 @@ namespace Hop
                 ShowBlocked(Describe(ex));
                 return;
             }
+            await ShowFirstScreenAsync();
+        }
+
+        /// <summary>The first screen, once the PC has been read and anything Make room left to say has been said.</summary>
+        async Task ShowFirstScreenAsync()
+        {
             EndWork();
 
             selected = catalog[0];
@@ -112,7 +118,9 @@ namespace Hop
             {
                 EndWork();
                 ShowBlocked(Describe(ex));
+                return;
             }
+            await ShowFirstScreenAsync();
         }
 
         async Task ShowStartScreenAsync()
@@ -121,7 +129,7 @@ namespace Hop
             {
                 prepared = catalog.FirstOrDefault(d => d.Id == startup.PreparedId) ?? new Distro
                 {
-                    Name = string.IsNullOrWhiteSpace(startup.PreparedDistro) ? "Linux" : startup.PreparedDistro,
+                    Name = string.IsNullOrWhiteSpace(startup.PreparedDistro) ? "Linux" : TextKit.Ellipsize(startup.PreparedDistro, Theme.Font(38, true), S(380)),
                 };
                 if (startup.Status == "installed") ShowInstalled();
                 else if (startup.Status == "unsure") ShowUnsure();

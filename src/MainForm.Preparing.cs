@@ -185,6 +185,7 @@ namespace Hop
             var system = Current;
             SyncLog();
             int held = HoldScreen();
+            note.Set("That didn't work. Checking what's left on this PC…", Secondary);
             // Not being able to look isn't the same as nothing being there, and Clean up is safe either way.
             bool changed = true;
             try
