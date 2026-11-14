@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **CachyOS and Debian could be stopped by "The EFI system partition is too full" when there was room.** hop kept 25 MB free there for their installers, as for Fedora's, but in a virtual PC CachyOS's added one 168 KB file and Debian's about 5 MB. It now keeps 4 MB for CachyOS and 8 MB for Debian. When the partition really is too full, hop now says which other systems' folders take the most room there, and logs every folder's size.
+
 ## 0.3.3 - 2026-11-09
 
 ### Added

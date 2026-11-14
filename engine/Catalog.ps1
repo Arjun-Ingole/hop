@@ -154,7 +154,8 @@ function Get-FullDiskBoot([string]$Family) {
 #   edit is the one hop can't do without. See Update-BootConfig.
 # GrubDir: where its menu is, when GRUB should find the installer partition by label and not /.disk/info.
 # EspShell: the ISO's EFI Shell, for a boot loader that can't leave its own partition. See Get-EspShellScript.
-# EspLinuxMB: what its installer adds to the EFI partition, if it doesn't notice running out. Anaconda uses 21 MB, and archinstall's GRUB 16 MB.
+# EspLinuxMB: what its installer adds to the EFI partition, if it doesn't notice running out. Anaconda uses 21 MB, and archinstall's GRUB 16 MB,
+#   Debian's about 5 MB and CachyOS's 168 KB, each also replacing \EFI\Boot\bootx64.efi: see docs/TESTING.md.
 # Steps: the words to show when the usual choices don't fit its installer. {GB} is the size hop set aside.
 # SecondDisk: its Steps and Notes for a disk Windows isn't on, which replace the usual ones. Only for a system really seen
 #   installing on a second disk and then starting from it: see docs/TESTING.md. {DISK} names the disk. Without this, a system
@@ -229,7 +230,7 @@ function Get-Catalog {
             FullDisk = (Get-FullDiskBoot 'dracut') + @{ IsoGB = 3; Steps = $AnacondaErase }
             SecondDisk = @{ EspLinuxMB = 0; Steps = $AnacondaSecondDisk; Notes = @("Afterwards this PC starts Fedora, from that disk. Its menu lists Windows too.") } })
         New-Entry 'debian' 'Debian' 'Rock solid' 'cdimage.debian.org' '#A80030' 'debian' @{
-            Kind = 'debian'; Live = 'live/filesystem.squashfs'; EspLinuxMB = 25; Refused = $(if ('debian' -notin $CalamaresProven) { Get-CalamaresRefusal 'Debian' }); Manual = 'Manual partitioning'; ManualExtra = $EspExtra
+            Kind = 'debian'; Live = 'live/filesystem.squashfs'; EspLinuxMB = 8; Refused = $(if ('debian' -notin $CalamaresProven) { Get-CalamaresRefusal 'Debian' }); Manual = 'Manual partitioning'; ManualExtra = $EspExtra
             FullDisk = (Get-FullDiskBoot 'liveboot') + @{ IsoGB = 3; Steps = @(
                 'At the menu that appears after restarting, press Enter on **Live system**. It waits until you do, then takes a few minutes to copy itself to memory.'
                 'On the desktop, open **Install Debian**, then pick your language and keyboard.'
@@ -240,7 +241,7 @@ function Get-Catalog {
                 'On the desktop, open **Install Debian**, then pick your language and keyboard.') + $CalamaresSteps + @('Fill in your name and password, check the **Summary** lists only the new **ext4** partition and **/boot/efi**, then click **Install**.', $CalamaresDont)
             Notes = @($CalamaresNotes -replace '\{NAME\}', 'Debian') }
         New-Entry 'cachyos' 'CachyOS' 'Fast, for gaming' 'cachyos.org' '#008066' 'cachyos' ((Get-ArchisoBoot @('boot/grub/grub.cfg')) + @{
-            Kind = 'cachyos'; SecureBootOff = $true; EspLinuxMB = 25; Refused = $(if ('cachyos' -notin $CalamaresProven) { Get-CalamaresRefusal 'CachyOS' }); GrubDir = 'boot/grub'; Manual = 'Manual partitioning'; ManualExtra = $EspExtra
+            Kind = 'cachyos'; SecureBootOff = $true; EspLinuxMB = 4; Refused = $(if ('cachyos' -notin $CalamaresProven) { Get-CalamaresRefusal 'CachyOS' }); GrubDir = 'boot/grub'; Manual = 'Manual partitioning'; ManualExtra = $EspExtra
             # Its other boot loaders keep kernels on the EFI partition, which Windows made too small for them.
             # Its desktop list starts on No Desktop.
             Steps = @('In the CachyOS Hello window, click **Launch installer**, then pick your language and keyboard.', 'On the **Bootloader** screen, choose **GRUB**.') + $CalamaresSteps + @(

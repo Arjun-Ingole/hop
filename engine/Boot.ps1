@@ -96,8 +96,24 @@ function Assert-EspRoom([string]$Root, [string]$Source, [int]$LinuxMB = 0) {
     $needed = (Get-ChildItem -LiteralPath $Source -Filter '*.efi' -Force | Measure-Object -Property Length -Sum).Sum + 1MB + [int64]$LinuxMB * 1MB
     $free = ([IO.DriveInfo]$Root).AvailableFreeSpace + (Get-OwnLoaderBytes $Root)
     if ($free -lt $needed) {
-        throw ('The EFI system partition is too full: the startup files need {0:N0} MB and {1:N0} MB is free. Remove boot files from other systems and try again.' -f ($needed / 1MB), ($free / 1MB))
+        $folders = @(Get-EspFolderSizes $Root)
+        Write-Log ('EFI partition: ' + (@($folders | ForEach-Object { '{0} {1:N1} MB' -f $_.Name, ($_.Bytes / 1MB) }) -join ', '))
+        $others = @($folders | Where-Object { $_.Name -notin @('EFI\Microsoft', 'EFI\Boot') -and $_.Name -notin $EspFolders } | Select-Object -First 3)
+        $advice = if ($others.Count) {
+            ' Other boot files there: ' + (@($others | ForEach-Object { '{0} ({1:N0} MB)' -f $_.Name, [math]::Ceiling($_.Bytes / 1MB) }) -join ', ') + '. Remove boot files from other systems and try again.'
+        } else { ' What fills it is Windows'' own startup files, so there are no other systems'' files to remove.' }
+        throw ('The EFI system partition is too full: the startup files need {0:N0} MB and {1:N0} MB is free.{2}' -f [math]::Ceiling($needed / 1MB), [math]::Floor($free / 1MB), $advice)
     }
+}
+
+# Each folder in \EFI with what its files take, largest first, for saying what fills the partition.
+function Get-EspFolderSizes([string]$Root) {
+    $efi = Join-Path $Root 'EFI'
+    if (-not (Test-Path -LiteralPath $efi)) { return }
+    @(foreach ($dir in @(Get-ChildItem -LiteralPath $efi -Directory -Force -ErrorAction SilentlyContinue)) {
+        $bytes = [int64](Get-ChildItem -LiteralPath $dir.FullName -Recurse -Force -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+        [pscustomobject]@{ Name = "EFI\$($dir.Name)"; Bytes = $bytes }
+    }) | Sort-Object Bytes -Descending
 }
 
 # Security software can block this partition. Finding out now costs nothing; after the disk has changed it costs a lot.

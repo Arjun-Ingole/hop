@@ -2111,6 +2111,29 @@ Describe 'Assert-EspRoom' {
     It 'counts what the Linux installer will add, and says how much is free' {
         { Assert-EspRoom $root $source 2000000000 } | Should -Throw '*too full*MB is free*'
     }
+    It 'names the biggest folders that aren''t Windows'' or hop''s, and logs them all' {
+        $esp = Join-Path $TestDrive 'esp'
+        foreach ($f in @{ n = 'Microsoft'; b = 30MB }, @{ n = 'ubuntu'; b = 12MB }, @{ n = 'Dell'; b = 3MB }, @{ n = 'hop'; b = 20MB }) {
+            New-Item -ItemType Directory -Path "$esp\EFI\$($f.n)" -Force | Out-Null
+            $file = [IO.File]::Create("$esp\EFI\$($f.n)\x.bin"); $file.SetLength($f.b); $file.Dispose()
+        }
+        Mock Write-Log {}
+        Mock Get-OwnLoaderBytes { [int64]0 }
+        $err = try { Assert-EspRoom $esp $source 2000000000; $null } catch { $_.Exception.Message }
+        $err | Should -BeLike '*too full*Other boot files there: EFI\ubuntu (12 MB), EFI\Dell (3 MB).*'
+        $err | Should -Not -BeLike '*Microsoft*'
+        $err | Should -Not -BeLike '*EFI\hop*'
+        Should -Invoke Write-Log -ParameterFilter { $Message -like 'EFI partition: EFI\Microsoft 30.0 MB, EFI\hop 20.0 MB, EFI\ubuntu 12.0 MB, EFI\Dell 3.0 MB' }
+    }
+    It 'doesn''t ask to remove other systems'' files when there are none' {
+        $esp = Join-Path $TestDrive 'esp-windows'
+        New-Item -ItemType Directory -Path "$esp\EFI\Microsoft" -Force | Out-Null
+        Set-Content -LiteralPath "$esp\EFI\Microsoft\bootmgfw.efi" -Value 'w'
+        Mock Write-Log {}
+        $err = try { Assert-EspRoom $esp $source 2000000000; $null } catch { $_.Exception.Message }
+        $err | Should -BeLike '*too full*Windows'' own startup files*'
+        $err | Should -Not -BeLike '*Remove boot files*'
+    }
     It 'keeps room for the files Anaconda doesn''t notice failing to copy' {
         foreach ($id in 'fedora', 'ultramarine') { (Get-Catalog | Where-Object Id -eq $id).EspLinuxMB | Should -BeGreaterOrEqual 21 }
         (Get-Catalog | Where-Object Id -eq 'ubuntu').EspLinuxMB | Should -Be 0
@@ -2420,6 +2443,9 @@ Describe 'Get-EspLinuxMB' {
     It 'asks for 25 MB for <id> on the disk Windows is on, and none on a second disk, where it makes its own' -ForEach @(@{ id = 'fedora' }, @{ id = 'ultramarine' }) {
         Get-EspLinuxMB (Get-Catalog | Where-Object Id -eq $id) $true | Should -Be 25
         Get-EspLinuxMB (Get-Catalog | Where-Object Id -eq $id) $false | Should -Be 0
+    }
+    It 'asks <id> for what its installer was seen adding, and a little more' -ForEach @(@{ id = 'cachyos'; mb = 4 }, @{ id = 'debian'; mb = 8 }) {
+        Get-EspLinuxMB (Get-Catalog | Where-Object Id -eq $id) $true | Should -Be $mb
     }
     It 'asks for nothing for a system that says nothing' {
         Get-EspLinuxMB (Get-Catalog | Where-Object Id -eq 'ubuntu') $false | Should -Be 0
