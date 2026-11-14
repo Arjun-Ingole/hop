@@ -92,8 +92,8 @@ function Get-OwnLoaderBytes([string]$Root) {
     $bytes
 }
 
-function Assert-EspRoom([string]$Root, [string]$Source, [int]$LinuxMB = 0) {
-    $needed = (Get-ChildItem -LiteralPath $Source -Filter '*.efi' -Force | Measure-Object -Property Length -Sum).Sum + 1MB + [int64]$LinuxMB * 1MB
+function Assert-EspRoom([string]$Root, [string]$Source, [int]$LinuxMB = 0, $Distro = $null) {
+    $needed = [int64](Get-EspLoaderFiles $Distro $Source | Measure-Object -Property Length -Sum).Sum + 1MB + [int64]$LinuxMB * 1MB
     $free = ([IO.DriveInfo]$Root).AvailableFreeSpace + (Get-OwnLoaderBytes $Root)
     if ($free -lt $needed) {
         $folders = @(Get-EspFolderSizes $Root)
@@ -223,16 +223,23 @@ function Get-EspShellScript($Distro) {
         'endfor')
 }
 
+# What Copy-EspLoader puts on the EFI partition from the installer partition's \EFI\BOOT at $Source, so
+# Assert-EspRoom counts the same files. The startup entry starts BOOTX64.EFI, which never loads a 32-bit
+# file such as BOOTIA32.EFI or grubia32.efi, so those stay behind: the partition is small.
+function Get-EspLoaderFiles($Distro, [string]$Source) {
+    if ($Distro -and $Distro.EspShell) { return Get-Item -LiteralPath (Join-Path (Split-Path (Split-Path $Source -Parent) -Parent) $Distro.EspShell) -Force }
+    Get-ChildItem -LiteralPath $Source -Force -File | Where-Object { $_.Extension -eq '.efi' -and $_.Name -notmatch 'ia32' }
+}
+
 # Fills \EFI\hop from the installer partition's \EFI\BOOT at $Source.
 function Copy-EspLoader($Distro, [string]$Source, [string]$Folder) {
     New-Item -ItemType Directory -Path $Folder -Force | Out-Null
     if ($Distro.EspShell) {
-        $partition = Split-Path (Split-Path $Source -Parent) -Parent
-        Copy-Item -LiteralPath (Join-Path $partition $Distro.EspShell) -Destination (Join-Path $Folder 'BOOTX64.EFI') -Force
+        Copy-Item -LiteralPath (Get-EspLoaderFiles $Distro $Source).FullName -Destination (Join-Path $Folder 'BOOTX64.EFI') -Force
         Set-Content -LiteralPath (Join-Path $Folder 'startup.nsh') -Encoding ASCII -Value (Get-EspShellScript $Distro)
         return
     }
-    Get-ChildItem -LiteralPath $Source -Force | Where-Object Extension -eq '.efi' | Copy-Item -Destination $Folder -Force
+    Get-EspLoaderFiles $Distro $Source | Copy-Item -Destination $Folder -Force
     Set-Content -LiteralPath (Join-Path $Folder 'grub.cfg') -Encoding ASCII -Value (Get-EspGrubConfig $Distro)
 }
 
@@ -269,7 +276,7 @@ function Register-Installer([string]$Name, $Distro) {
     $source = "$($letter):\EFI\BOOT"
     Use-Esp {
         param($root)
-        Assert-EspRoom $root $source
+        Assert-EspRoom $root $source 0 $Distro
         foreach ($old in $EspFolders -ne $EspFolder) {
             $path = Join-Path $root $old
             if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }

@@ -964,6 +964,18 @@ Describe 'Copy-EspLoader' {
                 Should -BeExactly "search --no-floppy --label --set=root $InstallerLabel|set prefix=(`$root)/$($case[1])|configfile `$prefix/grub.cfg"
         }
     }
+    It 'leaves the 32-bit files behind, which BOOTX64.EFI never starts, and counts what it copies' {
+        foreach ($name in 'BOOTIA32.EFI', 'grubia32.efi', 'mmia32.efi', 'mmx64.efi') { Set-Content "$source\$name" $name }
+        $fedora = Get-Catalog | Where-Object Id -eq 'fedora'
+        Copy-EspLoader $fedora $source $folder
+        @(Get-ChildItem $folder -Filter '*.efi' | ForEach-Object { $_.Name } | Sort-Object) | Should -Be @('BOOTx64.EFI', 'grubx64.efi', 'mmx64.efi')
+        @(Get-EspLoaderFiles $fedora $source | ForEach-Object { $_.Name } | Sort-Object) | Should -Be @('BOOTx64.EFI', 'grubx64.efi', 'mmx64.efi')
+    }
+    It 'counts the EFI Shell for Arch, which is what it copies' {
+        $arch = Get-Catalog | Where-Object Id -eq 'arch'
+        Set-Content "$root\shellx64.efi" 'shell'
+        @(Get-EspLoaderFiles $arch $source | ForEach-Object { $_.Name }) | Should -Be @('shellx64.efi')
+    }
     It 'starts Arch through the ISO''s EFI Shell, because systemd-boot cannot leave its partition' {
         $arch = Get-Catalog | Where-Object Id -eq 'arch'
         Set-Content "$root\shellx64.efi" 'shell'

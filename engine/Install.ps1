@@ -45,7 +45,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         Assert-IsoTriedThere $distro $iso -FullDisk:$FullDisk -SecondDisk:($plan.DiskNumber -ne (Get-WindowsPartition).DiskNumber)
         Use-Esp {
             param($root)
-            Assert-EspRoom $root "$($iso.Letter):\EFI\BOOT" $(if ($FullDisk) { 0 } else { Get-EspLinuxMB $distro ($plan.DiskNumber -eq (Get-WindowsPartition).DiskNumber) })
+            Assert-EspRoom $root "$($iso.Letter):\EFI\BOOT" $(if ($FullDisk) { 0 } else { Get-EspLinuxMB $distro ($plan.DiskNumber -eq (Get-WindowsPartition).DiskNumber) }) $distro
             Assert-EspWritable $root
         }
 
