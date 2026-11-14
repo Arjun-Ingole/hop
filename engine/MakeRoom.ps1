@@ -24,11 +24,16 @@ $DefragCancelled = 1223
 $RoomWaitForSignInHours = 24
 $RoomRestoreTries = 8   # the task tries every 15 minutes, and each time hop opens or closes
 
-# Windows logs the file that limits a shrink whenever it works out the limit, so ask and read it.
-function Get-ShrinkBlocker($Partition) {
+# Windows logs the file that limits a shrink whenever it works out the limit, so ask and read it. An answer
+# from the last minute has just logged it, so that's read instead of asking again, which can take minutes.
+function Get-ShrinkBlocker($Partition, [double]$WaitSeconds = $SizeQueryLimitSeconds) {
     $c = if ($Partition) { $Partition } else { Get-WindowsPartition }
-    $since = (Get-Date).AddSeconds(-5)
-    try { [void](Get-SupportedSize $c) } catch { }
+    $answered = $SizeAnswered[(Get-SizeQueryKey $c)]
+    if ($answered -and ((Get-Date) - $answered).TotalSeconds -lt 60) { $since = $answered.AddSeconds(-5) }
+    else {
+        $since = (Get-Date).AddSeconds(-5)
+        try { [void](Get-SupportedSize $c $WaitSeconds -Join) } catch { }
+    }
     for ($i = 0; $i -lt 3; $i++) {
         $found = Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = 'Microsoft-Windows-Defrag'; Id = 259; StartTime = $since } -MaxEvents 1 -ErrorAction SilentlyContinue
         if ($found) { return Get-BlockerFile $found.Message }

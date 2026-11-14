@@ -23,7 +23,8 @@ function Get-ShrinkableBytes($Partition, $Supported, [int64]$Reserve) {
     [math]::Max([int64]0, [int64]$spare)
 }
 
-function Get-SpaceInfo([string]$Target) {
+# -WaitSeconds and -Join are Get-SupportedSize's, for a caller that only reads.
+function Get-SpaceInfo([string]$Target, [double]$WaitSeconds = $SizeQueryLimitSeconds, [switch]$Join) {
     $place = Resolve-Target $Target
     $c = $place.Partition
     if ($place.Kind -eq 'gap') {
@@ -32,7 +33,7 @@ function Get-SpaceInfo([string]$Target) {
             UsableGB = [int][math]::Floor($place.Gap.Size / 1GB); Kind = 'gap'; Name = 'that free space'; Letter = ''
         }
     }
-    $supported = try { Get-SupportedSize $c } catch {
+    $supported = try { Get-SupportedSize $c $WaitSeconds -Join:$Join } catch {
         # 42008: Windows won't say how far a drive shrinks while it's marked for a disk check. It can't shrink it
         # either, so nothing more can come from it until then, but free space after it still can.
         if ("$($_.Exception.Data['ErrorId'])" -notlike 'StorageWMI 42008*') { throw }

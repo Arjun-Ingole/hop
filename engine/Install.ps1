@@ -134,8 +134,14 @@ function Get-StartupInfo {
     # Only for a new install: what stops an install must not stop someone undoing one.
     if ($status -eq 'none') { Test-System }
     $state = Read-State
-    # C: can't always be measured, for example when it isn't NTFS and hop is here for another drive.
-    $space = try { Get-SpaceInfo } catch { Write-Log "Could not measure C:: $($_.Exception.Message)"; $null }
+    # C: can't always be measured, for example when it isn't NTFS and hop is here for another drive. Windows can
+    # also take minutes to say how far it shrinks, so hop doesn't wait for that here: C: shows its estimate, and
+    # choosing it waits for the same answer, which goes on being worked out meanwhile.
+    $space = try { Get-SpaceInfo '' $StartupSizeWaitSeconds -Join } catch {
+        if ("$($_.Exception.Data['ErrorId'])" -eq 'hop.SizePending') { Write-Log "Windows is still working out how far C: shrinks, so it shows its estimate for now." }
+        else { Write-Log "Could not measure C:: $($_.Exception.Message)" }
+        $null
+    }
     $volume = Get-Volume -DriveLetter $env:SystemDrive.TrimEnd(':')
     $disk = if ($space) { Get-Disk -Number $space.Partition.DiskNumber }
     $stuck = if ($space) { Get-StuckGB $volume.SizeRemaining $space } else { 0 }

@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- **hop could sit on "Looking at the drive and the startup menu" for a very long time** (issue #17). Opening hop waited for Windows to work out how far C: shrinks, which can take minutes, then asked again for the file in the way, and again when C: was chosen, each time with a 5-minute limit, and a question it gave up on went on running behind the next. Now there's only ever one question per drive. Opening hop waits 20 seconds for it, then goes on with C:'s estimate while Windows carries on, and choosing C: waits for that same answer, within the same 5 minutes. The file in the way is read from the answer just had. While it waits, the screen says what for. Make room and Install still ask afresh, after any earlier question has finished, so their figures are never from before the drive changed. A copied report no longer waits for it at all.
+
 - **CachyOS and Debian could be stopped by "The EFI system partition is too full" when there was room.** hop kept 25 MB free there for their installers, as for Fedora's, but in a virtual PC CachyOS's added one 168 KB file and Debian's about 5 MB. It now keeps 4 MB for CachyOS and 8 MB for Debian. hop also no longer copies an ISO's 32-bit startup files, such as `BOOTIA32.EFI`, to that partition: the 64-bit loader it starts never uses them. And for Arch it now counts the file it really copies there, the ISO's EFI Shell. When the partition really is too full, hop now says which other systems' folders take the most room there, and logs every folder's size.
 
 ## 0.3.3 - 2026-11-09

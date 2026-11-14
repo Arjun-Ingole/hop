@@ -848,3 +848,89 @@ Describe 'Partitions someone removed by hand' {
         Should -Invoke Remove-PartitionAt -Times 0
     }
 }
+
+Describe 'Get-SupportedSize' {
+    BeforeAll {
+        # A real runspace, with a sleep standing in for Windows working it out.
+        function New-TestSizeQuery([double]$Seconds, [int64]$SizeMin = 100GB) {
+            $runspace = [runspacefactory]::CreateRunspace()
+            $runspace.Open()
+            $query = [powershell]::Create()
+            $query.Runspace = $runspace
+            [void]$query.AddScript("Start-Sleep -Milliseconds $([int]($Seconds * 1000)); [pscustomobject]@{ SizeMin = [int64]$SizeMin; SizeMax = [int64]500GB }")
+            [pscustomobject]@{ Query = $query; Runspace = $runspace; Running = $query.BeginInvoke(); Started = Get-Date; Stopped = $false }
+        }
+    }
+    BeforeEach {
+        foreach ($entry in @($SizeQueries.Values)) { Close-SizeQuery $entry }
+        $SizeQueries.Clear()
+        $SizeAnswered.Clear()
+        $partition = New-TestPartition
+    }
+    It 'answers, and notes when it was asked' {
+        Mock Start-SizeQuery { New-TestSizeQuery 0.2 }
+        (Get-SupportedSize $partition).SizeMin | Should -Be 100GB
+        $SizeAnswered['1:2'] | Should -Not -BeNullOrEmpty
+        $SizeQueries.Count | Should -Be 0
+    }
+    It 'leaves a slow answer running for a reader who waits less, and the next reader gets that one' {
+        $SizeQuerySlowSeconds = 0.1
+        Mock Start-SizeQuery { New-TestSizeQuery 1.5 }
+        $err = try { Get-SupportedSize $partition 0.3 -Join; $null } catch { $_.Exception }
+        $err.Data['ErrorId'] | Should -Be 'hop.SizePending'
+        (Get-SupportedSize $partition 10 -Join).SizeMin | Should -Be 100GB
+        Should -Invoke Start-SizeQuery -Times 1 -Exactly
+    }
+    It 'asks afresh for a caller that changes the drive, once the one running has finished' {
+        $SizeQuerySlowSeconds = 0.1
+        Mock Start-SizeQuery { New-TestSizeQuery 0.8 }
+        { Get-SupportedSize $partition 0.2 -Join } | Should -Throw
+        (Get-SupportedSize $partition).SizeMin | Should -Be 100GB
+        Should -Invoke Start-SizeQuery -Times 2 -Exactly
+    }
+    It 'stops one past the limit, says so, and asks again only once it has stopped' {
+        $SizeQueryLimitSeconds = 1
+        $SizeQuerySlowSeconds = 0.1
+        Mock Start-SizeQuery { New-TestSizeQuery 30 }
+        $err = try { Get-SupportedSize $partition -Join; $null } catch { $_.Exception }
+        $err.Data['ErrorId'] | Should -Be 'hop.SizeTimeout'
+        $err.Message | Should -BeLike '*took too long*'
+        $SizeQueries['1:2'].Stopped | Should -BeTrue
+        [void]$SizeQueries['1:2'].Running.AsyncWaitHandle.WaitOne(10000)
+        Mock Start-SizeQuery { New-TestSizeQuery 0.1 }
+        (Get-SupportedSize $partition -Join).SizeMin | Should -Be 100GB
+    }
+    It 'says what it''s waiting for while it waits, and puts the screen back after' {
+        $SizeQuerySlowSeconds = 0.1
+        $Sync.Status = 'Checking the ISO file...'
+        Mock Start-SizeQuery { New-TestSizeQuery 1 }
+        $seen = $null
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        $entry = Start-SizeQuery $partition
+        $SizeQueries['1:2'] = $entry
+        $job = [powershell]::Create().AddScript({ param($s) Start-Sleep -Milliseconds 500; $s.Status }).AddArgument($Sync)
+        $peek = $job.BeginInvoke()
+        [void](Get-SupportedSize $partition -Join)
+        $seen = $job.EndInvoke($peek) | Select-Object -First 1
+        $job.Dispose()
+        $seen | Should -BeLike 'Asking Windows how much room drive D: can give up*'
+        $Sync.Status | Should -Be 'Checking the ISO file...'
+    }
+}
+
+Describe 'Get-ShrinkBlocker' {
+    It 'reads the event from an answer just had, without asking again' {
+        $SizeAnswered['1:2'] = Get-Date
+        Mock Get-SupportedSize { }
+        Mock Get-WinEvent { [pscustomobject]@{ Message = 'The last unmovable file appears to be: \pagefile.sys::$DATA' } }
+        Get-ShrinkBlocker (New-TestPartition) | Should -Be '\pagefile.sys'
+        Should -Invoke Get-SupportedSize -Times 0 -Exactly
+    }
+    It 'asks when the last answer is older' {
+        $SizeAnswered['1:2'] = (Get-Date).AddMinutes(-5)
+        Mock Get-SupportedSize { }
+        Mock Get-WinEvent { [pscustomobject]@{ Message = 'The last unmovable file appears to be: \hiberfil.sys::$DATA' } }
+        Get-ShrinkBlocker (New-TestPartition) | Should -Be '\hiberfil.sys'
+        Should -Invoke Get-SupportedSize -Times 1 -Exactly -ParameterFilter { $Join }
+    }
+}
