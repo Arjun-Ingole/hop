@@ -99,6 +99,8 @@ function Assert-IsoTriedThere($Distro, $Iso, [switch]$FullDisk, [switch]$SecondD
     if ($FullDisk) {
         $file = $Distro.FullDisk.UntriedFile
         $reason = "hop hasn't tried replacing Windows with this version of $($Distro.Name), so it can't say it would work. Nothing has been changed. You can still install it next to Windows."
+        $needed = $Distro.FullDisk.RequiredFile
+        if ($needed -and -not (Test-Path -LiteralPath (Join-Path "$($Iso.Letter):\" $needed))) { throw $reason }
     } elseif ($SecondDisk -and $Distro.SecondDisk) {
         $file = $Distro.SecondDisk.UntriedFile
         $reason = "hop hasn't tried this version of $($Distro.Name) on a second disk, so it can't say it would work. Nothing has been changed. Choose a drive on the disk Windows is on."

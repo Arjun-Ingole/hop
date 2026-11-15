@@ -37,7 +37,8 @@ switch ($Action) {
             # Read-Iso refuses a menu whose kernel it can't find, as it would if the kernel were a link.
             Kernel      = $kernel
             KernelFound = [bool]($kernel -and (Test-Path -LiteralPath ($kernel -replace '\\', '/')))
-            FullDiskUntried = [bool]($distro.FullDisk.UntriedFile -and (Test-Path -LiteralPath (Join-Path $root ($distro.FullDisk.UntriedFile -replace '\\', '/'))))
+            FullDiskUntried = [bool](($distro.FullDisk.UntriedFile -and (Test-Path -LiteralPath (Join-Path $root ($distro.FullDisk.UntriedFile -replace '\\', '/')))) -or
+                ($distro.FullDisk.RequiredFile -and -not (Test-Path -LiteralPath (Join-Path $root ($distro.FullDisk.RequiredFile -replace '\\', '/')))))
         } | ConvertTo-Json -Depth 3
     }
     'boot' {

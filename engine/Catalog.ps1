@@ -111,15 +111,38 @@ function Get-ArchisoBoot([string[]]$Configs) {
 # with 8 GB, and 4.5.0-rc3 with 4 GB.
 $OmarchyRootImage = 'arch\x86_64\omarchy-root.img.zst'   # what 4.5's installer unpacks, which 4.0 didn't have
 
+# One command each, run in this order as the live system starts, and the rest skipped if one fails. GRUB escapes
+# quotes inside quotes, so no shell.
+function Get-OmarchyRun([string[]]$Commands) { @($Commands | ForEach-Object { "`"systemd.run=$_`"" }) -join ' ' }
+
+$OmarchyKeepFolder = @(
+    'mkdir -p /run/hop'
+    'mount --bind /run/archiso/bootmnt/arch /run/hop'
+    'umount -l /run/archiso/bootmnt'
+    'mkdir -p /run/archiso/bootmnt/arch'
+    'mount --bind /run/hop /run/archiso/bootmnt/arch')
+
+# For replacing Windows, nothing may stay open on the disk. The live system copies itself to memory and lets go, which
+# 4.5's own menu turns off with copytoram=n, so that goes. Its installer still wants its root image where the disc had
+# it, so that's copied to memory too, with its checksum, and the partition is let go again. Together they're about the
+# ISO's size, which is what hop asks for in memory, plus room to run.
+$OmarchyCopyImage = @(
+    'mkdir -p /run/hop /run/archiso/bootmnt/arch'
+    'mount -t tmpfs -o size=16g tmpfs /run/archiso/bootmnt/arch'
+    'mkdir -p /run/archiso/bootmnt/arch/x86_64'
+    "mount -o ro /dev/disk/by-label/$LiveLabel /run/hop"
+    'cp /run/hop/arch/x86_64/omarchy-root.img.zst /run/hop/arch/x86_64/omarchy-root.img.zst.sha256 /run/archiso/bootmnt/arch/x86_64/'
+    'umount /run/hop')
+
+function Get-OmarchyFullDiskBoot {
+    $boot = Get-FullDiskBoot 'archiso'
+    $boot.Edits['\s+copytoram=\S+'] = ''
+    $boot.Edits[[regex]::Escape((Get-OmarchyRun $OmarchyKeepFolder))] = (Get-OmarchyRun $OmarchyCopyImage)
+    $boot
+}
+
 function Get-OmarchyBoot {
-    # One command each, run in this order, and the rest skipped if one fails. GRUB escapes quotes inside quotes, so no shell.
-    $commands = @(
-        'mkdir -p /run/hop'
-        'mount --bind /run/archiso/bootmnt/arch /run/hop'
-        'umount -l /run/archiso/bootmnt'
-        'mkdir -p /run/archiso/bootmnt/arch'
-        'mount --bind /run/hop /run/archiso/bootmnt/arch')
-    $release = (@($commands | ForEach-Object { "`"systemd.run=$_`"" }) -join ' ') + ' systemd.run_success_action=none systemd.run_failure_action=none systemd.unit=multi-user.target systemd.wants=kernel-command-line.service'
+    $release = (Get-OmarchyRun $OmarchyKeepFolder) + ' systemd.run_success_action=none systemd.run_failure_action=none systemd.unit=multi-user.target systemd.wants=kernel-command-line.service'
     @{
         Live = 'arch/x86_64/airootfs.sfs'; LiveFiles = 'arch\x86_64\*'; GrubDir = 'boot/grub'; BootConfigs = @('boot/grub/grub.cfg')
         BootEdits = [ordered]@{ 'archisosearchuuid=\S+' = "archisolabel=$LiveLabel $release" }
@@ -145,8 +168,8 @@ function Get-FullDiskBoot([string]$Family) {
 # SecureBootOff: its boot loader or kernel isn't signed, as in Pop!_OS 24.04's ISO, so it can't start with Secure Boot on.
 # Live: a file its ISO must have, for systems that aren't Ubuntu-style. Empty means casper, which Read-Iso checks for.
 # LiveFiles: what goes on a second, exFAT partition because it's too big for FAT32, as a path pattern on the ISO.
-# UntriedFile: a file that means this ISO installs in a way hop hasn't tried there. FullDisk and SecondDisk can have
-#   their own, for an ISO tried next to Windows but not there. See Assert-IsoTriedThere.
+# UntriedFile: in FullDisk or SecondDisk, a file that means this ISO installs in a way hop hasn't tried there, though it
+#   has next to Windows. RequiredFile is the opposite: without it, hop hasn't tried it there. See Assert-IsoTriedThere.
 # NoBitLocker: its installer refuses a disk with BitLocker on it, even paused. See Assert-NoBitLocker.
 # MinGB: the least its installer accepts, if that's more than $MinLinuxGB.
 # Notes: anything more to say under its Steps.
@@ -286,9 +309,9 @@ function Get-Catalog {
                 'It should say **Install Omarchy in the {GB} GB of free space**, or close to that. Choose **Yes, install**. To install without encryption, press **Ctrl+C** first.'
                 'When it has finished, choose **Reboot Now**.')
             Notes = @("Afterwards this PC starts Omarchy, and its menu doesn't list Windows. To get to Windows, use your PC's boot menu, or run **limine-scan** in Omarchy to add it to the menu.")
-            # Seen with 4.0.6 only. 4.5's menu keeps it from copying itself to memory, and its installer then reads the disk it erases.
-            # OwnIsoOnly: hop's own download is 4.5 or newer, so that can't be offered there. See Test-OwnIsoOnly.
-            FullDisk = (Get-FullDiskBoot 'archiso') + @{ IsoGB = 7; UntriedFile = $OmarchyRootImage; OwnIsoOnly = $true; Steps = @(
+            # For 4.5, which hop downloads: see Get-OmarchyFullDiskBoot. 4.0 has no root image to copy, and hop only
+            # replaces Windows from its own download, so an ISO without one is refused.
+            FullDisk = (Get-OmarchyFullDiskBoot) + @{ IsoGB = 6.2; RequiredFile = $OmarchyRootImage; Steps = @(
                 'Press **Return** to start, then choose your keyboard.'
                 'Make your account. Your password also unlocks the disk if Omarchy encrypts it. Name, email and hostname can be left empty.'
                 'Under **Select install disk**, choose **{DISK}**. Leave any other drive alone.'
