@@ -137,7 +137,7 @@ Describe 'Memory for the copy' {
     }
     It 'refuses what would fit but leave no room, with a plain reason' {
         $reason = Get-FullDiskMemoryBlocker (New-Offered) ([int64]12GB + 1)
-        $reason | Should -BeLike '*at least 17 GB of memory*Test OS*This PC has 16 GB*next to Windows*'
+        $reason | Should -BeLike '*at least 16.1 GB of memory*Test OS*Windows can use 16.0 GB on this PC*next to Windows*'
     }
 }
 
@@ -159,7 +159,7 @@ Describe 'Get-FullDiskBlocker' {
     }
     It 'refuses too little memory before anything is downloaded' {
         Mock Get-MemoryBytes { [int64]8GB }
-        Get-FullDiskBlocker (New-Offered) | Should -BeLike '*at least 10 GB of memory*'
+        Get-FullDiskBlocker (New-Offered) | Should -BeLike '*at least 10.0 GB of memory*Windows can use 8.0 GB*'
     }
     It 'passes on what stops hop using C: at all' {
         Mock Get-DriveBlocker { 'The Windows disk uses the old MBR layout.' }

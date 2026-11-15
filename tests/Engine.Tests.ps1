@@ -126,13 +126,17 @@ Describe 'Resolve-Download' {
                 [pscustomobject]@{ version = '44'; arch = 'aarch64'; variant = 'Workstation'; link = 'https://x/arm.iso'; sha256 = 'c'; size = '1' }
                 [pscustomobject]@{ version = '44'; arch = 'x86_64'; variant = 'KDE'; link = 'https://x/kde.iso'; sha256 = 'd'; size = '1' }
                 [pscustomobject]@{ version = '9'; arch = 'x86_64'; variant = 'Workstation'; link = 'https://x/old.iso'; sha256 = 'e'; size = '1' }
-                [pscustomobject]@{ version = '44'; arch = 'x86_64'; variant = 'Workstation'; link = 'https://x/44.iso'; sha256 = 'f'; size = '2851612672' }
+                [pscustomobject]@{ version = '44'; arch = 'x86_64'; variant = 'Workstation'; link = 'https://x/44.iso'; sha256 = ('f' * 64); size = '2851612672' }
             )
         }
         $download = Resolve-Download (Get-Catalog | Where-Object Id -eq 'fedora')
         $download.Url | Should -Be 'https://x/44.iso'
-        $download.Sha256 | Should -Be 'f'
+        $download.Sha256 | Should -Be ('f' * 64)
         $download.Size | Should -Be 2851612672
+    }
+    It 'stops when Fedora''s list has no checksum for it, and doesn''t go on without one' {
+        Mock Invoke-RestMethod { , @([pscustomobject]@{ version = '44'; arch = 'x86_64'; variant = 'Workstation'; link = 'https://x/44.iso'; size = '2851612672' }) }
+        { Resolve-Download (Get-Catalog | Where-Object Id -eq 'fedora') } | Should -Throw '*checksum*'
     }
     It 'skips an Ultramarine version with no ISO yet, and reads its checksum file''s odd path' {
         Mock Get-WebText { 'href="../" href="44/" href="45/"' } -ParameterFilter { $Url -like '*/isos/ultramarine/' }
@@ -2138,7 +2142,7 @@ Describe 'Assert-EspRoom' {
         Mock Write-Log {}
         Mock Get-OwnLoaderBytes { [int64]0 }
         $err = try { Assert-EspRoom $esp $source 2000000000; $null } catch { $_.Exception.Message }
-        $err | Should -BeLike '*too full*Other boot files there: EFI\ubuntu (12 MB), EFI\Dell (3 MB).*'
+        $err | Should -BeLike '*too full*The biggest other folders there: EFI\ubuntu (12 MB), EFI\Dell (3 MB).*no longer installed*'
         $err | Should -Not -BeLike '*Microsoft*'
         $err | Should -Not -BeLike '*EFI\hop*'
         Should -Invoke Write-Log -ParameterFilter { $Message -like 'EFI partition: EFI\Microsoft 30.0 MB, EFI\hop 20.0 MB, EFI\ubuntu 12.0 MB, EFI\Dell 3.0 MB' }
@@ -2150,7 +2154,7 @@ Describe 'Assert-EspRoom' {
         Mock Write-Log {}
         $err = try { Assert-EspRoom $esp $source 2000000000; $null } catch { $_.Exception.Message }
         $err | Should -BeLike '*too full*Windows'' own startup files*'
-        $err | Should -Not -BeLike '*Remove boot files*'
+        $err | Should -Not -BeLike '*no longer installed*'
     }
     It 'keeps room for the files Anaconda doesn''t notice failing to copy' {
         foreach ($id in 'fedora', 'ultramarine') { (Get-Catalog | Where-Object Id -eq $id).EspLinuxMB | Should -BeGreaterOrEqual 21 }
@@ -2538,8 +2542,15 @@ Describe 'Assert-SystemFitsDrive' {
     It 'leaves systems with steps for a second disk alone' {
         { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq 'ubuntu') 'gap:{disk-1}:1048576' } | Should -Not -Throw
     }
-    It 'lets <id> onto a second disk, having seen it install there' -ForEach @(@{ id = 'omarchy' }, @{ id = 'fedora' }, @{ id = 'ultramarine' }, @{ id = 'arch' }) {
+    It 'lets <id> onto a second disk, having seen it install there' -ForEach @(@{ id = 'fedora' }, @{ id = 'ultramarine' }, @{ id = 'arch' }) {
         { Assert-SystemFitsDrive (Get-Catalog | Where-Object Id -eq $id) 'gap:{disk-1}:1048576' } | Should -Not -Throw
+    }
+    It 'lets Omarchy onto a second disk only from someone''s own ISO, and says so before its own download' {
+        $omarchy = Get-Catalog | Where-Object Id -eq 'omarchy'
+        { Assert-SystemFitsDrive $omarchy 'gap:{disk-1}:1048576' 'D:\isos\omarchy-4.0.6.iso' } | Should -Not -Throw
+        { Assert-SystemFitsDrive $omarchy 'gap:{disk-1}:1048576' '' } | Should -Throw '*second disk*'
+        { Assert-SystemFitsDrive $omarchy '' '' } | Should -Not -Throw
+        Get-FullDiskBlocker $omarchy | Should -BeLike '*older Omarchy than the one it downloads*'
     }
 }
 

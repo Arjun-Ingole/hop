@@ -165,8 +165,17 @@ Describe 'Whether the restart into the shrink tool has happened' {
     BeforeAll { $ShrinkStatePath = Join-Path $TestDrive 'shrink-phase.json' }
     BeforeEach {
         $boot = [datetime]::SpecifyKind([datetime]'2026-11-09T05:00:00', 'Local')
-        Write-StateFile $ShrinkStatePath (@{ Id = 'a'; BootedBefore = $boot.ToUniversalTime().ToString('o') } | ConvertTo-Json)
+        Write-StateFile $ShrinkStatePath (@{ Id = 'a'; BootNumber = 7; BootedBefore = $boot.ToUniversalTime().ToString('o') } | ConvertTo-Json)
         Mock Read-ShrinkResult { }
+    }
+    It 'takes away a set-up that stopped before its startup entry was made, and offers nothing to restart into' {
+        Write-StateFile $ShrinkStatePath (@{ Id = 'a'; BootNumber = $null; BootedBefore = $boot.ToUniversalTime().ToString('o') } | ConvertTo-Json)
+        Mock Get-LastBoot { $boot }
+        Mock Clear-OfflineShrink { }
+        Mock Clear-ShrinkTasks { }
+        Get-ShrinkPhase | Should -BeNullOrEmpty
+        Should -Invoke Clear-OfflineShrink -Times 1 -Exactly
+        $ShrinkStatePath | Should -Not -Exist
     }
     It 'waits while Windows hasn''t restarted since, and is done once it has' {
         Mock Get-LastBoot { $boot }
