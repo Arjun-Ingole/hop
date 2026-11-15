@@ -1764,8 +1764,14 @@ Describe 'Your own copy of a system hop knows' {
         @{ file = 'omarchy-4.0.6.iso'; id = 'omarchy' }, @{ file = 'archlinux-2026.10.01-x86_64.iso'; id = 'arch' }, @{ file = 'cachyos-desktop-linux-260809.iso'; id = 'cachyos' },
         @{ file = 'Fedora-Workstation-Live-44.iso'; id = 'fedora' }, @{ file = 'debian-live-13.7.0-amd64-gnome.iso'; id = 'debian' }
     ) { (Get-Distro 'custom' "D:\isos\$file").Id | Should -Be $id }
+    It 'gives someone''s own <file> the route its installer needs' -ForEach @(
+        @{ file = 'linuxmint-22.3-cinnamon-64bit.iso'; id = 'mint-cinnamon' }, @{ file = 'linuxmint-22.3-xfce-64bit.iso'; id = 'mint-xfce' },
+        @{ file = 'Zorin-OS-18.1-Core-64-bit.iso'; id = 'zorin' }, @{ file = 'elementaryos-8.1-stable.20251201.iso'; id = 'elementary' },
+        @{ file = 'pop-os_24.04_amd64_generic_12.iso'; id = 'pop' }, @{ file = 'lubuntu-26.04.1-desktop-amd64.iso'; id = 'lubuntu' },
+        @{ file = 'ubuntu-unity-26.04-desktop-amd64.iso'; id = 'ubuntu-unity' }
+    ) { (Get-Distro 'custom' "D:\isos\$file").Id | Should -Be $id }
     It 'treats anything else as Ubuntu-style' {
-        (Get-Distro 'custom' 'D:\isos\zorin-17.iso').Id | Should -Be 'custom'
+        (Get-Distro 'custom' 'D:\isos\kubuntu-remix.iso').Id | Should -Be 'custom'
     }
 }
 
@@ -2441,7 +2447,7 @@ Describe 'Systems whose installer can''t use free space on its own disk' {
     It 'tells the window, and refuses nothing else' {
         $engine = New-Object Hop.Engine
         try {
-            (@($engine.GetCatalog() | Where-Object Refused | ForEach-Object { $_.Id } | Sort-Object) -join ',') | Should -Be (@(@($ubiquity | Where-Object { $_ -notin $UbiquityProven }) + @('cachyos', 'debian' | Where-Object { $_ -notin $CalamaresProven }) | Sort-Object) -join ',')
+            (@($engine.GetCatalog() | Where-Object Refused | ForEach-Object { $_.Id } | Sort-Object) -join ',') | Should -Be (@(@($ubiquity | Where-Object { $_ -notin $UbiquityProven }) + @('cachyos', 'debian', 'lubuntu', 'ubuntu-unity' | Where-Object { $_ -notin $CalamaresProven }) | Sort-Object) -join ',')
             @($engine.GetCatalog() | Where-Object WindowsDiskOnly | ForEach-Object { $_.Id } | Sort-Object) | Should -Be @(@('cachyos', 'debian') + $UbiquityProven | Sort-Object)
         } finally { $engine.Dispose() }
     }

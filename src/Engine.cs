@@ -22,6 +22,7 @@ namespace Hop
         public bool SecureBootOff;      // can't start with Secure Boot on
         public bool FullDisk;           // shown to work replacing Windows
         public bool WindowsDiskOnly;    // its steps are only for the disk Windows is on
+        public bool SecondDiskOwnIsoOnly;   // a second disk has only been seen with a version older than hop downloads
         public int MinGB;               // the least its installer accepts, if more than hop's own least
         public string Refused;          // why it can't go next to Windows or on a second disk
         public System.Drawing.Color Color;
@@ -278,6 +279,13 @@ namespace Hop
             catch (Exception) { }
         }
 
+        static bool OwnIsoOnly(PSObject distro, string where)
+        {
+            object value = distro.Properties[where]?.Value;
+            if (value is PSObject wrapped) value = wrapped.BaseObject;
+            return value is IDictionary table && table.Contains("OwnIsoOnly") && LanguagePrimitives.IsTrue(table["OwnIsoOnly"]);
+        }
+
         Task<Collection> InvokeAsync(string command, IDictionary parameters = null) =>
             Task.Run(() => Invoke(command, parameters));
 
@@ -292,8 +300,10 @@ namespace Hop
                 Logo = Get<string>(o, "Logo"),
                 SecureBootOff = Get<bool>(o, "SecureBootOff"),
                 Refused = Get<string>(o, "Refused"),
-                FullDisk = o.Properties["FullDisk"]?.Value != null,
+                // Replacing Windows only ever uses hop's own download, so a system seen there only from an older ISO isn't offered it.
+                FullDisk = o.Properties["FullDisk"]?.Value != null && !OwnIsoOnly(o, "FullDisk"),
                 WindowsDiskOnly = o.Properties["Steps"]?.Value != null && o.Properties["SecondDisk"]?.Value == null,
+                SecondDiskOwnIsoOnly = OwnIsoOnly(o, "SecondDisk"),
                 MinGB = Get<int>(o, "MinGB"),
                 Color =System.Drawing.ColorTranslator.FromHtml(Get<string>(o, "Color")),
             }).ToList();

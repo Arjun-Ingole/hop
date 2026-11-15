@@ -115,8 +115,9 @@ namespace Hop
             try
             {
                 string folder = OwnFolder();
-                string state = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "hop", "make-room.json");
-                if (folder == null || File.Exists(state)) return;
+                // The shrink tool's tasks start from the same copy, until hop has been back to see what it did.
+                string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "hop");
+                if (folder == null || File.Exists(Path.Combine(data, "make-room.json")) || File.Exists(Path.Combine(data, "shrink.json"))) return;
                 string cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
                 Process.Start(new ProcessStartInfo(cmd, $"/c ping -n 6 127.0.0.1 >nul & rmdir /s /q \"{folder}\"")
                 {

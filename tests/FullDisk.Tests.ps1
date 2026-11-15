@@ -434,7 +434,7 @@ Describe 'Invoke-Install with -FullDisk' {
         { Invoke-Install 'ubuntu' 'C:\u.iso' 60 '' '' } | Should -Throw '*the copy failed*'
         $script:atCleanup.Shrunk | Should -BeFalse
         $script:atCleanup.Before | Should -BeNullOrEmpty
-        Should -Invoke Write-StateFile -Times 1 -Exactly -ParameterFilter { $Path -eq $AsidePath -and $Text -like '*470*' }
+        Should -Invoke Write-StateFile -Times 1 -Exactly -ParameterFilter { $Path -eq $AsidePath -and $Text -like "*$([int64]470GB)*" }
     }
     It 'asks for two free drive letters before the disk changes' {
         Mock Assert-DriveLetters { throw 'no letters' }

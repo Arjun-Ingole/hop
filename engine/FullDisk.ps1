@@ -19,12 +19,16 @@ function Get-FullDiskMemoryBlocker($Distro, [int64]$IsoBytes) {
     $needed = $IsoBytes + $FullDiskMemoryRoom
     $memory = Get-MemoryBytes
     if ($memory -ge $needed) { return }
-    "Replacing Windows needs at least $([int][math]::Ceiling($needed / 1GB)) GB of memory, because $($Distro.Name) has to copy itself there first and still have room to run. This PC has $(Get-MemoryGB) GB. You can still install it next to Windows."
+    # To one decimal, as Windows counts it: rounded to whole GB, "needs 8 GB, this PC has 8 GB" could be both true and a refusal.
+    $one = [Globalization.CultureInfo]::InvariantCulture
+    "Replacing Windows needs at least $(([math]::Ceiling($needed / 1GB * 10) / 10).ToString('0.0', $one)) GB of memory, because $($Distro.Name) has to copy itself there first and still have room to run. Windows can use $(([math]::Floor($memory / 1GB * 10) / 10).ToString('0.0', $one)) GB on this PC. You can still install it next to Windows."
 }
 
 # Why Windows can't be replaced with this system on this PC, in plain words, or nothing.
 function Get-FullDiskBlocker($Distro) {
     if (-not $Distro.FullDisk) { return "hop hasn't shown that replacing Windows works with $($Distro.Name), so it doesn't offer it. You can still install it next to Windows." }
+    # Replacing Windows is only offered with hop's own download, which is newer than the version it was seen with.
+    if ($Distro.FullDisk.OwnIsoOnly) { return "hop has only seen replacing Windows work with an older $($Distro.Name) than the one it downloads, so it doesn't offer it. You can still install it next to Windows." }
     if ($Distro.SecureBootOff -and (Test-SecureBoot)) { return "$($Distro.Name) doesn't start with Secure Boot on. Turn off Secure Boot in the BIOS and open hop again." }
     $windows = Get-WindowsPartition
     $disk = Get-Disk -Number $windows.DiskNumber
@@ -40,7 +44,7 @@ function Get-FullDiskBlocker($Distro) {
     $sameGB = Get-DiskGB $disk
     $twin = @(Get-Disk | Where-Object { $_.Number -ne $disk.Number -and (Get-DiskLabel $_) -eq (Get-DiskLabel $disk) -and (Get-DiskGB $_) -eq $sameGB })
     if ($twin.Count) { return "This PC has more than one disk called $(Get-DiskLabel $disk) ($sameGB GB). The Linux installer's list wouldn't show which of them holds Windows, and the wrong one could be erased. Disconnect the other one first, or install Linux next to Windows." }
-    Get-FullDiskMemoryBlocker $Distro ([int64]$Distro.FullDisk.IsoGB * 1GB)
+    Get-FullDiskMemoryBlocker $Distro ([int64]([double]$Distro.FullDisk.IsoGB * 1GB))
 }
 
 

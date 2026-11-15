@@ -17,7 +17,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         $LinuxGB = 0
         $strategy = 'freespace'
     } else {
-        Assert-SystemFitsDrive $distro $Target
+        Assert-SystemFitsDrive $distro $Target $IsoPath
         Assert-SystemFitsSpace $distro $LinuxGB
         Assert-NoBitLocker $distro $Target
     }
@@ -67,7 +67,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         }
         # What Make room set aside after this drive is the drive's to have back, as if this install had shrunk it.
         $aside = Read-RoomAside
-        if ($aside -and -not $FullDisk -and [int]$aside.DiskNumber -eq [int]$plan.DiskNumber -and [int64]$aside.Offset -eq [int64]$plan.TargetOffset) {
+        if ($aside -and -not $FullDisk -and (Get-AsideDiskNumber $aside) -eq [int]$plan.DiskNumber -and [int64]$aside.Offset -eq [int64]$plan.TargetOffset) {
             $state.WindowsShrunk = $true
             $state | Add-Member -NotePropertyName SizeBeforeShrink -NotePropertyValue ([int64]$aside.SizeBefore) -Force
         }
@@ -143,6 +143,8 @@ function Get-StartupInfo {
     Restore-InstallerOrder (Read-State)
     # A shrink tool with no record of it, left by a crash, would shrink the drive if someone chose it from the boot menu.
     if (-not (Test-Path -LiteralPath $ShrinkStatePath)) {
+        # Its folder on the EFI partition, when taking it away failed once: nothing else would try again.
+        if (Test-Path -LiteralPath $ShrinkLeftPath) { Write-Log 'The shrink tool''s folder may still be on the EFI partition, so hop looks again.'; Clear-OfflineShrink }
         try { if (@(Get-ShrinkEntries).Count) { Write-Log 'Found the shrink tool with no record of it, so it goes.'; Clear-OfflineShrink } } catch { Write-Log "Could not look for the shrink tool: $($_.Exception.Message)" }
     }
     $status = Get-InstallStatus

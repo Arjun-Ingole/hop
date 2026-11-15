@@ -414,6 +414,16 @@ function Read-RoomAside {
     try { Get-Content -LiteralPath $AsidePath -Raw | ConvertFrom-Json } catch { Write-Log "Could not read what Make room set aside: $($_.Exception.Message)" }
 }
 
+# Which disk it's on now. Its ID is what's kept, because Windows can number disks differently at each start. A record
+# from before that was kept has only the number. -1 when that disk isn't there.
+function Get-AsideDiskNumber($Aside) {
+    if (-not $Aside.DiskGuid) { return [int]$Aside.DiskNumber }
+    $disk = Get-Disk | Where-Object Guid -eq $Aside.DiskGuid | Select-Object -First 1
+    if ($disk) { [int]$disk.Number } else { -1 }
+}
+
+function Get-DiskGuidOf([int]$Number) { try { [string](Get-Disk -Number $Number -ErrorAction Stop).Guid } catch { $null } }
+
 function Remove-RoomAside { Remove-Item -LiteralPath $AsidePath -Force -ErrorAction SilentlyContinue }
 
 # Moving files only counts once the drive is smaller. Until then the paging file, hibernation or a new restore
@@ -434,9 +444,9 @@ function Set-RoomAside($State) {
             if ($take -ge 1GB) {
                 # Written first, so a crash straight after the shrink still knows the space is this drive's.
                 $earlier = Read-RoomAside
-                $before = if ($earlier -and [int64]$earlier.Offset -eq [int64]$c.Offset -and [int]$earlier.DiskNumber -eq [int]$c.DiskNumber) { [int64]$earlier.SizeBefore } else { [int64]$c.Size }
+                $before = if ($earlier -and [int64]$earlier.Offset -eq [int64]$c.Offset -and (Get-AsideDiskNumber $earlier) -eq [int]$c.DiskNumber) { [int64]$earlier.SizeBefore } else { [int64]$c.Size }
                 Write-StateFile $AsidePath (ConvertTo-Json -InputObject ([pscustomobject]@{
-                    DiskNumber = [int]$c.DiskNumber; Offset = [int64]$c.Offset; SizeBefore = $before; Drive = $room
+                    DiskNumber = [int]$c.DiskNumber; DiskGuid = (Get-DiskGuidOf $c.DiskNumber); Offset = [int64]$c.Offset; SizeBefore = $before; Drive = $room
                     WantedLinuxGB = [int]$State.WantedLinuxGB; Saved = (Get-Date).ToString('s')
                 }))
                 Set-Status ('Setting aside {0:N0} GB for Linux...' -f ($take / 1GB))
@@ -481,7 +491,7 @@ function Get-RoomTriedLetter {
 function Get-RoomAside {
     $aside = Read-RoomAside
     if (-not $aside) { return }
-    $c = Get-Partition -DiskNumber $aside.DiskNumber -ErrorAction SilentlyContinue | Where-Object { [int64]$_.Offset -eq [int64]$aside.Offset } | Select-Object -First 1
+    $c = Get-Partition -DiskNumber (Get-AsideDiskNumber $aside) -ErrorAction SilentlyContinue | Where-Object { [int64]$_.Offset -eq [int64]$aside.Offset } | Select-Object -First 1
     $tail = if ($c) { Get-TailFree $c } else { 0 }
     if ($tail -lt 1GB -or [int64]$c.Size -ge [int64]$aside.SizeBefore) { Remove-RoomAside; return }
     [pscustomobject]@{ GB = [int][math]::Floor($tail / 1GB); WantedLinuxGB = [int]$aside.WantedLinuxGB; Letter = ($aside.Drive -replace ':', '') }

@@ -8,6 +8,10 @@ function Invoke-Bcdedit {
 
 # Opens Windows' EFI system partition for a moment.
 function Use-Esp([scriptblock]$Action) {
+    # It can have a letter already: someone gave it one, or hop was stopped while it had it open. Windows won't
+    # give it a second, so that one is used, and stays.
+    $has = try { Get-LetterOf (Get-WindowsEsp) } catch { '' }
+    if ($has -and (Test-Path "$($has):\EFI")) { return (& $Action "$($has):\") }
     # A drive with nothing in it, such as an empty card reader, has a letter even though its path isn't there.
     $taken = @([IO.DriveInfo]::GetDrives() | ForEach-Object { $_.Name[0] })
     $letter = [char[]](90..68) | Where-Object { $_ -notin $taken -and -not (Test-Path "$($_):\") } | Select-Object -First 1
@@ -99,8 +103,9 @@ function Assert-EspRoom([string]$Root, [string]$Source, [int]$LinuxMB = 0, $Dist
         $folders = @(Get-EspFolderSizes $Root)
         Write-Log ('EFI partition: ' + (@($folders | ForEach-Object { '{0} {1:N1} MB' -f $_.Name, ($_.Bytes / 1MB) }) -join ', '))
         $others = @($folders | Where-Object { $_.Name -notin @('EFI\Microsoft', 'EFI\Boot') -and $_.Name -notin $EspFolders } | Select-Object -First 3)
+        # A folder may be the PC maker's and not a system's, so this says what's there and not whose it is.
         $advice = if ($others.Count) {
-            ' Other boot files there: ' + (@($others | ForEach-Object { '{0} ({1:N0} MB)' -f $_.Name, [math]::Ceiling($_.Bytes / 1MB) }) -join ', ') + '. Remove boot files from other systems and try again.'
+            ' The biggest other folders there: ' + (@($others | ForEach-Object { '{0} ({1:N0} MB)' -f $_.Name, [math]::Ceiling($_.Bytes / 1MB) }) -join ', ') + '. If one belongs to a system that''s no longer installed, removing it makes room.'
         } else { ' What fills it is Windows'' own startup files, so there are no other systems'' files to remove.' }
         throw ('The EFI system partition is too full: the startup files need {0:N0} MB and {1:N0} MB is free.{2}' -f [math]::Ceiling($needed / 1MB), [math]::Floor($free / 1MB), $advice)
     }

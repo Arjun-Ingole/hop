@@ -4,6 +4,30 @@
 
 ### Fixed
 
+- **A full audit, with every fix below found by reading the code and none of them seen on a real PC.** None could lose data or stop a PC starting.
+  - Continue on a Make room notice left hop on "Checking this PC" for good.
+  - The slider cut the size chosen when only hop's shrink tool could reach it, so the tool shrank for less than the screen said.
+  - A failed install gave back the space Make room or the shrink tool had set aside, so it had to be made again.
+  - Remove could be started twice. Closing hop while it only read the PC again said "hop is changing the disk". A failed second look after work that succeeded was reported as that work failing.
+  - A drive is now measured before anything is offered on it, and isn't measured at all when hop opens to Restart or Undo.
+  - With another Linux on the disk, the Make room link was missing.
+  - Clean up with no record no longer grows C: over free space hop's partitions were never in.
+  - hop checks for two free drive letters before the disk changes. An EFI partition that already has a letter is used as it is.
+  - "Try another way" no longer leaves the one-time start set when the firmware refuses the new order.
+  - Make room's set-aside space is now recorded by its disk's ID, not its number, which Windows can change between starts.
+  - The shrink tool: its tasks' copy of hop is no longer deleted while they need it, its folder on the EFI partition is looked for again if it couldn't be removed, a set-up that stopped part way is taken away instead of offered, and hibernation comes back before the drive's files are counted.
+  - A missing checksum from Pop!_OS's or Fedora's own list now stops the download instead of skipping the check.
+  - The memory check for replacing Windows used sizes rounded to whole GB, so an 8 GB PC could be refused elementary OS or Ultramarine with "needs 8 GB, this PC has 8 GB".
+  - Built-in eMMC storage is no longer called a USB, removable or network drive.
+
+### Changed
+
+- **Lubuntu and Ubuntu Unity are refused next to Windows for now.** They use Calamares, not Ubuntu's installer, hop's steps for Ubuntu Unity named choices its installer doesn't have, and neither has been seen starting afterwards. Debian and CachyOS waited for the same proof.
+- **Omarchy no longer offers replacing Windows, or a second disk with hop's own download.** Both were only seen with 4.0, and every version hop downloads is newer, so both were refused after a 6 GB download. A second disk still works with your own 4.0 ISO.
+- **Your own ISO of Linux Mint, Zorin OS, elementary OS or Pop!_OS now gets that system's own route**, by its file name. As an ordinary Ubuntu-style ISO, Mint's and Zorin OS's installer couldn't make partitions on the disk it started from.
+
+### Fixed
+
 - **hop could sit on "Looking at the drive and the startup menu" for a very long time** (issue #17). Opening hop waited for Windows to work out how far C: shrinks, which can take minutes, then asked again for the file in the way, and again when C: was chosen, each time with a 5-minute limit, and a question it gave up on went on running behind the next. Now there's only ever one question per drive. Opening hop waits 20 seconds for it, then goes on with C:'s estimate while Windows carries on, and choosing C: waits for that same answer, within the same 5 minutes. The file in the way is read from the answer just had. While it waits, the screen says what for. Make room and Install still ask afresh, after any earlier question has finished, so their figures are never from before the drive changed. A copied report no longer waits for it at all.
 
 - **CachyOS and Debian could be stopped by "The EFI system partition is too full" when there was room.** hop kept 25 MB free there for their installers, as for Fedora's, but in a virtual PC CachyOS's added one 168 KB file and Debian's about 5 MB. It now keeps 4 MB for CachyOS and 8 MB for Debian. hop also no longer copies an ISO's 32-bit startup files, such as `BOOTIA32.EFI`, to that partition: the 64-bit loader it starts never uses them. And for Arch it now counts the file it really copies there, the ISO's EFI Shell. When the partition really is too full, hop now says which other systems' folders take the most room there, and logs every folder's size.

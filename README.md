@@ -19,8 +19,8 @@ first.
 
 ## What it does
 
-- **Downloads from official sources.** It gets the ISO from the project's own server and verifies its
-  checksum where the project publishes one. You can also use an ISO you already have.
+- **Downloads from official sources.** It gets the ISO from the project's own server, or the mirror the project
+  sends people to, and verifies its checksum where the project publishes one. You can also use an ISO you already have.
 - **Makes room safely.** It checks your PC first, and nothing on the disk changes until those checks pass.
 - **Frees space that's stuck.** A drive can show plenty free and still refuse to shrink, because of files Windows can't
   move. Make room clears them in one click and puts your settings back afterwards.
@@ -30,17 +30,19 @@ first.
 - **Gets you unstuck.** If the PC goes back to Windows, reopening hop explains why and can restart into the BIOS.
 - **Cleans up after itself.** Undo gives the space back to the drive it came from, and it can also remove
   another Linux already on the drive.
-- **Can replace Windows entirely, for the systems where hop has seen it work:** Ubuntu, Xubuntu, Ubuntu Budgie, Ubuntu Cinnamon, Edubuntu, Ubuntu Studio, Zorin OS, Fedora Workstation, Ultramarine, elementary OS, Debian, Arch and Omarchy. It's a separate choice with its own warning, and you have to
+- **Can replace Windows entirely, for the systems where hop has seen it work:** Ubuntu, Xubuntu, Ubuntu Budgie, Ubuntu Cinnamon, Edubuntu, Ubuntu Studio, Zorin OS, Fedora Workstation, Ultramarine, elementary OS, Debian and Arch. It's a separate choice with its own warning, and you have to
   type ERASE. hop only makes the installer, which copies itself to memory so it can erase the disk it started
   from when you tell it to. It needs more memory than the ISO's size, and it's only offered for systems where
   hop has seen it erase a disk and start again afterwards.
 
-**Systems:** elementary OS, Ubuntu and its flavours (Budgie, Xubuntu, Lubuntu, Cinnamon, Unity, Edubuntu,
+**Systems:** elementary OS, Ubuntu and its flavours (Budgie, Xubuntu, Cinnamon, Edubuntu,
 Studio), Linux Mint, Pop!_OS, Zorin OS, Debian, Fedora Workstation, Ultramarine, CachyOS, Arch Linux and Omarchy.
 Other Ubuntu-based ISOs should work too, if you choose the file yourself. Kubuntu isn't
 supported, because its ISO has a file too big for FAT32. CachyOS, Arch, Omarchy and Pop!_OS need Secure Boot off.
 Omarchy also needs BitLocker fully off on its disk, not paused, and hop refuses until it is. hop won't turn it off for you.
-Debian, CachyOS, Linux Mint and Zorin OS can't go on a second disk yet.
+Debian, CachyOS, Linux Mint and Zorin OS can't go on a second disk yet, and Omarchy only from your own 4.0 ISO.
+Lubuntu and Ubuntu Unity are listed but refused for now: their installer is a different one, and hop hasn't seen
+them start afterwards.
 
 **Needs:** Windows 10 (1803 or newer) or 11, on a UEFI PC with a GPT disk, which is nearly every PC sold with
 them. Linux has to go on a disk inside the PC, not a USB drive.

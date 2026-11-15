@@ -41,7 +41,7 @@ Describe 'Get-DriveBlocker' {
         Get-DriveBlocker (New-TestDisk -Bus $bus) $null | Should -BeNullOrEmpty
     }
     It 'refuses a <bus> disk' -ForEach @(
-        @{ bus = 'USB'; says = '*USB*' }, @{ bus = 'SD'; says = '*removable*' }, @{ bus = 'MMC'; says = '*removable*' }, @{ bus = 'iSCSI'; says = '*network*' }
+        @{ bus = 'USB'; says = '*USB*' }, @{ bus = 'SD'; says = '*removable*' }, @{ bus = 'MMC'; says = '*eMMC*' }, @{ bus = 'iSCSI'; says = '*network*' }
         @{ bus = 'File Backed Virtual'; says = '*virtual*' }, @{ bus = 'Spaces'; says = '*Storage Spaces*' }, @{ bus = 'RAID'; says = '*RAID*' }
     ) {
         Get-DriveBlocker (New-TestDisk -Bus $bus) $null | Should -BeLike $says

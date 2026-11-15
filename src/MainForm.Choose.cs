@@ -142,7 +142,8 @@ namespace Hop
 
         bool HasDriveChoice => FullDiskOffered || startup.Drives.Count > 1 || (isoPath == null && startup.DownloadDrives.Count(d => d.FreeGB > IsoDownloadGB) > 1);
 
-        bool SecondDiskStops(DriveChoice drive) => selected != null && selected.WindowsDiskOnly && !drive.OnWindowsDisk;
+        bool SecondDiskStops(DriveChoice drive) => selected != null && !drive.OnWindowsDisk
+            && (selected.WindowsDiskOnly || (selected.SecondDiskOwnIsoOnly && isoPath == null));
 
         Run[] WhereLine(bool picker, Color brand)
         {

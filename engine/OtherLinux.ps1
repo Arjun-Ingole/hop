@@ -230,6 +230,6 @@ function Expand-Windows([string]$Target) {
     Resize-Partition -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber -Size $max
     # What Make room set aside there is the drive's again.
     $aside = Read-RoomAside
-    if ($aside -and [int]$aside.DiskNumber -eq [int]$c.DiskNumber -and [int64]$aside.Offset -eq [int64]$c.Offset) { Remove-RoomAside }
+    if ($aside -and (Get-AsideDiskNumber $aside) -eq [int]$c.DiskNumber -and [int64]$aside.Offset -eq [int64]$c.Offset) { Remove-RoomAside }
     Set-Status 'Done.' 100
 }

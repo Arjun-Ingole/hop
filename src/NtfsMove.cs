@@ -20,10 +20,10 @@ namespace Hop
         const int ErrorMoreData = 234, ErrorHandleEof = 38, ErrorInvalidParameter = 87;
         const int MaxFailedMoves = 64;   // a cluster that looked free can be taken by the time it's asked for
 
-        /// <summary>Moves each part of the stream past a fraction of the drive to the lowest free space before it. Says how many clusters moved.</summary>
-        public static long MoveDown(string letter, string stream, double aboveFraction) => MoveDown(letter, stream, aboveFraction, 0);
-
-        /// <summary>The same, stopping after so many seconds, 0 for none. What moved before then stays moved.</summary>
+        /// <summary>
+        /// Moves each part of the stream past a fraction of the drive to the lowest free space before it, stopping after so
+        /// many seconds, 0 for none. What moved before then stays moved. Says how many clusters moved.
+        /// </summary>
         public static long MoveDown(string letter, string stream, double aboveFraction, int seconds)
         {
             using (var volume = OpenVolume(letter))

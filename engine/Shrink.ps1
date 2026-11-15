@@ -11,6 +11,7 @@
 $ShrinkFolder = 'EFI\hop-shrink'   # on Windows' EFI partition
 $ShrinkFiles = @('shimx64.efi', 'grubx64.efi', 'vmlinuz', 'initrd.img')
 $ShrinkStatePath = Join-Path $StateDir 'shrink.json'
+$ShrinkLeftPath = Join-Path $StateDir 'shrink-left'   # its folder couldn't be taken off the EFI partition, so hop tries again when it opens
 $ShrinkCache = Join-Path $StateDir 'shrink-image'
 # Not hop's install marker, so nothing that tidies the installer's entries mistakes it for one, or leaves it.
 $ShrinkEntryMarker = '(hop shrink)'
@@ -164,7 +165,11 @@ function Clear-OfflineShrink {
             $path = Join-Path $root $ShrinkFolder
             if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force; Write-Log "Removed \$ShrinkFolder." }
         }
-    } catch { Write-Log "Could not remove \$ShrinkFolder from the EFI partition: $($_.Exception.Message)" }
+        Remove-Item -LiteralPath $ShrinkLeftPath -Force -ErrorAction SilentlyContinue
+    } catch {
+        Write-Log "Could not remove \$ShrinkFolder from the EFI partition: $($_.Exception.Message)"
+        try { Write-StateFile $ShrinkLeftPath (Get-Date).ToString('s') } catch { }
+    }
 }
 
 # The image's words, as a sentence of hop's.
@@ -190,6 +195,7 @@ function Read-ShrinkResult {
 # from there, hop finds what to take away.
 function Start-OfflineShrink([string]$Drive, [int]$WantedLinuxGB, [int64]$WantedBytes, [int64]$KeepFreeBytes = 0) {
     $room = Get-RoomDrive $Drive
+    Restore-RoomBeforeShrink
     $problem = Get-OfflineShrinkProblem $room $WantedBytes $KeepFreeBytes
     if ($problem) { throw $problem }
     Assert-FirmwareAccess
@@ -280,9 +286,9 @@ function Complete-OfflineShrink {
     if ($size -eq [int64]$state.NewSize) {
         # The earliest size is what Undo gives back, if Make room shrank it before this.
         $earlier = Read-RoomAside
-        $before = if ($earlier -and [int64]$earlier.Offset -eq [int64]$state.Offset -and [int]$earlier.DiskNumber -eq [int]$state.DiskNumber) { [int64]$earlier.SizeBefore } else { [int64]$state.Was }
+        $before = if ($earlier -and [int64]$earlier.Offset -eq [int64]$state.Offset -and (Get-AsideDiskNumber $earlier) -eq [int]$c.DiskNumber) { [int64]$earlier.SizeBefore } else { [int64]$state.Was }
         Write-StateFile $AsidePath (ConvertTo-Json -InputObject ([pscustomobject]@{
-            DiskNumber = [int]$c.DiskNumber; Offset = [int64]$c.Offset; SizeBefore = $before; Drive = $drive
+            DiskNumber = [int]$c.DiskNumber; DiskGuid = (Get-DiskGuidOf $c.DiskNumber); Offset = [int64]$c.Offset; SizeBefore = $before; Drive = $drive
             WantedLinuxGB = [int]$state.WantedLinuxGB; Saved = (Get-Date).ToString('s')
         }))
         Write-Log ('Drive {0} is {1:N1} GB now, and the space after it is set aside for Linux.' -f $drive, ($size / 1GB))
@@ -318,6 +324,15 @@ function Find-ShrinkPartition($State) {
 function Get-ShrinkPhase {
     $state = Read-ShrinkState
     if (-not $state) { return }
+    # hop was stopped while setting it up, before its startup entry was made. Nothing on the drive has changed,
+    # and there's nothing to restart into, so what's there goes.
+    if ($null -eq $state.BootNumber) {
+        Write-Log 'The shrink tool was only part set up, so hop took it away.'
+        Clear-OfflineShrink
+        Clear-ShrinkTasks $state
+        Remove-ShrinkState
+        return
+    }
     $before = [datetime]::MinValue
     $parsed = [datetime]::TryParse([string]$state.BootedBefore, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$before)
     $booted = try { (Get-LastBoot).ToUniversalTime() } catch { $null }
@@ -330,7 +345,7 @@ function Get-ShrinkPhase {
 # Restarts into the shrink tool that's already set up, after checking again what can have changed since.
 function Restart-IntoShrink {
     $state = Read-ShrinkState
-    if (-not $state) { throw 'hop''s shrink tool isn''t set up any more. Click Make room again.' }
+    if (-not $state -or $null -eq $state.BootNumber) { throw 'hop''s shrink tool isn''t set up any more. Click Make room again.' }
     if (Test-RestartPending) { throw 'Windows is waiting to restart for an update. Call off the shrink, let the update finish, then try again.' }
     if (Test-OnBattery) { throw 'Plug in the charger first. Losing power while the drive shrinks could damage it.' }
     if ((Test-BitLockerChanging $state.Drive.TrimEnd(':'))) { throw "Drive $($state.Drive) is being encrypted, and Linux can't shrink an encrypted drive. Call off the shrink." }
@@ -362,9 +377,17 @@ function Stop-OfflineShrink {
     Write-Log 'Called off shrinking the drive from outside Windows.'
 }
 
+# Windows' own way has been and fell short, so what Make room turned off has nothing left to wait for. It goes back
+# first, so the hibernation file counts among the drive's files: shrunk without it, the drive could be left with
+# no room for it to come back into.
+function Restore-RoomBeforeShrink {
+    try { Restore-RoomSettings } catch { Write-Log "Could not put Make room's settings back before the shrink: $($_.Exception.Message)" }
+}
+
 # What the screen lists before the restart. Throws why not, when it can't.
 function Get-OfflineShrinkSteps([string]$Drive, [int64]$WantedBytes, [int64]$KeepFreeBytes = 0) {
     $room = Get-RoomDrive $Drive
+    Restore-RoomBeforeShrink
     $problem = Get-OfflineShrinkProblem $room $WantedBytes $KeepFreeBytes
     if ($problem) { throw $problem }
     $c = Get-Partition -DriveLetter $room.TrimEnd(':')

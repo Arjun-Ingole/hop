@@ -97,6 +97,8 @@ function Get-DriveBlocker($Disk, $Partition, [switch]$Windows) {
     }
     if (-not $windowsDisk) {
         if ($Disk.BusType -eq 'RAID') { return "$name is in RAID mode, which most Linux installers can't see." }
+        # eMMC is soldered in, so it isn't any of what the next line says.
+        if ($Disk.BusType -eq 'MMC') { return "$name is eMMC storage, which hop hasn't been tried on as a second disk." }
         if ($Disk.BusType -notin $InternalBusTypes) { return "$name is a USB, removable or network drive. Linux has to go on a drive inside this PC." }
         $attachment = Get-DiskAttachment $Disk
         if ($attachment -eq 'external') { return "$name can be unplugged while the PC is running, as a Thunderbolt or USB4 drive can. Linux has to go on a drive inside this PC." }

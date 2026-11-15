@@ -62,9 +62,12 @@ function Get-ReturnedHelp {
 # partition" on the drive with free space, which a second disk hasn't got. A system that hasn't been seen
 # installing on a second disk has no SecondDisk steps, so it's refused rather than guessed at. Replacing
 # Windows isn't affected: its installer always goes on Windows' disk.
-function Assert-SystemFitsDrive($Distro, [string]$Target) {
+function Assert-SystemFitsDrive($Distro, [string]$Target, [string]$IsoPath) {
     if ($Distro.Refused) { throw $Distro.Refused }
-    if (-not $Distro.Steps -or $Distro.SecondDisk -or -not $Target) { return }
+    # OwnIsoOnly: seen there only with a version older than hop downloads, so only someone's own ISO can be, which
+    # Assert-IsoTriedThere then checks. Said here, before the download, and not after it.
+    $ownIsoOnly = $Distro.SecondDisk -and $Distro.SecondDisk.OwnIsoOnly -and -not $IsoPath
+    if (-not $Distro.Steps -or ($Distro.SecondDisk -and -not $ownIsoOnly) -or -not $Target) { return }
     if ((Resolve-Target $Target).Partition.DiskNumber -eq (Get-WindowsPartition).DiskNumber) { return }
     throw "hop hasn't got $($Distro.Name) to finish on a second disk yet. Choose a drive on the disk Windows is on, or another system."
 }

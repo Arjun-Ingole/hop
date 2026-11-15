@@ -61,9 +61,6 @@ function Read-Iso([string]$Path, $Distro) {
             throw 'This ISO is not an Ubuntu-style live system. hop can use your own ISO of an Ubuntu-based system, or of Omarchy, Arch, CachyOS, Fedora, Ultramarine or Debian if it keeps the name its project gave it. Otherwise pick the system from the list.'
         }
     }
-    if ($Distro.UntriedFile -and (Test-Path -LiteralPath (Join-Path $root $Distro.UntriedFile))) {
-        throw "This version of $($Distro.Name) installs in a way hop hasn't tried, so hop can't say it would work. Nothing has been changed. Try a different system."
-    }
     if (-not (Test-BootConfigKnown $Distro $root)) {
         throw "This version of $($Distro.Name) starts in a way hop doesn't know yet, so it couldn't start from the installer partition. Nothing has been changed. Try a different system."
     }

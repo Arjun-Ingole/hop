@@ -9,7 +9,7 @@ function New-Entry([string]$Id, [string]$Name, [string]$Note, [string]$Source, [
         Id = $Id; Name = $Name; Version = $null; Note = $Note; Source = $Source; Color = $Color; Logo = $Logo
         Strategy = 'freespace'; SecureBootOff = $false; Kind = $null; Base = $null; Prefix = $null; Edition = $null
         Mode = $null; Alongside = $null; Manual = $null; ManualExtra = $null; Steps = $null
-        Live = $null; LiveFiles = $null; UntriedFile = $null; NoBitLocker = $false; MinGB = 0; Notes = $null; BootConfigs = $null; BootEdits = $null; GrubDir = $null; EspShell = $null; EspLinuxMB = 0; FullDisk = $null; SecondDisk = $null; Refused = $null
+        Live = $null; LiveFiles = $null; NoBitLocker = $false; MinGB = 0; Notes = $null; BootConfigs = $null; BootEdits = $null; GrubDir = $null; EspShell = $null; EspLinuxMB = 0; FullDisk = $null; SecondDisk = $null; Refused = $null
     }
     foreach ($key in $More.Keys) { $entry[$key] = $More[$key] }
     [pscustomobject]$entry
@@ -145,7 +145,7 @@ function Get-FullDiskBoot([string]$Family) {
 # SecureBootOff: its boot loader or kernel isn't signed, as in Pop!_OS 24.04's ISO, so it can't start with Secure Boot on.
 # Live: a file its ISO must have, for systems that aren't Ubuntu-style. Empty means casper, which Read-Iso checks for.
 # LiveFiles: what goes on a second, exFAT partition because it's too big for FAT32, as a path pattern on the ISO.
-# UntriedFile: a file that means this ISO installs in a way hop hasn't tried. See Read-Iso. FullDisk and SecondDisk can have
+# UntriedFile: a file that means this ISO installs in a way hop hasn't tried there. FullDisk and SecondDisk can have
 #   their own, for an ISO tried next to Windows but not there. See Assert-IsoTriedThere.
 # NoBitLocker: its installer refuses a disk with BitLocker on it, even paused. See Assert-NoBitLocker.
 # MinGB: the least its installer accepts, if that's more than $MinLinuxGB.
@@ -205,7 +205,7 @@ function Get-Catalog {
     @(
         New-Entry 'elementary' 'elementary OS' 'Mac-like' 'elementary.io' '#3689E6' 'elementary' ((Get-CasperBoot) + @{
             Kind = 'elementary'; Strategy = 'prepared'; Mode = 'Custom Install (Advanced)'
-            FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 4; Steps = @(
+            FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 3.2; Steps = @(
                 'Pick your language and keyboard.'
                 'At **Try or Install**, choose **Erase Disk and Install**, then click **Next**.'
                 'At **Select a Drive**, choose **{DISK}**. Leave any other drive alone. Then click **Next**.'
@@ -220,7 +220,7 @@ function Get-Catalog {
             Kind = 'pop'; Version = '24.04'; Strategy = 'prepared'; Mode = 'Custom (Advanced)'; SecureBootOff = $true })
         New-Entry 'zorin' 'Zorin OS' 'Windows-like' 'the Zorin OS mirror at kernel.org' '#15A6F0' 'zorin' ((Get-CasperBoot) + (Get-UbiquityRoute 'zorin' 'Zorin OS') + @{
             Kind = 'zorin'; Alongside = 'Install Zorin OS alongside Windows Boot Manager'; Manual = 'Something else'
-            FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 3; Steps = @(
+            FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 3.7; Steps = @(
                 'Pick your language and keyboard, then start the installer.'
                 'When asked how to install, choose **Erase disk and install Zorin OS**.'
                 'If it lists more than one drive, choose **{DISK}**. Leave any other drive alone.'
@@ -231,7 +231,7 @@ function Get-Catalog {
             SecondDisk = @{ EspLinuxMB = 0; Steps = $AnacondaSecondDisk; Notes = @("Afterwards this PC starts Fedora, from that disk. Its menu lists Windows too.") } })
         New-Entry 'debian' 'Debian' 'Rock solid' 'cdimage.debian.org' '#A80030' 'debian' @{
             Kind = 'debian'; Live = 'live/filesystem.squashfs'; EspLinuxMB = 8; Refused = $(if ('debian' -notin $CalamaresProven) { Get-CalamaresRefusal 'Debian' }); Manual = 'Manual partitioning'; ManualExtra = $EspExtra
-            FullDisk = (Get-FullDiskBoot 'liveboot') + @{ IsoGB = 3; Steps = @(
+            FullDisk = (Get-FullDiskBoot 'liveboot') + @{ IsoGB = 3.6; Steps = @(
                 'At the menu that appears after restarting, press Enter on **Live system**. It waits until you do, then takes a few minutes to copy itself to memory.'
                 'On the desktop, open **Install Debian**, then pick your language and keyboard.'
                 'At **Partitions**, choose **{DISK}** under **Select storage device**, then choose **Erase disk**.'
@@ -287,7 +287,8 @@ function Get-Catalog {
                 'When it has finished, choose **Reboot Now**.')
             Notes = @("Afterwards this PC starts Omarchy, and its menu doesn't list Windows. To get to Windows, use your PC's boot menu, or run **limine-scan** in Omarchy to add it to the menu.")
             # Seen with 4.0.6 only. 4.5's menu keeps it from copying itself to memory, and its installer then reads the disk it erases.
-            FullDisk = (Get-FullDiskBoot 'archiso') + @{ IsoGB = 7; UntriedFile = $OmarchyRootImage; Steps = @(
+            # OwnIsoOnly: hop's own download is 4.5 or newer, so that can't be offered there. See Test-OwnIsoOnly.
+            FullDisk = (Get-FullDiskBoot 'archiso') + @{ IsoGB = 7; UntriedFile = $OmarchyRootImage; OwnIsoOnly = $true; Steps = @(
                 'Press **Return** to start, then choose your keyboard.'
                 'Make your account. Your password also unlocks the disk if Omarchy encrypts it. Name, email and hostname can be left empty.'
                 'Under **Select install disk**, choose **{DISK}**. Leave any other drive alone.'
@@ -297,7 +298,7 @@ function Get-Catalog {
             # It always makes its own EFI partition, in the largest free space on the disk it's given, which isn't always hop's.
             # Seen with 4.0.6 only.
             SecondDisk = @{
-                UntriedFile = $OmarchyRootImage
+                UntriedFile = $OmarchyRootImage; OwnIsoOnly = $true
                 Steps = @(
                     'Press **Return** to start, then choose your keyboard.'
                     'Make your account. Your password also unlocks the disk if Omarchy encrypts it. Name, email and hostname can be left empty.'
@@ -309,17 +310,19 @@ function Get-Catalog {
             } })
         New-Entry 'ultramarine' 'Ultramarine' 'Fedora made easy' 'images.fyralabs.com' '#00078F' 'ultramarine' ((Get-DracutBoot 'boot/grub') + @{
             Kind = 'ultramarine'; Edition = 'gnome'; Manual = 'Manual disk configuration'; Steps = $AnacondaSteps
-            FullDisk = (Get-FullDiskBoot 'dracut') + @{ IsoGB = 4; Steps = $AnacondaErase }
+            FullDisk = (Get-FullDiskBoot 'dracut') + @{ IsoGB = 3.4; Steps = $AnacondaErase }
             SecondDisk = @{ EspLinuxMB = 0; Steps = $AnacondaSecondDisk; Notes = @("Afterwards this PC starts Ultramarine, from that disk, and its first start opens its own setup, beginning with **Language**.") } })
-        New-UbuntuFlavor 'ubuntu-budgie' 'Ubuntu Budgie' 'Dock at the bottom' '#404552' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 4; Steps = $UbuntuErase } }
+        New-UbuntuFlavor 'ubuntu-budgie' 'Ubuntu Budgie' 'Dock at the bottom' '#404552' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 3.9; Steps = $UbuntuErase } }
         New-UbuntuFlavor 'xubuntu' 'Xubuntu' 'Lightweight' '#0044AA' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 5; Steps = $UbuntuErase } }
+        # Lubuntu and Ubuntu Unity use Calamares, as Debian and CachyOS do, and wait for the same proof: see $CalamaresProven.
         New-UbuntuFlavor 'lubuntu' 'Lubuntu' 'Lightest' '#0068C8' @{
-            Alongside = $null; Manual = 'Manual partitioning'; ManualExtra = $EspExtra }
+            Alongside = $null; Manual = 'Manual partitioning'; ManualExtra = $EspExtra; Refused = $(if ('lubuntu' -notin $CalamaresProven) { Get-CalamaresRefusal 'Lubuntu' }) }
         New-UbuntuFlavor 'ubuntucinnamon' 'Ubuntu Cinnamon' 'Windows-like layout' '#DD682A' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 6; Steps = $UbuntuErase } }
-        New-UbuntuFlavor 'ubuntu-unity' 'Ubuntu Unity' 'Classic Ubuntu' '#5A06C3'
+        New-UbuntuFlavor 'ubuntu-unity' 'Ubuntu Unity' 'Classic Ubuntu' '#5A06C3' @{
+            Alongside = $null; Manual = 'Manual partitioning'; ManualExtra = $EspExtra; Refused = $(if ('ubuntu-unity' -notin $CalamaresProven) { Get-CalamaresRefusal 'Ubuntu Unity' }) }
         New-MintEdition 'xfce' 'Linux Mint Xfce' 'Lighter Mint'
         New-MintEdition 'mate' 'Linux Mint MATE' 'Traditional'
-        New-UbuntuFlavor 'edubuntu' 'Edubuntu' 'For students' '#A30B00' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 8; Steps = $UbuntuErase } }
+        New-UbuntuFlavor 'edubuntu' 'Edubuntu' 'For students' '#A30B00' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 7.5; Steps = $UbuntuErase } }
         New-UbuntuFlavor 'ubuntustudio' 'Ubuntu Studio' 'For creators' '#009BF9' @{ FullDisk = (Get-FullDiskBoot 'casper') + @{ IsoGB = 7; Steps = $UbuntuErase } }
     )
 }
@@ -334,6 +337,14 @@ function Get-KnownIso([string]$IsoPath) {
         '^Fedora-Workstation-' { return 'fedora' }
         '^Ultramarine-' { return 'ultramarine' }
         '^debian-live-' { return 'debian' }
+        # Their installer can't make partitions on the disk it starts from, so they need hop's own partition.
+        '^linuxmint-.*-(cinnamon|mate|xfce)-' { return "mint-$($Matches[1].ToLowerInvariant())" }
+        '^Zorin-OS-' { return 'zorin' }
+        '^elementaryos-' { return 'elementary' }
+        '^pop-os_' { return 'pop' }
+        # Calamares, which Ubuntu's steps don't fit.
+        '^lubuntu-' { return 'lubuntu' }
+        '^ubuntu-unity-' { return 'ubuntu-unity' }
     }
 }
 

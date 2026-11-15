@@ -65,6 +65,7 @@ function Resolve-Download($Distro) {
         }
         'pop' {
             $build = Invoke-RestMethod -Uri 'https://api.pop-os.org/builds/24.04/generic' -UseBasicParsing -TimeoutSec 60
+            if ("$($build.sha_sum)" -notmatch '^[0-9a-fA-F]{64}$') { throw 'Could not find the checksum for the Pop!_OS ISO.' }
             return New-Download $build.url $build.sha_sum ([int64]$build.size)
         }
         'elementary' {
@@ -105,6 +106,7 @@ function Resolve-Download($Distro) {
                 Where-Object { $_.variant -eq 'Workstation' -and $_.arch -eq 'x86_64' -and $_.version -match '^\d+$' -and $_.link -like '*.iso' } |
                 Sort-Object { [int]$_.version } -Descending | Select-Object -First 1
             if (-not $best) { throw 'Could not find Fedora Workstation in the list on fedoraproject.org.' }
+            if ("$($best.sha256)" -notmatch '^[0-9a-fA-F]{64}$') { throw 'Could not find the checksum for the Fedora ISO.' }
             return New-Download $best.link $best.sha256 ([int64]$best.size)
         }
         'ultramarine' {
