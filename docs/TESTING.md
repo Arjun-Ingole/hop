@@ -46,9 +46,9 @@ Each check is from the serial log or the disk image, not the job's result:
 | Arch 2026.10.01 | Yes | Yes | Yes | Yes, with `archinstall --silent`, a config file that wipes the disk and the internet |
 | elementary OS 8.1 | Yes | Yes | By its installer | Yes, by asking its installer's own service for `InstallWithDefaultDiskLayout`, which is what its erase choice calls, at 7.1 GB of memory, with Secure Boot on and BitLocker's signature on "C:". Its screens weren't seen. The firmware started `\EFI\ubuntu\shimx64.efi`, which said `elementary OS 8`, root on the new `data-root` volume, `secureboot=1`, and `dm=active` |
 | Ultramarine 44 | Yes | Yes | By its installer | Yes, as Fedora, at 7.4 GB of memory and with Secure Boot on. The firmware started `\EFI\fedora\shimx64.efi`, and the system then stopped at its own first-start **Language** screen, `taidan-initial-setup.service`, so the probe's message didn't run |
-| Omarchy 4.0.6 | Yes | Yes, as it starts, with `copytoram` added to hop's `umount -l` | By its installer | Yes, in its real wizard on `tty1` with keys pressed: **Full disk install**, at 10 GB of memory, with BitLocker's signature on "C:", which that mode doesn't check for. Once encrypted, with the password typed at its prompt, to its desktop, and once not, to its login screen, with `Reached target Graphical Interface`. Secure Boot off, as it needs. Run again with hop's menu as it is now, at 12 GB, in [41455950194](https://github.com/Arjun-Ingole/hop/actions/runs/41455950194) and 41457041976: `copytoram` let go of the disk, hop's first `mount` then found nothing and stopped the rest, as it should, and **Full disk install** erased the disk. The firmware then started `Limine`, and its journal has `Reached target Graphical Interface` and `VERSION_ID="4.0.6"` |
+| Omarchy 4.0.6 | Not any more: see 4.5.0 | Yes, as it starts, with `copytoram` added to hop's `umount -l` | By its installer | Yes, in its real wizard on `tty1` with keys pressed: **Full disk install**, at 10 GB of memory, with BitLocker's signature on "C:", which that mode doesn't check for. Once encrypted, with the password typed at its prompt, to its desktop, and once not, to its login screen, with `Reached target Graphical Interface`. Secure Boot off, as it needs. Run again with hop's menu as it is now, at 12 GB, in [41455950194](https://github.com/Arjun-Ingole/hop/actions/runs/41455950194) and 41457041976: `copytoram` let go of the disk, hop's first `mount` then found nothing and stopped the rest, as it should, and **Full disk install** erased the disk. The firmware then started `Limine`, and its journal has `Reached target Graphical Interface` and `VERSION_ID="4.0.6"` |
 | Omarchy 4.5.0-rc3 | No | Not run | Not run | Not run. hop refuses it once the ISO is open: its menu has `copytoram=n` after hop's `copytoram`, which wins, and its installer reads its root image from the partition it would erase |
-| Omarchy 4.5.0 | No | Not run | Not run | Not run. Refused once the ISO is open, as 4.5.0-rc3 is, for the same reasons |
+| Omarchy 4.5.0 | Yes | Yes, as it starts: copied to memory, with its root image, and `HOPLIVE` unmounted again | By its installer | Yes, in its real wizard on `tty1` with keys pressed: **Full disk install**, at 11 GB of memory, with and without encryption. See [Replacing Windows with 4.5.0](#replacing-windows-with-450) |
 | Xubuntu, Ubuntu Budgie, Ubuntu Cinnamon, Edubuntu, Ubuntu Studio 26.04.1 | Yes | Yes | By its installer | Yes, as Ubuntu, with its autoinstall, each at its ISO plus 4 GB, with Secure Boot on and BitLocker's signature on "C:". Their screens weren't seen. The firmware started `\EFI\ubuntu\shimx64.efi`, each said root on the new partition, `secureboot=1` and `dm=active`, and a screenshot shows each one's login screen |
 | Linux Mint 22.3, all three | No | Yes, and `blockdev --rereadpt` succeeded, with Secure Boot on | No | Not shown. Its `noninteractive` mode stopped at a question it can't ask, with `does not implement question_dialog`, and its graphical installer under a small X server waited at **Welcome** because the test pressed no keys. The disk was untouched |
 | Pop!_OS 24.04 | No | Yes, once hop's edit found its `/casper_pop-os_...` folder | By `distinst` | Erased it with `distinst` and a table given by hand, but without `--modify-boot`, so the firmware found nothing to start: `No bootable option or device was found`. Not shown starting |
@@ -110,6 +110,39 @@ didn't happen again. That run started the installed system with `console=ttyS0,1
 above without them, so that exact setup hasn't been repeated.
 
 ## Omarchy, in a virtual PC
+
+### Replacing Windows with 4.5.0
+
+In [43678646874](https://github.com/Arjun-Ingole/hop/actions/runs/43678646874), the same harness with `--full-disk`, the real 4.5.0 ISO by
+its checksum, and 11 GB of memory: the ISO plus hop's 4 GB is 10.1 GB. The menu is the engine's own, from `Update-BootConfig -FullDisk`:
+`copytoram` added, the menu's own `copytoram=n` taken out, and six commands that copy `omarchy-root.img.zst` and its `.sha256` from `HOPLIVE`
+to a tmpfs at `/run/archiso/bootmnt/arch` and unmount the partition again.
+
+| Run | Encrypted | Installed in, by its own count | First start |
+| --- | --- | --- | --- |
+| 4.5.0 | No | 33 seconds | Login screen, `Reached target Graphical Interface`, `VERSION_ID="4.5.0"` |
+| 4.5.0 | Yes, with the password typed at its prompt | 48 seconds | Omarchy's desktop, `session opened` by `sddm-autologin`, `Reached target Graphical Interface` |
+
+In both, from `live.txt` and the report, not the job's result:
+
+- **All six commands finished**, each `status=0/SUCCESS`, about ten seconds after the live system started. `findmnt -R /run/archiso` found
+  nothing, `lsblk` showed no partition of the disk mounted, and the 3.9 GB image and its checksum were at
+  `/run/archiso/bootmnt/arch/x86_64/`.
+- **Memory:** 10,933 MB in all, 6,865 MB used and 4,068 MB available before the install.
+- **The disk was offered and erased.** The wizard listed `/dev/nvme0n1 (80G)`, with **Full disk install** where the cursor starts, then
+  `Everything will be overwritten` and `Confirm overwriting /dev/nvme0n1`. Its log said
+  `writing root image (3744 MiB from /run/archiso/bootmnt/arch/x86_64/omarchy-root.img.zst)`. Afterwards the disk had a 2 GB EFI partition and
+  one btrfs or LUKS partition, and `BootOrder` had `Boot0008 "Limine"` first.
+- **Its screens**, which the steps follow: language, keyboard, timezone, username, password, hostname, a summary with **Yes**, the disk,
+  the mode, then the confirmation.
+
+The same run installed 4.5.0 next to Windows three ways and 4.0.6 once, as below, and all four passed as before.
+
+**What this doesn't show:** no real Windows and no BitLocker mark on "C:", which 4.0.6's full disk install ignored and 4.5's hasn't been
+asked about. `omarchy-root-image-verify.service` was `inactive` when the test looked, ten seconds in, and the installer then waited for it
+to finish hashing, so the image was checked from memory, but its result wasn't read back. A PC with exactly 10.1 GB wasn't tried, and
+hop's own screens weren't run. 4.0 is now refused for replacing Windows: it has no root image to copy, and hop only replaces Windows from
+its own download.
 
 ### 4.5.0-rc3, and 4.0.6 again
 

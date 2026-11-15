@@ -88,10 +88,27 @@ Describe 'Boot config for a full disk' {
         $edited | Should -BeLike '*rd.live.ram=1*'
         $edited | Should -BeLike '*umount -l /run/initramfs/live*'
     }
-    It 'copies Omarchy to memory as well, and still lets go of the disk as it starts' {
-        $omarchy = Get-Catalog | Where-Object Id -eq 'omarchy'
-        $edited = Get-EditedBootConfig $omarchy 'chainloader /x archisobasedir=arch archisosearchuuid=2026-10-19 quiet' -FullDisk
-        $edited | Should -BeLike "*archisobasedir=arch copytoram archisolabel=$LiveLabel *umount -l /run/archiso/bootmnt*"
+    Context 'Omarchy 4.5, whose installer reads a root image from the disk it would erase' {
+        BeforeAll {
+            $omarchy = Get-Catalog | Where-Object Id -eq 'omarchy'
+            $line = 'linux /arch/boot/x86_64/vmlinuz-${live_kernel} archisobasedir=arch archisosearchuuid=2026-10-19 copytoram=n initramfs_options=size=90% quiet splash'
+            $edited = Get-EditedBootConfig $omarchy $line -FullDisk
+        }
+        It 'asks for the copy to memory, and takes out the menu''s own word against it' {
+            $edited | Should -BeLike "*archisobasedir=arch copytoram archisolabel=$LiveLabel *"
+            $edited | Should -Not -BeLike '*copytoram=n*'
+            $edited | Should -BeLike '* initramfs_options=size=90% quiet splash'
+        }
+        It 'copies the root image and its checksum to memory, where the installer looks, then lets go of the partition' {
+            $edited | Should -BeLike "*`"systemd.run=mount -o ro /dev/disk/by-label/$LiveLabel /run/hop`" `"systemd.run=cp /run/hop/arch/x86_64/omarchy-root.img.zst /run/hop/arch/x86_64/omarchy-root.img.zst.sha256 /run/archiso/bootmnt/arch/x86_64/`" `"systemd.run=umount /run/hop`" systemd.run_success_action=none*"
+            $edited | Should -Not -BeLike '*mount --bind*'
+            $edited | Should -Not -BeLike '*umount -l*'
+        }
+        It 'leaves the usual install''s menu as it was, and is the same however often it runs' {
+            $usual = Get-EditedBootConfig $omarchy $line
+            $usual | Should -BeLike '*mount --bind /run/hop /run/archiso/bootmnt/arch*copytoram=n*'
+            Get-EditedBootConfig $omarchy $edited | Should -BeExactly $edited
+        }
     }
     It 'adds copytoram to Arch''s' {
         Edit-With 'archiso' 'options  archisobasedir=arch archisolabel=HOPINSTALL' | Should -Be 'options  archisobasedir=arch copytoram archisolabel=HOPINSTALL'

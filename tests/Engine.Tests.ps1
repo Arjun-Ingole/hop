@@ -1056,17 +1056,17 @@ Describe 'Read-Iso' {
             Get-LiveGB 6129025167 | Should -Be 7
             Get-LiveGB 0 | Should -Be 0
         }
-        It 'refuses 4.5 for replacing Windows and for a second disk, which hop has only tried with 4.0' {
+        It 'lets 4.5 replace Windows, and refuses it a second disk, which hop has only tried with 4.0' {
             New-IsoFiles @{ 'arch\x86_64\omarchy-root.img.zst' = 'x' }
             $iso = [pscustomobject]@{ Letter = 'HOPISO' }
-            { Assert-IsoTriedThere $omarchy $iso -FullDisk } | Should -Throw "hop hasn't tried replacing Windows with this version of Omarchy*Nothing has been changed*next to Windows."
+            { Assert-IsoTriedThere $omarchy $iso -FullDisk } | Should -Not -Throw
             { Assert-IsoTriedThere $omarchy $iso -SecondDisk } | Should -Throw "hop hasn't tried this version of Omarchy on a second disk*Nothing has been changed*disk Windows is on."
             { Assert-IsoTriedThere $omarchy $iso } | Should -Not -Throw
         }
-        It 'still lets 4.0 replace Windows and go on a second disk' {
+        It 'lets 4.0 go on a second disk, and refuses it replacing Windows, which is now made for 4.5''s root image' {
             New-IsoFiles @{ 'arch\x86_64\airootfs.sfs' = 'x' }
             $iso = [pscustomobject]@{ Letter = 'HOPISO' }
-            { Assert-IsoTriedThere $omarchy $iso -FullDisk } | Should -Not -Throw
+            { Assert-IsoTriedThere $omarchy $iso -FullDisk } | Should -Throw "hop hasn't tried replacing Windows with this version of Omarchy*Nothing has been changed*next to Windows."
             { Assert-IsoTriedThere $omarchy $iso -SecondDisk } | Should -Not -Throw
         }
     }
@@ -2550,7 +2550,6 @@ Describe 'Assert-SystemFitsDrive' {
         { Assert-SystemFitsDrive $omarchy 'gap:{disk-1}:1048576' 'D:\isos\omarchy-4.0.6.iso' } | Should -Not -Throw
         { Assert-SystemFitsDrive $omarchy 'gap:{disk-1}:1048576' '' } | Should -Throw '*second disk*'
         { Assert-SystemFitsDrive $omarchy '' '' } | Should -Not -Throw
-        Get-FullDiskBlocker $omarchy | Should -BeLike '*older Omarchy than the one it downloads*'
     }
 }
 

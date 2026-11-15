@@ -23,7 +23,8 @@
 ### Changed
 
 - **Lubuntu and Ubuntu Unity are refused next to Windows for now.** They use Calamares, not Ubuntu's installer, hop's steps for Ubuntu Unity named choices its installer doesn't have, and neither has been seen starting afterwards. Debian and CachyOS waited for the same proof.
-- **Omarchy no longer offers replacing Windows, or a second disk with hop's own download.** Both were only seen with 4.0, and every version hop downloads is newer, so both were refused after a 6 GB download. A second disk still works with your own 4.0 ISO.
+- **Replacing Windows with Omarchy works with 4.5, which is what hop downloads.** It was only made for 4.0, so with 4.5 it was refused after a 6 GB download. 4.5's menu stops the live system copying itself to memory, and its installer reads a 3.9 GB root image from the partition it would erase. hop now takes that word out, and has the live system copy the root image and its checksum to memory as it starts, then let go of the partition. Seen in a virtual PC with 11 GB of memory, with and without encryption: nothing on the disk was open, the installer erased it, and Omarchy 4.5.0 started from it. It needs the ISO's size plus 4 GB of memory, about 10 GB, as before.
+- **Omarchy on a second disk is refused before hop's own download, not after it.** That was only seen with 4.0, and still works with your own 4.0 ISO.
 - **Your own ISO of Linux Mint, Zorin OS, elementary OS or Pop!_OS now gets that system's own route**, by its file name. As an ordinary Ubuntu-style ISO, Mint's and Zorin OS's installer couldn't make partitions on the disk it started from.
 
 ### Fixed

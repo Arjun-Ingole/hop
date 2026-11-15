@@ -312,8 +312,8 @@ function Get-Catalog {
             # For 4.5, which hop downloads: see Get-OmarchyFullDiskBoot. 4.0 has no root image to copy, and hop only
             # replaces Windows from its own download, so an ISO without one is refused.
             FullDisk = (Get-OmarchyFullDiskBoot) + @{ IsoGB = 6.2; RequiredFile = $OmarchyRootImage; Steps = @(
-                'Press **Return** to start, then choose your keyboard.'
-                'Make your account. Your password also unlocks the disk if Omarchy encrypts it. Name, email and hostname can be left empty.'
+                'Press **Return** to start. Choose your language, then your keyboard.'
+                'Type your city to find your timezone, then make your account. Your password also unlocks the disk if Omarchy encrypts it. The hostname can stay as it is. Then choose **Yes**.'
                 'Under **Select install disk**, choose **{DISK}**. Leave any other drive alone.'
                 'Under **Select installation mode**, choose **Full disk install**, where the cursor starts.'
                 'At **Confirm overwriting**, choose **Yes, install**. To install without encryption, press **Ctrl+C** first.'
