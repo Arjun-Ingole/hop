@@ -344,6 +344,7 @@ Describe 'Get-HopPartitions on any disk' {
     It 'trusts its own record of a partition, whatever is on it now' {
         Mock Get-Volume { [pscustomobject]@{ FileSystemLabel = 'HOPINSTALL'; FileSystemType = 'FAT32' } }
         Mock Get-VolumeEntries { 'half-copied' }
+        Mock Get-StateDisk { 1 }
         Mock Read-State { [pscustomobject]@{ Partitions = @([pscustomobject]@{ Role = 'installer'; Offset = [int64]200GB; Size = [int64]8GB }) } }
         @(Get-HopPartitions).Partition.DiskNumber | Should -Be @(1)
     }

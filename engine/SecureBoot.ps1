@@ -1,6 +1,7 @@
 # --- Will Secure Boot let this system start? -----------------------------
 # Firmware that refuses a boot loader says nothing and starts Windows instead, so this is
-# worked out before the disk changes, from the ISO's own files and the PC's trusted list.
+# checked for common incompatibilities before disk changes. Certificate names are only a
+# heuristic: firmware still verifies signatures, dbx revocations and its own policy.
 
 function Test-SecureBoot {
     try { [bool](Confirm-SecureBootUEFI) } catch { $false }

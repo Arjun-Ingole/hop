@@ -56,6 +56,10 @@ Arch, CachyOS, Omarchy and Pop!_OS need Secure Boot off. Pick the system, click 
 
 ## "Secure Boot doesn't trust this ISO's boot loader"
 
+hop checks for common incompatibilities by reading certificate names. This does not verify
+the cryptographic signature or the firmware's revocation database (dbx), and passing this
+check does not guarantee the installer will start. Firmware performs the actual validation.
+
 Your PC's list of trusted certificates doesn't include the one that signed this system's boot loader.
 Some PCs, including Secured-core ones, come with Microsoft's third-party certificate turned off. In the
 BIOS it's called something like **Allow Microsoft 3rd Party UEFI CA**, under Secure Boot. Newer PCs may

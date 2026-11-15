@@ -51,7 +51,7 @@ namespace Hop
                     : looked ? "The partitions are still there, and Windows gave no reason."
                     : "hop can't tell whether they went. Open hop again to see.";
                 Arrange(new[] { new[] { Run.Gray("Couldn't remove"), Run.Black(name) } }, why, Danger, null, 0);
-                Footer("Back", ShowChoose, "Try again", looked && startup.OtherGB > 0 ? () => _ = RemoveOtherAsync() : (Action)null);
+                Footer("Back", ShowChoose, "Review partitions", looked && startup.OtherGB > 0 ? ShowRemoveOther : (Action)null);
                 return;
             }
             string partly = failed == null ? "" : $" Its partitions are gone, but hop couldn't finish tidying up: {Describe(failed)}";
