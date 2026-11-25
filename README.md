@@ -8,6 +8,10 @@
 <p align="center">Install Linux next to Windows without a USB stick.</p>
 
 <p align="center">
+  <strong>English</strong> · <a href="README.vi.md">Tiếng Việt</a>
+</p>
+
+<p align="center">
   <img src="docs/screenshot.png" alt="The hop window: install elementary OS next to Windows, with 120 GB, above a bar showing drive C: split between Windows and Linux" width="760">
 </p>
 
