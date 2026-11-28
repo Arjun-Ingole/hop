@@ -394,7 +394,7 @@ Describe 'Deleting restore points' {
             [pscustomobject]@{ ID = '{2}'; VolumeName = '\\?\Volume{d}\' }
         } -ParameterFilter { $ClassName -eq 'Win32_ShadowCopy' }
         $script:deleted = @()
-        Mock Remove-CimInstance { $script:deleted += $InputObject.ID }
+        Mock Remove-ShadowCopy { $script:deleted += $Shadow.ID }
     }
     It 'deletes only that drive''s, one by one, not every one with vssadmin' {
         Clear-RestorePoints 'C'
@@ -405,7 +405,7 @@ Describe 'Deleting restore points' {
         Should -Invoke Set-RoomAside -Times 1 -ParameterFilter { $State.WantedBytes -eq 72GB -and $State.KeepFreeBytes -eq 8GB -and $State.Drive -eq 'C:' }
     }
     It 'says so when Windows won''t delete one' {
-        Mock Remove-CimInstance { throw 'in use' }
+        Mock Remove-ShadowCopy { throw 'in use' }
         { Clear-RestorePoints 'C' } | Should -Throw '*could not delete the restore points*'
     }
 }

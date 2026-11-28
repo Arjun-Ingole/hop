@@ -662,6 +662,8 @@ function Move-SystemFiles([string]$Room, $Partition, [datetime]$Deadline = [date
     $moved.Count -gt 0
 }
 
+function Remove-ShadowCopy($Shadow) { Remove-CimInstance -InputObject $Shadow -ErrorAction Stop }
+
 # Only this drive's, one by one through WMI, as System Protection does. With the sizes, the space goes aside straight
 # away, as Make room's does, so a new restore point can't take it back before the install.
 function Clear-RestorePoints([string]$Drive, [int]$WantedLinuxGB = 0, [int64]$WantedBytes = 0, [int64]$KeepFreeBytes = 0) {
@@ -671,7 +673,7 @@ function Clear-RestorePoints([string]$Drive, [int]$WantedLinuxGB = 0, [int64]$Wa
     if (-not $volume) { throw "Windows could not delete the restore points on drive $room." }
     $failed = 0
     foreach ($shadow in @(Get-CimInstance -ClassName Win32_ShadowCopy -ErrorAction SilentlyContinue | Where-Object { $_.VolumeName -eq $volume.DeviceID })) {
-        try { Remove-CimInstance -InputObject $shadow -ErrorAction Stop } catch { $failed++; Write-Log "Could not delete restore point $($shadow.ID): $($_.Exception.Message)" }
+        try { Remove-ShadowCopy $shadow } catch { $failed++; Write-Log "Could not delete restore point $($shadow.ID): $($_.Exception.Message)" }
     }
     if ($failed) { throw "Windows could not delete the restore points on drive $room." }
     Invoke-Defrag $room

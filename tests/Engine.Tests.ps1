@@ -2926,7 +2926,10 @@ Describe 'The copy the tasks run' {
         $resume.Action.Execute | Should -Be "$env:ProgramData\hop-restart-x\hop.exe"
         $resume.Action.Arguments | Should -BeNullOrEmpty
         $resume.Principal.RunLevel | Should -Be 'Highest'
-        $resume.Trigger.UserId | Should -Be ([Security.Principal.WindowsIdentity]::GetCurrent().Name)
+        # By SID, which a work account's name isn't always looked up from. Windows may answer with the name.
+        $me = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $resume.Trigger.UserId | Should -BeIn @($me.User.Value, $me.Name)
+        $resume.Principal.UserId | Should -BeIn @($me.User.Value, $me.Name)
         $restore = $script:tasks[$RestoreTaskName]
         $restore.Action.Arguments | Should -Be '--restore-room'
         # Asked for by its SID, which reads the same in every language Windows comes in. Windows may answer with the name.
