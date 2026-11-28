@@ -9,10 +9,16 @@ function Add-ReportSection($Lines, [string]$Title, [scriptblock]$Read) {
 }
 
 function Remove-PersonalNames([string]$Text) {
-    foreach ($name in @($env:USERPROFILE, $env:USERNAME, $env:COMPUTERNAME)) {
-        if ($name) { $Text = $Text -ireplace [regex]::Escape($name), '<hidden>' }
+    # The person signed in can be someone else from the account hop runs as, when an administrator's password was typed.
+    $signedIn = try { [string](Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop).UserName } catch { '' }
+    # The name and its domain each on their own too, as either can appear without the other.
+    $names = @($env:USERPROFILE, $signedIn, $env:USERNAME, $env:USERDOMAIN, $env:COMPUTERNAME) + @($signedIn -split '\\')
+    # Longest first, so a profile path goes before the name inside it. Very short names would hide ordinary words.
+    foreach ($name in @($names | Where-Object { $_ -and $_.Length -ge 2 } | Sort-Object -Unique | Sort-Object Length -Descending)) {
+        $Text = $Text -ireplace [regex]::Escape($name), '<hidden>'
     }
-    $Text
+    # A work OneDrive is named after the organisation.
+    $Text -ireplace 'OneDrive - [^\\/\r\n]+', 'OneDrive - <hidden>'
 }
 
 function Get-Report {

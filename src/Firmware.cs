@@ -153,7 +153,7 @@ namespace Hop
         {
             EnablePrivilege();
             var found = new List<int>();
-            for (int number = 0; number <= 0xFF; number++)
+            foreach (int number in EntryNumbers())
             {
                 var data = TryRead(EntryName(number));
                 if (data != null && Description(data).Contains(text)) found.Add(number);
@@ -166,7 +166,7 @@ namespace Hop
         {
             EnablePrivilege();
             var entries = new List<BootEntry>();
-            for (int number = 0; number <= 0xFF; number++)
+            foreach (int number in EntryNumbers())
             {
                 var data = TryRead(EntryName(number));
                 if (data == null || data.Length < 8) continue;
@@ -197,6 +197,24 @@ namespace Hop
         }
 
         static string EntryName(int number) => $"Boot{number:X4}";
+
+        /// <summary>
+        /// The numbers worth reading. Reading all 65536 would take a long time on some firmware, so it's the first 256,
+        /// where efibootmgr and hop put theirs, and every number the firmware names in BootOrder, BootNext and BootCurrent,
+        /// which is where a firmware that numbers its own entries higher, such as 2001, keeps them.
+        /// </summary>
+        static IEnumerable<int> EntryNumbers()
+        {
+            var numbers = new SortedSet<int>();
+            for (int number = 0; number <= 0xFF; number++) numbers.Add(number);
+            try { foreach (ushort number in BootOrder()) numbers.Add(number); } catch (Win32Exception) { }
+            foreach (string name in new[] { "BootNext", "BootCurrent" })
+            {
+                var data = TryRead(name);
+                if (data != null && data.Length >= 2) numbers.Add(BitConverter.ToUInt16(data, 0));
+            }
+            return numbers;
+        }
 
         static int FreeNumber(List<ushort> order)
         {

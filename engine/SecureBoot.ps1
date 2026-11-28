@@ -108,6 +108,11 @@ function Get-SecureBootProblem([string]$Root) {
     $db = Get-SecureBootDb
     # Only a list that names Microsoft is one this was able to read. Stopping an install on anything less would be a guess.
     if ($authorities.Count -and $db -and $db.Contains('Microsoft') -and -not @($authorities | Where-Object { $db.Contains($_) }).Count) {
+        # The newer certificate, which this PC hasn't been given yet. That isn't a BIOS option: an update adds it.
+        $trusted = @(Get-UefiAuthorities $db)
+        if (@($authorities | Where-Object { $_ -match '2023' }).Count -and @($trusted | Where-Object { $_ -match '2011' }).Count -and -not @($trusted | Where-Object { $_ -match '2023' }).Count) {
+            return "This ISO's boot loader is signed with Microsoft's newer 2023 certificate, and this PC's Secure Boot only has the older 2011 one so far. Install the latest Windows updates and restart, or update this PC's BIOS, which adds the new one, then open hop again. Otherwise: $(Get-SecureBootAdvice)"
+        }
         return "This PC's Secure Boot doesn't trust this ISO's boot loader, which is signed by $($authorities -join ' and '). Some BIOS settings have an option to allow Microsoft's third-party certificate; turn it on if yours does. Otherwise: $(Get-SecureBootAdvice)"
     }
 

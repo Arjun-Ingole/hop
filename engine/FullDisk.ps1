@@ -154,7 +154,8 @@ function Assert-FullDisk($Distro) {
 
 # Once the ISO is there, its real size and its real boot menu count. Nothing on the disk has changed yet.
 function Assert-FullDiskIso($Distro, $Iso) {
-    $reason = Get-FullDiskMemoryBlocker $Distro $Iso.Bytes
+    # What goes on the second partition is copied to memory too: for Omarchy that's most of it.
+    $reason = Get-FullDiskMemoryBlocker $Distro ([int64]$Iso.Bytes + [int64]$Iso.LiveBytes)
     if ($reason) { throw $reason }
     if (-not (Test-BootConfigKnown $Distro "$($Iso.Letter):\" -FullDisk)) {
         throw "This version of $($Distro.Name) starts in a way hop doesn't know yet, so it couldn't let go of the disk. Nothing has been changed. You can still install it next to Windows."

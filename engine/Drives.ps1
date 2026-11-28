@@ -101,7 +101,11 @@ function Get-DriveBlocker($Disk, $Partition, [switch]$Windows) {
         if ($Disk.BusType -eq 'MMC') { return "$name is eMMC storage, which hop hasn't been tried on as a second disk." }
         if ($Disk.BusType -notin $InternalBusTypes) { return "$name is a USB, removable or network drive. Linux has to go on a drive inside this PC." }
         $attachment = Get-DiskAttachment $Disk
-        if ($attachment -eq 'external') { return "$name can be unplugged while the PC is running, as a Thunderbolt or USB4 drive can. Linux has to go on a drive inside this PC." }
+        if ($attachment -eq 'external') {
+            # A SATA disk isn't Thunderbolt or USB4. It's in a port set for hot-plug, which can also be a drive bay on the outside.
+            if ($Disk.BusType -in @('SATA', 'ATA')) { return "Windows says $name can be unplugged while the PC is running, because its SATA port has hot-plug turned on. Linux has to go on a drive that stays in. If this drive is inside the PC, turning off hot-plug for its port in the BIOS lets hop use it." }
+            return "$name can be unplugged while the PC is running, as a Thunderbolt or USB4 drive can. Linux has to go on a drive inside this PC."
+        }
         if ($attachment -ne 'internal') { return "hop can't tell whether $name is inside this PC or plugged in, as a Thunderbolt or USB4 drive is. Linux has to go on a drive inside this PC." }
     }
     if (-not $Windows) {
