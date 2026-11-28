@@ -21,6 +21,8 @@ $DefragLimitSeconds = 900
 $DefragTries = 4
 $DefragRetrySeconds = 30
 $DefragCancelled = 1223
+# Runs in a row that were stopped part way and freed nothing. After this many, moving files again isn't offered.
+$RoomEmptyRunsBeforeShrink = 2
 $RoomWaitForSignInHours = 24
 $RoomRestoreTries = 8   # the task tries every 15 minutes, and each time hop opens or closes
 
@@ -303,7 +305,8 @@ function Get-RestartCopy {
 }
 
 function Set-RoomTasks([string]$Exe) {
-    $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    # By SID: a work account's name, such as AzureAD\Name, isn't always one Task Scheduler can look up.
+    $user = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
     Register-ScheduledTask -TaskName $ResumeTaskName -Force -Settings $settings `
         -Action (New-ScheduledTaskAction -Execute $Exe) `
@@ -433,6 +436,7 @@ function Remove-RoomAside { Remove-Item -LiteralPath $AsidePath -Force -ErrorAct
 # were, with the settings still off for the install's own shrink.
 function Set-RoomAside($State) {
     if (-not $State -or -not [int64]$State.WantedBytes) { return $false }
+    $take = [int64]0
     try {
         $room = Get-RoomDrive $State.Drive
         $c = Get-Partition -DriveLetter $room.TrimEnd(':')
@@ -465,8 +469,18 @@ function Set-RoomAside($State) {
         # Windows' own way has been tried here and fell short, so next time hop offers its shrink tool straight away.
         # Only Make room finishing says so: being stopped part way doesn't count.
         if ($enough) { Remove-Item -LiteralPath $TriedPath -Force -ErrorAction SilentlyContinue }
-        elseif ($Sync.RoomUnfinished -ne $true) {
-            Write-StateFile $TriedPath (ConvertTo-Json -InputObject ([pscustomobject]@{ DiskNumber = [int]$c.DiskNumber; Offset = [int64]$c.Offset; Drive = $room; Saved = (Get-Date).ToString('s') }))
+        else {
+            # On a slow disk, moving files can be stopped at its limit every time with nothing to show for it, and moving
+            # them again would go round for ever. So a run stopped part way that freed nothing counts, and after a few in a
+            # row Windows' own way has been tried. The count is kept with the drive, in its own file, because Make room's
+            # record goes as soon as its settings are back, which closing hop does.
+            $earlier = Read-RoomTried $c
+            $runs = if ($Sync.RoomUnfinished -eq $true -and $take -lt 1GB) { [int]$earlier.EmptyRuns + 1 } else { 0 }
+            if ($runs -ge $RoomEmptyRunsBeforeShrink) {
+                Write-Log "Moving files was stopped $runs times in a row without freeing anything, so hop offers its shrink tool."
+                $Sync.RoomUnfinished = $false
+            }
+            Save-RoomTried $c $room ($Sync.RoomUnfinished -ne $true) $runs
         }
         $enough
     } catch {
@@ -475,13 +489,39 @@ function Set-RoomAside($State) {
     }
 }
 
-# The drive Make room fell short on, if it's still where it was: the letter, or nothing.
+# What Make room has found on a drive: whether Windows' own way has been tried there and fell short, and how many
+# runs in a row were stopped with nothing freed. Known by its disk's ID and where it starts, since disk numbers change.
+function Save-RoomTried($Partition, [string]$Drive, [bool]$Tried, [int]$EmptyRuns) {
+    Write-StateFile $TriedPath (ConvertTo-Json -InputObject ([pscustomobject]@{
+        DiskNumber = [int]$Partition.DiskNumber; DiskGuid = (Get-DiskGuidOf $Partition.DiskNumber); Offset = [int64]$Partition.Offset
+        Drive = $Drive; Tried = $Tried; EmptyRuns = $EmptyRuns; Saved = (Get-Date).ToString('s')
+    }))
+}
+
+function Read-RoomTriedFile {
+    if (-not (Test-Path -LiteralPath $TriedPath)) { return }
+    try { Get-Content -LiteralPath $TriedPath -Raw | ConvertFrom-Json } catch { Write-Log "Could not read which drive Make room tried: $($_.Exception.Message)"; $null }
+}
+
+# The record for this partition, or nothing if it's about another.
+function Read-RoomTried($Partition) {
+    $tried = Read-RoomTriedFile
+    if ($tried -and (Get-AsideDiskNumber $tried) -eq [int]$Partition.DiskNumber -and [int64]$tried.Offset -eq [int64]$Partition.Offset) { $tried }
+}
+
+# The drive Make room fell short on, if it's still where it was: the letter, or nothing. A record that only counts
+# runs isn't one: Windows' own way is still being tried there.
 function Get-RoomTriedLetter {
     if (-not (Test-Path -LiteralPath $TriedPath)) { return }
     try {
-        $tried = Get-Content -LiteralPath $TriedPath -Raw | ConvertFrom-Json
-        $c = Get-PartitionAt ([int]$tried.DiskNumber) ([int64]$tried.Offset)
-        if ($c -and "$(Get-LetterOf $c):" -eq $tried.Drive) { return $tried.Drive.TrimEnd(':') }
+        $tried = Read-RoomTriedFile
+        $disk = if ($tried) { Get-AsideDiskNumber $tried } else { -1 }
+        $c = if ($disk -ge 0) { Get-PartitionAt $disk ([int64]$tried.Offset) }
+        if ($c -and "$(Get-LetterOf $c):" -eq $tried.Drive) {
+            # Files from before the count was kept were only written once it had been tried.
+            if ($tried.PSObject.Properties.Name -notcontains 'Tried' -or $tried.Tried) { return $tried.Drive.TrimEnd(':') }
+            return
+        }
     } catch { Write-Log "Could not read which drive Make room tried: $($_.Exception.Message)" }
     Remove-Item -LiteralPath $TriedPath -Force -ErrorAction SilentlyContinue
 }
@@ -529,6 +569,7 @@ function Invoke-Defrag([string]$Drive) {
     if ($cancelled -eq $DefragTries) { Write-Log "Windows cancelled moving files all $DefragTries times, so nothing moved." }
     # What's left may well move, so this mustn't read as the most that could be done.
     $Sync.RoomUnfinished = $code -ne 0
+    $Sync.RoomMoveHopeless = $false
     # Windows can't work out the limit for a moment after that.
     $c = Get-Partition -DriveLetter $room.TrimEnd(':')
     Wait-ShrinkLimit $c $deadline
@@ -540,6 +581,8 @@ function Invoke-Defrag([string]$Drive) {
         if ($left -gt 0) {
             $again = Start-DefragRun $room $left
             if ($null -ne $again) { Write-Log "Finished moving files (code $again)." }
+            # What's said about moving files is about the run that went last, unless moving them again can't help anyway.
+            if ($null -ne $again -and -not $Sync.RoomMoveHopeless) { $Sync.RoomUnfinished = $again -ne 0 }
         }
         Wait-ShrinkLimit $c $deadline
     }
@@ -573,7 +616,8 @@ function Move-SystemFiles([string]$Room, $Partition, [datetime]$Deadline = [date
     $moved = @{}
     $volume = Get-VolumeOf $Partition
     # Only what's past where the drive could end up matters. A big file's other parts can stay.
-    $above = if ($volume -and $volume.Size) { [math]::Min(1, ($volume.Size - $volume.SizeRemaining + $WindowsReserve) / $volume.Size) } else { 0 }
+    $reserve = if ((Get-RoomDrive $Room) -eq $env:SystemDrive) { $WindowsReserve } else { $DataReserve }
+    $above = if ($volume -and $volume.Size) { [math]::Min(1, ($volume.Size - $volume.SizeRemaining + $reserve) / $volume.Size) } else { 0 }
     for ($i = 0; $i -lt 6; $i++) {
         if ((Get-Date) -ge $Deadline) { break }
         $file = Get-ShrinkBlocker $Partition
@@ -592,6 +636,7 @@ function Move-SystemFiles([string]$Room, $Partition, [datetime]$Deadline = [date
             try { Write-Log ([Hop.NtfsMove]::Describe($Room, $file)) } catch { }
             # Moving files again won't get past it: defrag leaves these where they are.
             $Sync.RoomUnfinished = $false
+            $Sync.RoomMoveHopeless = $true
             break
         }
         $moved[$file] = $true
