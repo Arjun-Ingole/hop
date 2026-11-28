@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **The install steps outlast the restart.** The Ready screen has a **Copy steps** link, and the steps are also written to `HOP-STEPS.txt` on the installer partition, which can be opened from the live system.
+- **Your own ISO is known by what's on it**, not only by its file name. A renamed `mint.iso` now gets Linux Mint's route, and so do Zorin OS, elementary OS, Pop!_OS, the Ubuntu flavours, Debian, Fedora, Ultramarine, Arch, CachyOS and Omarchy, when the ISO says plainly which it is. Anything hop isn't sure of is treated as before.
+- The preparing screen says what hop is doing at each step, such as checking the download or the copy, and the download's speed and time left. The taskbar shows the progress too, and Windows says hop is changing the disk if a shutdown has to wait for it.
+- In the list of systems, those hop doesn't offer yet are dimmed, and those that need Secure Boot off say so on a PC where it's on. Typing a letter jumps to a system, the mouse wheel changes the Linux size, Escape goes back, and screen readers can name every control.
+
+### Changed
+
+- **Opening hop no longer waits for Windows to measure C:.** When that takes more than 20 seconds, the screen appears with C:'s estimate, and the systems and other drives can be chosen while Windows carries on. Nothing that changes the disk is offered until it has answered.
+- **The download no longer costs the free space after the drive.** It goes inside the drive, so only what the drive can give up pays for it. The shrink tool no longer shrinks the drive by an extra 8 GB for it, and no longer refuses a drive that has room for Linux and the download.
+- **Fewer things that look like malware to security software** (issue #23). Restore points are deleted one by one, for that drive only, instead of with `vssadmin delete shadows /all`. The change journal is only cleared when it may be what's in the way. hop's copy for Make room's tasks is deleted by Windows as it next starts, instead of by a command line that waits and deletes, and hop tidies any left over when it opens. hop.exe says who made it in its properties.
+- Downloads use the newest TLS this Windows has, such as TLS 1.3 on Windows 11, falling back on TLS 1.2. Pop!_OS's and Fedora's download lists are tried again when the connection drops, curl's own error is logged when a download fails, and a server that doesn't say the file's size still shows how far it has got.
+- A PC that only has Microsoft's older 2011 Secure Boot certificate is told to install Windows updates or a BIOS update for an ISO signed with the 2023 one, not to look for a BIOS option.
+- The copy of the installer is checked from the disk itself, past Windows' memory, which only gave back what was written.
+- The bug report says which partition each startup entry starts from, and hides the signed-in person's name and domain, and a work OneDrive's organisation, as well as the account hop runs as.
+- An internal SATA drive on a hot-plug port is no longer called a Thunderbolt or USB4 drive. It's still refused, with what to change in the BIOS.
+- hop's shrink tool can see the eMMC storage of older Atom and Celeron laptops, and shows how far it has got while it shrinks.
+
+### Fixed
+
+- **Clean up couldn't remove the installer partition on some Acer laptops** (issue #21). Their firmware adds a startup entry of its own, such as `Linpus lite`, for the ISO's fallback loader on the installer partition. hop took that for Linux's boot loader: it said Linux was installed when it wasn't, and kept the partition for good. That entry no longer counts, a boot loader alone no longer means Linux is installed, and Clean up only keeps the partition for a Linux boot loader while a Linux partition is still on a disk. Entries that start from a partition hop removes go with it.
+- **Make room could go round "Moving files out of the way" for ever on a slow disk.** Windows' file move has a 15-minute limit, and on an old laptop it reached it every time and freed nothing ("Windows can only release 0.0 GB"). Being stopped part way made hop offer to move files again, and never its shrink tool, so each try ended where it started. Now, after two runs in a row that were stopped and freed nothing, hop offers its shrink tool instead, even with hop closed between them. A run that frees some still offers to move files again. Which drive Make room tried is now kept by its disk's ID, not its number, which Windows can change between starts.
+- hop could miss that the PC had come back from the installer, when the live system had set the PC's clock to UTC in a time zone ahead of it.
+- Deleting restore points now sets the space aside straight away, as Make room does, so a new restore point can't take it back before the install.
+- The memory check for replacing Windows with Omarchy, once the ISO is open, now counts the live image on its second partition.
+- The ISO is held open from its checksum until the copy is done, so nothing else can change it in between.
+- What Windows says about moving files is about its last run, and Make room moves less on a data drive, which keeps less free. Make room's task is set up by the account's ID, which work accounts need. Giving free space back to a drive goes through the same time limit as every other question to Windows.
+- Startup entries numbered above 0x00FF, as some firmware numbers its own, are now seen.
+
 ## 0.3.4 - 2026-11-15
 
 ### Changed
