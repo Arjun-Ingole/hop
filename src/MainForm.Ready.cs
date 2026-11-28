@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Threading.Tasks;
@@ -34,6 +35,26 @@ namespace Hop
                 : "Restart to open its installer. These are the choices to make there.", Secondary, steps, installSteps.Notes.Length > 1 ? 24 : 40);
             Footer("Undo changes", () => ShowUndo(() => _ = ShowReadyAsync()), "Restart now", () => _ = RestartIntoInstallerAsync(),
                 "Later", Close, Secondary);
+            // This screen goes with the restart, just when the steps are needed.
+            FooterSecondLink("Copy steps", () => CopySteps(prepared.Name, installSteps));
+        }
+
+        /// <summary>The steps as plain text, for a phone or a note. The installer partition has them too, in HOP-STEPS.txt.</summary>
+        void CopySteps(string name, InstallSteps installSteps)
+        {
+            int shown = screen;
+            var lines = new List<string> { $"Installing {name} with hop", "" };
+            for (int i = 0; i < installSteps.Steps.Length; i++) lines.Add($"{i + 1}. {installSteps.Steps[i].Replace("**", "")}");
+            if (installSteps.Notes.Length > 0) lines.Add("");
+            lines.AddRange(installSteps.Notes.Where(n => !string.IsNullOrEmpty(n)).Select(n => n.Replace("**", "")));
+            string said;
+            try
+            {
+                Clipboard.SetText(string.Join(Environment.NewLine, lines));
+                said = "Copied. Also in HOP-STEPS.txt.";
+            }
+            catch { said = "Couldn't reach the clipboard."; }
+            if (shown == screen) FooterSecondLink(said, null);
         }
 
         /// <summary>hop restarted the PC for the installer, and here is Windows again.</summary>

@@ -234,6 +234,7 @@ namespace Hop
                     ps.Runspace = runspace;
                     ps.AddCommand(command);
                     if (parameters != null) ps.AddParameters(parameters);
+                    runningCommand = command;
                     running = ps;
                     try
                     {
@@ -435,16 +436,17 @@ namespace Hop
 
         public Task RestartToBiosAsync() => InvokeAsync("Restart-ToBios");
 
-        public Task<InstallSteps> GetMakeRoomStepsAsync(string letter) =>
-            GetStepsFromAsync("Get-MakeRoomSteps", new Hashtable { ["Drive"] = letter ?? "" });
+        public Task<InstallSteps> GetMakeRoomStepsAsync(string letter, string blockerKind) =>
+            GetStepsFromAsync("Get-MakeRoomSteps", new Hashtable { ["Drive"] = letter ?? "", ["BlockerKind"] = blockerKind ?? "" });
 
         /// <summary>True when the PC is restarting; another drive may not need that.</summary>
         /// <param name="wantedBytes">What Linux and its installer need after the drive, which it sets aside once there's room.</param>
         /// <param name="keepFreeBytes">What has to stay free inside the drive, for a download going there.</param>
-        public async Task<bool> StartMakeRoomAsync(string letter, int wantedLinuxGB, long wantedBytes, long keepFreeBytes) =>
+        public async Task<bool> StartMakeRoomAsync(string letter, int wantedLinuxGB, long wantedBytes, long keepFreeBytes, string blockerKind) =>
             (await InvokeAsync("Start-MakeRoom", new Hashtable
             {
                 ["Drive"] = letter ?? "", ["WantedLinuxGB"] = wantedLinuxGB, ["WantedBytes"] = wantedBytes, ["KeepFreeBytes"] = keepFreeBytes,
+                ["BlockerKind"] = blockerKind ?? "",
             })).Single.ToString() == "restarting";
 
         public Task RestartForRoomAsync() => InvokeAsync("Request-RoomRestart");
@@ -453,8 +455,11 @@ namespace Hop
         public async Task<bool> CompleteMakeRoomAsync() =>
             (await InvokeAsync("Complete-MakeRoom")).Single.ToString() == "done";
 
-        public Task ClearRestorePointsAsync(string letter) =>
-            InvokeAsync("Clear-RestorePoints", new Hashtable { ["Drive"] = letter ?? "" });
+        public Task ClearRestorePointsAsync(string letter, int wantedLinuxGB, long wantedBytes, long keepFreeBytes) =>
+            InvokeAsync("Clear-RestorePoints", new Hashtable
+            {
+                ["Drive"] = letter ?? "", ["WantedLinuxGB"] = wantedLinuxGB, ["WantedBytes"] = wantedBytes, ["KeepFreeBytes"] = keepFreeBytes,
+            });
 
         public Task ClearRoomNoticeAsync() => InvokeAsync("Clear-RoomNotice");
 
@@ -517,6 +522,15 @@ namespace Hop
 
         /// <summary>Stops the running command; its task then fails with PipelineStoppedException.</summary>
         public void Stop() => running?.BeginStop(null, null);
+
+        volatile string runningCommand;
+
+        /// <summary>Stops the running command only if it's this one, which only reads, so stopping it loses nothing.</summary>
+        public void StopIfRunning(string command)
+        {
+            var ps = running;
+            if (ps != null && runningCommand == command) ps.BeginStop(null, null);
+        }
 
         /// <summary>The same, and returns once it has stopped, so that the engine can be used again.</summary>
         public void StopAndWait() => running?.Stop();

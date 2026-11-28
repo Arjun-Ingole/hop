@@ -36,7 +36,11 @@ namespace Hop
             string kept = KeptNote(startup.OtherKept);
             BeginWork(new[] { new[] { Run.Gray("Removing"), Run.Black(name) } }, "Starting…");
             Exception failed = null;
-            try { await engine.RemoveOtherSystemAsync(selection); }
+            try
+            {
+                await StopBackgroundMeasureAsync();
+                await engine.RemoveOtherSystemAsync(selection);
+            }
             catch (Exception ex) { failed = ex; }
             // Reading the PC again is its own step: failing at that says nothing about the removal.
             bool looked = true;
@@ -81,7 +85,11 @@ namespace Hop
             int before = target.SizeGB;
             BeginWork(new[] { new[] { Run.Gray("Giving the space to"), Run.Black(owner) } }, "Starting…");
             Exception failed = null;
-            try { await engine.ExpandWindowsAsync(id); }
+            try
+            {
+                await StopBackgroundMeasureAsync();
+                await engine.ExpandWindowsAsync(id);
+            }
             catch (Exception ex) { failed = ex; }
             bool looked = true;
             try { await ReloadAsync(); }

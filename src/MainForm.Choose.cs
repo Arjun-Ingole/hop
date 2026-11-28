@@ -27,7 +27,28 @@ namespace Hop
         /// <summary>Linux's room on the chosen drive, less the download if that's going there too.</summary>
         int MaxLinuxGB => MaxLinuxGBOn(target);
 
-        int MaxLinuxGBOn(DriveChoice drive) => drive.UsableGB - ExpectedInstallerGB - (DownloadGoesOn(drive) ? IsoDownloadGB : 0);
+        /// <summary>
+        /// Free space after the drive, plus what the drive can give up. The download goes inside the drive, so it only
+        /// costs what the drive could give up, never the free space after it. That's what the engine finds once the
+        /// download is there, so the size chosen here is the size it plans for.
+        /// </summary>
+        int MaxLinuxGBOn(DriveChoice drive) => LinuxGBFrom(drive, 0);
+
+        /// <summary>The same, with more the drive could give up once Make room or the shrink tool has freed it.</summary>
+        int LinuxGBFrom(DriveChoice drive, int moreGB) =>
+            drive.TailFreeGB + Math.Max(0, ShrinkableGB(drive) + moreGB - (DownloadGoesOn(drive) ? IsoDownloadGB : 0)) - ExpectedInstallerGB;
+
+        static int ShrinkableGB(DriveChoice drive) => Math.Max(0, drive.UsableGB - drive.TailFreeGB);
+
+        const long Gib = 1024L * 1024 * 1024;
+
+        /// <summary>
+        /// What Make room, the shrink tool and deleting restore points set aside after the drive: Linux, its installer and a
+        /// little spare. The download isn't in it: it goes inside the drive, which keeps that much free instead.
+        /// </summary>
+        long RoomWantedBytes => (linuxGB + ExpectedInstallerGB + RoomSpareGB) * Gib;
+
+        long RoomKeepFreeBytes => DownloadGoesOn(target) ? IsoDownloadGB * Gib : 0;
 
         bool DownloadGoesOn(DriveChoice drive)
         {
@@ -60,7 +81,7 @@ namespace Hop
             && !RoomCanHelp && RoomTriedHere && !(target.IsWindows && startup.BitLockerOn);
 
         /// <summary>The most Linux could have here: what Windows releases now, and with Make room, the stuck space too.</summary>
-        int ReachLinuxGB => MaxLinuxGB + (RoomCanHelp || OfflineCanHelp ? target.StuckGB : 0);
+        int ReachLinuxGB => LinuxGBFrom(target, RoomCanHelp || OfflineCanHelp ? target.StuckGB : 0);
 
         /// <summary>What the engine will make. A download's real size isn't known until it's here.</summary>
         int ExpectedInstallerGB
@@ -89,7 +110,7 @@ namespace Hop
             int room = IsoDownloadGB + 1;
             var usual = drives.FirstOrDefault(d => d.IsDefault);
             var other = drives.Where(d => d.Letter != drive.Letter && d.FreeGB >= room).OrderByDescending(d => d.FreeGB).FirstOrDefault();
-            bool squeezes = usual != null && usual.Letter == drive.Letter && drive.UsableGB - InstallerGB - IsoDownloadGB < MinLinuxGB;
+            bool squeezes = usual != null && usual.Letter == drive.Letter && drive.TailFreeGB + Math.Max(0, ShrinkableGB(drive) - IsoDownloadGB) - InstallerGB < MinLinuxGB;
             if (usual != null && usual.FreeGB >= room && !(squeezes && other != null)) return usual;
             return other ?? usual;
         }
@@ -104,7 +125,52 @@ namespace Hop
             if (target.Blocker != null)
                 target = startup.Drives.FirstOrDefault(d => d.Blocker == null) ?? target;
             // Restart, Undo and Clean up don't need it, and it can take minutes. ShowChoose asks when it's needed.
-            if (startup.Status == "none") await MeasureTargetAsync();
+            // A drive still being measured when hop opens is measured behind the screen, which can be used meanwhile.
+            if (startup.Status == "none")
+            {
+                if (target.Estimated && target.Blocker == null) StartBackgroundMeasure();
+                else await MeasureTargetAsync();
+            }
+        }
+
+        Task backgroundMeasure;   // Windows working out how far a drive shrinks, while the screen can be used
+        string backgroundId;      // which drive that is
+        int chooseScreen = -1;    // the screen number ShowChoose last drew, so an answer only redraws that
+
+        bool MeasuringHere => backgroundMeasure != null && !backgroundMeasure.IsCompleted && backgroundId == target?.Id;
+
+        void StartBackgroundMeasure()
+        {
+            backgroundId = target.Id;
+            measureError = null;
+            backgroundMeasure = MeasureInBackgroundAsync(target.Id);
+        }
+
+        async Task MeasureInBackgroundAsync(string id)
+        {
+            await Task.Yield();
+            bool stopped = false;
+            try
+            {
+                var measured = await engine.GetDriveSpaceAsync(id);
+                DriveChoice.Remember(startup.Drives, measured);
+                if (target?.Id == id) { target = measured; measureError = null; }
+            }
+            // Stopped so another drive could be measured. Windows carries on with this one, for when it's chosen again.
+            catch (System.Management.Automation.PipelineStoppedException) { stopped = true; }
+            catch (Exception ex) { if (target?.Id == id) measureError = Describe(ex); }
+            finally { if (backgroundId == id) backgroundId = null; }
+            if (stopped) return;
+            // Only the screen it was waiting for: anything since, such as a warning, stays as it is.
+            if (target?.Id == id && screen == chooseScreen && !busy) ShowChoose();
+        }
+
+        /// <summary>One question at a time goes to the engine, so another drive's waits until this one stops.</summary>
+        async Task StopBackgroundMeasureAsync()
+        {
+            if (backgroundMeasure == null || backgroundMeasure.IsCompleted) return;
+            engine.StopIfRunning("Get-DriveSpace");
+            try { await backgroundMeasure; } catch { }
         }
 
         string measureError;   // why Windows couldn't say how far the chosen drive shrinks
@@ -164,8 +230,9 @@ namespace Hop
             fullDisk = false;
             var system = Current;
             bool usable = target.Blocker == null;
+            bool measuring = usable && target.Estimated && MeasuringHere;
             // Only an estimate so far, and nobody has asked Windows: nothing here is offered on a guess.
-            if (usable && target.Estimated && measureError == null)
+            if (usable && target.Estimated && measureError == null && !measuring)
             {
                 _ = UseDriveAsync(target);
                 return;
@@ -225,6 +292,23 @@ namespace Hop
                 noteText = $"{system.Name}{(system.Version != null ? " " + system.Version : "")}, downloaded from {system.Source}{saved}. Nothing on your disk changes until you click Install.";
             }
 
+            if (measuring)
+            {
+                // The estimate shows, and the systems and drives can be chosen. Nothing that changes the disk is offered until Windows answers.
+                string letter = string.IsNullOrEmpty(target.Letter) ? "the drive" : $"drive {target.Letter}:";
+                if (!(refused || secureBootStops || secondDiskStops))
+                    noteText = $"Windows is still working out how much room {target.InSentence} can give up, which can take a few minutes on a big drive. You can choose a system or another drive meanwhile.";
+                ConfigureDrive(DriveMode.Edit, system);
+                Arrange(new[]
+                {
+                    new[] { Run.Gray("Install"), new Run { Text = system.Name, Color = Ink, Logo = LogoFor(selected), Picker = true, Underline = system.Color } },
+                    WhereLine(true, Hairline),
+                }, noteText, refused || secureBootStops || secondDiskStops ? Danger : Secondary, drive, 64);
+                Footer(otherDrive ? "Choose another drive" : null, otherDrive ? OpenDrivePicker : (Action)null, $"Checking {letter}…", null);
+                chooseScreen = screen;
+                return;
+            }
+
             // Nothing has gone wrong yet if hop can still clear the way, so it doesn't read as an error.
             bool calm = (enoughSpace || needRoom || (stuck && (!RoomMadeHere || target.BlockerKind == "restore"))) && !systemStops;
             ConfigureDrive(stuck && !roomCanHelp ? DriveMode.Stuck : DriveMode.Edit, system);
@@ -274,6 +358,7 @@ namespace Hop
                 Footer("Delete restore points", ShowDeleteRestorePoints, primaryText, primaryAction);
             else
                 Footer("Windows and your files stay.", null, primaryText, primaryAction);
+            chooseScreen = screen;
         }
 
         bool roomFailed;   // Make room restarted, then couldn't finish, and its settings have gone back
@@ -383,12 +468,15 @@ namespace Hop
 
         async Task UseDriveAsync(DriveChoice choice)
         {
-            if (choice.Blocker != null || !choice.Estimated)
+            // The drive being measured behind the screen is still being measured: back to it, without asking again.
+            bool beingMeasured = backgroundMeasure != null && !backgroundMeasure.IsCompleted && backgroundId == choice.Id;
+            if (choice.Blocker != null || !choice.Estimated || beingMeasured)
             {
                 target = choice;
                 ShowChoose();
                 return;
             }
+            await StopBackgroundMeasureAsync();
             BeginReading(new[] { new[] { Run.Gray("Checking"), Run.Black(choice.InSentence) } }, "Asking Windows how much room it can give up. This can take a minute on a big drive.");
             try
             {
@@ -413,7 +501,11 @@ namespace Hop
         {
             int held = HoldScreen();
             InstallSteps plan;
-            try { plan = await engine.GetSecureBootStepsAsync(); }
+            try
+            {
+                await StopBackgroundMeasureAsync();
+                plan = await engine.GetSecureBootStepsAsync();
+            }
             catch (Exception ex)
             {
                 if (ReleaseScreen(held)) ShowBlocked(Describe(ex));
@@ -431,7 +523,7 @@ namespace Hop
         {
             int held = HoldScreen();
             InstallSteps plan;
-            try { plan = await engine.GetMakeRoomStepsAsync(target.Letter); }
+            try { plan = await engine.GetMakeRoomStepsAsync(target.Letter, target.BlockerKind); }
             catch (Exception ex)
             {
                 if (ReleaseScreen(held)) ShowBlocked(Describe(ex));
@@ -458,8 +550,7 @@ namespace Hop
             {
                 // The restart is on its way, and Windows closes hop. Only another drive gets past this.
                 roomWantedGB = linuxGB;
-                const long gb = 1024L * 1024 * 1024;
-                if (await engine.StartMakeRoomAsync(target.Letter, linuxGB, (linuxGB + ExpectedInstallerGB + RoomSpareGB) * gb, DownloadGoesOn(target) ? IsoDownloadGB * gb : 0))
+                if (await engine.StartMakeRoomAsync(target.Letter, linuxGB, RoomWantedBytes, RoomKeepFreeBytes, target.BlockerKind))
                 {
                     await WaitForRoomRestartAsync();
                     return;
@@ -531,9 +622,9 @@ namespace Hop
 
         // --- Shrinking from outside Windows ---------------------------------------------
 
-        // With the download, as MaxLinuxGB counts it, so that once the drive has shrunk the size chosen fits.
-        long ShrinkWantedBytes => (linuxGB + ExpectedInstallerGB + RoomSpareGB + (DownloadGoesOn(target) ? IsoDownloadGB : 0)) * 1024L * 1024 * 1024;
-        long ShrinkKeepFreeBytes => DownloadGoesOn(target) ? IsoDownloadGB * 1024L * 1024 * 1024 : 0;
+        // The same as Make room's: the download stays inside the drive, so it isn't shrunk away as well.
+        long ShrinkWantedBytes => RoomWantedBytes;
+        long ShrinkKeepFreeBytes => RoomKeepFreeBytes;
 
         async Task ShowShrinkOfflineAsync()
         {
@@ -632,7 +723,11 @@ namespace Hop
         }
 
         Task DeleteRestorePointsAsync() => WorkThenChooseAsync(new[] { new[] { Run.Gray("Making"), Run.Black("room") } },
-            () => engine.ClearRestorePointsAsync(target.Letter), ShowCouldntMakeRoom);
+            () =>
+            {
+                roomWantedGB = linuxGB;
+                return engine.ClearRestorePointsAsync(target.Letter, linuxGB, RoomWantedBytes, RoomKeepFreeBytes);
+            }, ShowCouldntMakeRoom);
 
         void ConfigureDrive(DriveMode mode, Distro system)
         {
@@ -660,13 +755,19 @@ namespace Hop
             drive.Invalidate();
         }
 
+        /// <summary>Said in the list, before it's chosen, when this PC would need Secure Boot off for it.</summary>
+        string PickerNote(Distro d) =>
+            d.Refused != null ? (d.FullDisk ? "Only to replace Windows" : "Not offered yet")
+            : d.SecureBootOff && startup.SecureBoot ? $"{d.Note} · needs Secure Boot off" : d.Note;
+
         /// <summary>Windows names it by its whole path, which can be too long for the header.</summary>
         static string FileNameOf(string path) => string.IsNullOrEmpty(path) ? null : path.Substring(path.LastIndexOf('\\') + 1);
 
         void OpenPicker()
         {
             if (busy || catalog == null) return;
-            var items = catalog.Select(d => new PickerItem { Name = d.Name, Note = d.Note, Logo = d.Logo }).ToList();
+            // What can't be installed here reads quieter, and choosing it still says why.
+            var items = catalog.Select(d => new PickerItem { Name = d.Name, Note = PickerNote(d), Logo = d.Logo, Dimmed = d.Refused != null && !d.FullDisk }).ToList();
             var picker = new ListPicker(items, catalog.IndexOf(selected), "Use an ISO file…");
             picker.Picked += i =>
             {
@@ -697,7 +798,11 @@ namespace Hop
         {
             int held = HoldScreen();
             string[] warnings;
-            try { warnings = await engine.GetWarningsAsync(place); }
+            try
+            {
+                await StopBackgroundMeasureAsync();
+                warnings = await engine.GetWarningsAsync(place);
+            }
             catch (Exception ex) { warnings = new[] { $"**hop couldn't finish checking this PC.** {Describe(ex)}" }; }
             if (!ReleaseScreen(held)) return;
             if (warnings.Length == 0) { next(); return; }
@@ -721,7 +826,11 @@ namespace Hop
             var system = Current;
             BeginReading(new[] { new[] { Run.Gray("Checking"), Run.Black("this PC") } }, "Seeing what replacing Windows would mean here.");
             FullDiskPlan plan;
-            try { plan = await engine.GetFullDiskPlanAsync(system.Id, target.Id); }
+            try
+            {
+                await StopBackgroundMeasureAsync();
+                plan = await engine.GetFullDiskPlanAsync(system.Id, target.Id);
+            }
             catch (Exception ex) { EndWork(); ShowCantReplaceWindows(Describe(ex)); return; }
             EndWork();
 

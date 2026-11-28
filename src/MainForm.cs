@@ -38,6 +38,7 @@ namespace Hop
         readonly TextBox eraseWord = new TextBox();
         readonly OptionRow removeAll, removeInstaller;
         readonly TextLink footerLink = new TextLink();
+        readonly TextLink stepsLink = new TextLink();   // a second, quiet link in the footer, for the steps
         readonly PillButton primary = new PillButton("", true), secondary = new PillButton("", false);
         readonly Timer poll = new Timer { Interval = 150 };
 
@@ -60,7 +61,7 @@ namespace Hop
         int screen;               // goes up each time a screen is drawn, so that a late answer can tell it's been replaced
         bool fullDisk;            // set only by typing the word on the last screen of replacing Windows
         string shownStatus;
-        Action onPrimary, onSecondary, onLink, onEraseWord;
+        Action onPrimary, onSecondary, onLink, onEraseWord, onStepsLink;
 
         /// <summary>1920×1080 at 200% has less height than the window at that scale, and its buttons are at the bottom.</summary>
         public static float ScaleToFit(float dpiScale)
@@ -122,15 +123,19 @@ namespace Hop
             primary.Click += (s, e) => onPrimary?.Invoke();
             secondary.Click += (s, e) => onSecondary?.Invoke();
             footerLink.Click += (s, e) => onLink?.Invoke();
+            stepsLink.Click += (s, e) => onStepsLink?.Invoke();
 
             Controls.AddRange(new Control[]
             {
-                minimize, close, sentence, note, drive, steps, log, eraseWord, busyLine, removeAll, removeInstaller, footerLink, secondary, primary,
+                minimize, close, sentence, note, drive, steps, log, eraseWord, busyLine, removeAll, removeInstaller, footerLink, stepsLink, secondary, primary,
             });
+            stepsLink.Visible = false;
             // A long body mustn't cover the footer. This leaves the order Tab goes in alone.
-            foreach (var c in new Control[] { footerLink, secondary, primary }) c.BringToFront();
+            foreach (var c in new Control[] { footerLink, stepsLink, secondary, primary }) c.BringToFront();
             poll.Tick += (s, e) =>
             {
+                // hop's own restart is on its way, and nothing may stand in front of it.
+                if (engine != null && engine.RoomRestarting) SetShutdownBlock(false);
                 if (installing) UpdatePreparing();
                 else if (working) ShowWorkingStatus();
             };
@@ -152,6 +157,35 @@ namespace Hop
         {
             base.OnHandleCreated(e);
             Native.RoundCorners(Handle);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            // The poll may not have seen hop's own restart begin: it asks right away, and must be let through.
+            const int WM_QUERYENDSESSION = 0x11;
+            if (m.Msg == WM_QUERYENDSESSION && engine != null && engine.RoomRestarting) SetShutdownBlock(false);
+            base.WndProc(ref m);
+        }
+
+        /// <summary>Escape goes back, wherever the footer has a Back. Never while hop is working.</summary>
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            const int WM_KEYDOWN = 0x0100;
+            const long WasDown = 1L << 30;
+            // Held down, it would go back again from the screen it went back to.
+            bool fresh = msg.Msg == WM_KEYDOWN && (msg.LParam.ToInt64() & WasDown) == 0;
+            if (keyData == Keys.Escape && fresh && !busy && !installing && !working && !reading)
+            {
+                foreach (var (control, action) in new (Control, Action)[] { (footerLink, onLink), (secondary, onSecondary), (primary, onPrimary) })
+                {
+                    if (control.Visible && control.Enabled && control.Text == "Back" && action != null)
+                    {
+                        action();
+                        return true;
+                    }
+                }
+            }
+            return base.ProcessCmdKey(ref msg, keyData);
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -187,13 +221,16 @@ namespace Hop
         void Arrange(Run[][] lines, string noteText, Color noteColor, Control body, int bodyGap)
         {
             screen++;
+            // The taskbar shows only the install; any other screen takes it off.
+            if (!installing) ShowTaskbar(Native.TaskbarState.NoProgress);
             foreach (var c in new Control[] { sentence, drive, removeAll, removeInstaller }) c.Enabled = true;
             sentence.Set(lines);
             note.Set(noteText, noteColor);
             note.Location = new Point(S(Gutter), sentence.Top + S(46 * lines.Length + 18));
             note.Visible = !string.IsNullOrEmpty(noteText);
 
-            foreach (var c in new Control[] { drive, steps, log, eraseWord, busyLine, removeAll, removeInstaller }) c.Visible = false;
+            foreach (var c in new Control[] { drive, steps, log, eraseWord, busyLine, removeAll, removeInstaller, stepsLink }) c.Visible = false;
+            onStepsLink = null;
             onEraseWord = null;
             int top = (note.Visible ? note.Bottom : sentence.Bottom) + S(bodyGap);
             if (body == drive || body == log)
@@ -222,6 +259,17 @@ namespace Hop
         {
             steps.Location = new Point(S(Gutter), top);
             steps.FitTo(FooterTop - S(12) - top);
+        }
+
+        /// <summary>A second link next to the footer's, on the screens with steps. Call after Footer.</summary>
+        void FooterSecondLink(string text, Action action)
+        {
+            stepsLink.Set(text, action != null, action != null ? Ink : Tertiary, action != null);
+            int left = footerLink.Visible && footerLink.Width > S(4) ? footerLink.Right + S(28) : S(Gutter);
+            stepsLink.Location = new Point(left, ClientSize.Height - S(48) - stepsLink.Height / 2);
+            stepsLink.Enabled = true;
+            stepsLink.Visible = true;
+            onStepsLink = action;
         }
 
         void Footer(string link, Action linkAction, string primaryText, Action primaryAction,
@@ -300,6 +348,7 @@ namespace Hop
             if (e.CloseReason == CloseReason.WindowsShutDown && engine != null && engine.RoomRestarting) return;
             if (!busy)
             {
+                engine?.StopIfRunning("Get-DriveSpace");
                 // Copying a bug report can be holding the engine, and this mustn't freeze the window.
                 RestoreRoomBeforeExit();
                 return;
@@ -313,6 +362,13 @@ namespace Hop
             e.Cancel = true;
             closeRefused = "hop is changing the disk. Close it once it finishes.";
             note.Set(closeRefused, Danger);
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            SetShutdownBlock(false);
+            ShowTaskbar(Native.TaskbarState.NoProgress);
+            base.OnFormClosed(e);
         }
     }
 }
