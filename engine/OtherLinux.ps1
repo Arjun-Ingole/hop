@@ -22,15 +22,34 @@ function Get-DiskGuids([object[]]$Disks) {
     try { (Get-WindowsEsp).Guid } catch { }
 }
 
-# Startup entries for a Linux boot loader on these disks, other than hop's own.
+# Startup entries for a Linux boot loader on these disks, other than hop's own. Some firmware, Acer's among it, adds
+# an entry by itself for the fallback loader on any FAT32 partition it finds, such as "Linpus lite" for
+# \EFI\Boot\grubx64.efi on HOPINSTALL (issue #21). That's the ISO's own loader, which hop put there, not Linux's.
 function Get-LinuxLoaders([object[]]$Disks) {
     $onDisk = @(Get-DiskGuids $Disks)
-    $entries = @(try { [Hop.Firmware]::ListEntries() } catch { Write-Log "Could not read startup entries: $($_.Exception.Message)" })
+    $hops = @(Get-HopInstallerGuids)
+    $entries = @(try { Get-BootEntries } catch { Write-Log "Could not read startup entries: $($_.Exception.Message)" })
     @($entries | Where-Object {
             $_.PartitionGuid -and $onDisk -contains $_.PartitionGuid -and $_.Path -and
             $_.Path -notlike '\EFI\Microsoft\*' -and $_.Description -notmatch $EntryPattern -and
-            $_.Path -match $LinuxLoaderPattern
+            $_.Path -match $LinuxLoaderPattern -and
+            -not ($hops -contains $_.PartitionGuid -and $_.Path -like '\EFI\Boot\*')
         })
+}
+
+# hop's installer partitions, which hold the ISO's own \EFI\Boot.
+function Get-HopInstallerGuids {
+    @(try { Get-HopPartitions | Where-Object { $_.Label -in ($InstallerLabels + $LiveLabel) } | ForEach-Object { $_.Partition.Guid } | Where-Object { $_ } } catch { Write-Log "Could not list hop's partitions: $($_.Exception.Message)" })
+}
+
+# Whether any Linux partition stays on any disk once these go. Only then can a boot loader on one of hop's be worth keeping.
+function Test-LinuxStays($Removing) {
+    $going = @($Removing | Where-Object { $_ } | ForEach-Object { "$($_.DiskNumber):$([int64]$_.Offset)" })
+    foreach ($disk in @(Get-Disk -ErrorAction SilentlyContinue)) {
+        $linux = @(Get-LinuxPartitions @(Get-Partition -DiskNumber $disk.Number -ErrorAction SilentlyContinue)) | Where-Object { "$($_.DiskNumber):$([int64]$_.Offset)" -notin $going }
+        if (@($linux).Count) { return $true }
+    }
+    $false
 }
 
 function Get-LinuxPartitions($Partitions) {
@@ -224,7 +243,8 @@ function Remove-OtherSystem([string]$Selection) {
 function Expand-Windows([string]$Target) {
     $c = (Resolve-Target $Target).Partition
     $letter = Get-LetterOf $c
-    $max = (Get-PartitionSupportedSize -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber).SizeMax
+    # Through the same limit as every other question: on a big drive Windows can take very long to answer.
+    $max = (Get-SupportedSize $c).SizeMax
     if ($max -le $c.Size + 1MB) { throw "The free space isn't next to drive $letter`:, so Windows can't use it directly." }
     Set-Status "Giving the space to drive $letter`:..."
     Resize-Partition -DiskNumber $c.DiskNumber -PartitionNumber $c.PartitionNumber -Size $max

@@ -346,6 +346,22 @@ function Get-SpaceOwner($State, $HopPartitions) {
 # With -InstallerOnly, Linux and its partitions stay.
 function Get-DriveBytes([string]$Letter) { [int64](Get-Partition -DriveLetter $Letter.TrimEnd(':') -ErrorAction Stop).Size }
 
+# Only entries pointing at exactly these partitions, by their own ID, and never Windows'.
+function Remove-EntriesOnPartitions($Partitions, $Problems) {
+    $guids = @($Partitions | Where-Object { $_ -and $_.Guid } | ForEach-Object { $_.Guid })
+    if (-not $guids.Count) { return }
+    $entries = @(try { Get-BootEntries } catch { Write-Log "Could not read startup entries: $($_.Exception.Message)" })
+    foreach ($entry in @($entries | Where-Object { $_.PartitionGuid -and $guids -contains $_.PartitionGuid -and $_.Path -notlike '\EFI\Microsoft\*' })) {
+        try {
+            Remove-FirmwareEntry $entry.Number
+            Write-Log ('Removed startup entry Boot{0:X4} ({1}), which started {2} on a partition hop is removing.' -f $entry.Number, $entry.Description, $entry.Path)
+        } catch {
+            Write-Log ('Could not remove startup entry Boot{0:X4}: {1}' -f $entry.Number, $_.Exception.Message)
+            if ($Problems) { [void]$Problems.Add(('The startup entry {0} is still in the startup menu, and starts nothing now. The firmware refused to remove it.' -f $entry.Description)) }
+        }
+    }
+}
+
 function Invoke-Cleanup([switch]$InstallerOnly) {
     $state = Read-State
     $Sync.SpaceNote = $null
@@ -412,7 +428,9 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
     # stay too, emptied, as a drive both can use. Their space couldn't have gone back to Windows past Linux anyway.
     $removing = @(@($hopPartitions | ForEach-Object { $_.Partition }) + $leftovers)
     # A Linux installer told to put its boot loader on hop's partition now starts from there, so that one stays as it is.
-    $startsLinux = @(Get-LinuxLoaders @($removing | ForEach-Object { $_.DiskNumber } | Sort-Object -Unique) | ForEach-Object { $_.PartitionGuid })
+    # Only while there's a Linux left for it to start, though: with none on any disk, that loader starts nothing (issue #21).
+    $loaders = @(Get-LinuxLoaders @($removing | ForEach-Object { $_.DiskNumber } | Sort-Object -Unique))
+    $startsLinux = @(if ($loaders.Count -and (Test-LinuxStays $removing)) { $loaders | ForEach-Object { $_.PartitionGuid } })
     foreach ($partition in @($removing | Where-Object { $_.Guid -and $startsLinux -contains $_.Guid })) {
         Write-Log "Kept partition $($partition.Guid): Linux starts from it."
         [void]$problems.Add(('hop''s {0:N0} GB installer partition holds Linux''s boot loader, so hop left it. Linux was told to start from there, and would stop starting without it.' -f ($partition.Size / 1GB)))
@@ -420,6 +438,9 @@ function Invoke-Cleanup([switch]$InstallerOnly) {
         $leftovers = @($leftovers | Where-Object { [int64]$_.Offset -ne [int64]$partition.Offset })
     }
     $removing = @(@($hopPartitions | ForEach-Object { $_.Partition }) + $leftovers)
+    # Entries that start something on a partition about to go, or be emptied, start nothing afterwards. Some are the
+    # firmware's own, made for the ISO's fallback loader, and the firmware would offer them for ever.
+    Remove-EntriesOnPartitions $removing $problems
     $keepForLinux = @($removing | Group-Object DiskNumber | Where-Object { Test-RemovalRenumbersLinux $_.Group ([int]$_.Name) }).Count -gt 0
     $Sync.KeptForLinux = $keepForLinux
     if ($keepForLinux) {

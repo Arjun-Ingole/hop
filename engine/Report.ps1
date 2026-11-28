@@ -68,8 +68,16 @@ function Get-Report {
         $order = ([Hop.Firmware]::BootOrderNumbers() | ForEach-Object { '{0:X4}' -f $_ }) -join ' '
         $next = [Hop.Firmware]::BootNext()
         "BootCurrent $('{0:X4}' -f [Hop.Firmware]::BootCurrent()), BootNext $(if ($null -eq $next) { 'not set' } else { '{0:X4}' -f $next }), BootOrder $order"
+        # Where each one starts from, so whose it is shows at a glance.
+        $where = @{}
+        foreach ($p in @(Get-Partition -ErrorAction SilentlyContinue)) {
+            if (-not $p.Guid) { continue }
+            $label = try { ($p | Get-Volume -ErrorAction SilentlyContinue).FileSystemLabel } catch { $null }
+            $where[[string]$p.Guid] = "disk $($p.DiskNumber) partition $($p.PartitionNumber)$(if ($label) { " $label" })"
+        }
         foreach ($entry in [Hop.Firmware]::ListEntries()) {
-            'Boot{0:X4}  {1}  {2}' -f $entry.Number, $entry.Description, $entry.Path
+            $on = if (-not $entry.PartitionGuid) { '' } elseif ($where[$entry.PartitionGuid]) { "  on $($where[$entry.PartitionGuid])" } else { "  on $($entry.PartitionGuid), not on this PC's disks" }
+            'Boot{0:X4}  {1}  {2}{3}' -f $entry.Number, $entry.Description, $entry.Path, $on
         }
     }
     Add-ReportSection $lines 'Log' {

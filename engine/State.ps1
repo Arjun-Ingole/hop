@@ -94,7 +94,9 @@ function Get-InstallStatus {
         if ($letter -and (Test-Path -LiteralPath "$($letter):\EFI\BOOT\BOOTX64.EFI")) {
             # Only its boot loader says it finished. A partition is there from early in the installer, so a
             # failed install has one too, and firmware can drop an entry from one that worked.
-            if (Test-NewLinuxLoader $state) { return 'installed' }
+            # A loader alone isn't enough: firmware can make an entry by itself for the ISO's own fallback loader, and a
+            # failed install can leave one. A new Linux partition with it is. A setup from before partitions were recorded has only the loader to go on.
+            if ((Test-NewLinuxLoader $state) -and ($state.PSObject.Properties.Name -notcontains 'LinuxBefore' -or (Test-NewLinuxPartition $state))) { return 'installed' }
             if (Test-LinuxInstalled $state) { return 'unsure' }
             return 'ready'
         }
@@ -115,7 +117,14 @@ function Test-LinuxInstalled($State) {
     if ($names -notcontains 'LoadersBefore') { return $false }
     $disk = Get-StateDisk $State
     if (@(Get-LinuxLoaders $disk | Where-Object { $_.Path -notin @($State.LoadersBefore) }).Count) { return $true }
-    if ($names -notcontains 'LinuxBefore' -or $null -eq $disk) { return $false }
+    Test-NewLinuxPartition $State
+}
+
+# A Linux partition on the setup's disk that wasn't there when the install began, other than casper's.
+function Test-NewLinuxPartition($State) {
+    if ($State.PSObject.Properties.Name -notcontains 'LinuxBefore') { return $false }
+    $disk = Get-StateDisk $State
+    if ($null -eq $disk) { return $false }
     $partitions = @(Get-Partition -DiskNumber $disk -ErrorAction SilentlyContinue)
     $casper = @(Get-CasperPartition $State $partitions | ForEach-Object { $_.Guid })
     @(Get-LinuxPartitions $partitions | Where-Object { $_.Guid -notin @($State.LinuxBefore) -and $_.Guid -notin $casper }).Count -gt 0
