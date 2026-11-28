@@ -336,7 +336,8 @@ function Get-ShrinkPhase {
     $before = [datetime]::MinValue
     $parsed = [datetime]::TryParse([string]$state.BootedBefore, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$before)
     $booted = try { (Get-LastBoot).ToUniversalTime() } catch { $null }
-    if (-not $parsed -or -not $booted -or ($booted - $before.ToUniversalTime()).TotalMinutes -gt 2) { return 'done' }
+    # Either way: Windows reading a clock Linux kept in UTC can put it hours earlier.
+    if (-not $parsed -or -not $booted -or [math]::Abs(($booted - $before.ToUniversalTime()).TotalMinutes) -gt 2) { return 'done' }
     $text = Read-ShrinkResult
     if ($text -and ($text -split "`r?`n")[0] -eq "id $($state.Id)") { return 'done' }
     'waiting'

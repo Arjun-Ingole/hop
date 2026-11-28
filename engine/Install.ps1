@@ -216,10 +216,19 @@ function Get-StartupInfo {
     }
 }
 
-# True when hop restarted the PC for the installer and Windows has started since.
+# True when hop restarted the PC for the installer and Windows has started since. By when Windows started, in UTC,
+# against when it had started before the restart: a different start is a new one. Not by the clock now, which a live
+# Linux can set back by hours, as it keeps the PC's clock in UTC and Windows reads it as local time.
 function Test-CameBack($State) {
     if (-not $State.RestartedAt) { return $false }
-    (Get-CimInstance Win32_OperatingSystem).LastBootUpTime -gt [datetime]$State.RestartedAt
+    $booted = try { (Get-LastBoot).ToUniversalTime() } catch { return $false }
+    $before = [datetime]::MinValue
+    if ([datetime]::TryParse([string]$State.BootedBefore, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$before)) {
+        # It moves by seconds when the clock is set, and by whole hours when Linux has set it.
+        return [math]::Abs(($booted - $before.ToUniversalTime()).TotalMinutes) -gt 2
+    }
+    # A setup restarted by an older build only has the time it restarted.
+    (Get-LastBoot) -gt [datetime]$State.RestartedAt
 }
 
 # A system removed from the catalog since the install still needs its steps and boot loader.
@@ -309,6 +318,7 @@ function Set-InstallerForNextStart {
     Set-BootOnce ([int]$state.BootNumber)
     # Builds before this one didn't have the field, so it may need adding.
     $state | Add-Member -NotePropertyName RestartedAt -NotePropertyValue (Get-Date).ToString('s') -Force
+    $state | Add-Member -NotePropertyName BootedBefore -NotePropertyValue (Get-LastBoot).ToUniversalTime().ToString('o', [Globalization.CultureInfo]::InvariantCulture) -Force
     Save-State $state
 }
 
