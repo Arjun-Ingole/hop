@@ -857,13 +857,14 @@ Describe 'Partitions someone removed by hand' {
 
 Describe 'Get-SupportedSize' {
     BeforeAll {
-        # A real runspace, with a sleep standing in for Windows working it out.
+        # A real runspace, with a sleep standing in for Windows working it out. Its answer says when it came, as the
+        # real one does: without that it would count from when it was read, which on a coarse clock is no time at all.
         function New-TestSizeQuery([double]$Seconds, [int64]$SizeMin = 100GB) {
             $runspace = [runspacefactory]::CreateRunspace()
             $runspace.Open()
             $query = [powershell]::Create()
             $query.Runspace = $runspace
-            [void]$query.AddScript("Start-Sleep -Milliseconds $([int]($Seconds * 1000)); [pscustomobject]@{ SizeMin = [int64]$SizeMin; SizeMax = [int64]500GB }")
+            [void]$query.AddScript("Start-Sleep -Milliseconds $([int]($Seconds * 1000)); [pscustomobject]@{ SizeMin = [int64]$SizeMin; SizeMax = [int64]500GB; Finished = [DateTime]::UtcNow }")
             [pscustomobject]@{ Query = $query; Runspace = $runspace; Running = $query.BeginInvoke(); Started = Get-Date; Stopped = $false }
         }
     }

@@ -2929,7 +2929,7 @@ Describe 'The copy the tasks run' {
         # By SID, which a work account's name isn't always looked up from. Windows may answer with the name.
         $me = [Security.Principal.WindowsIdentity]::GetCurrent()
         $resume.Trigger.UserId | Should -BeIn @($me.User.Value, $me.Name)
-        $resume.Principal.UserId | Should -BeIn @($me.User.Value, $me.Name)
+        $resume.Principal.UserId | Should -BeIn @($me.User.Value, $me.Name, ($me.Name -split '\\')[-1])
         $restore = $script:tasks[$RestoreTaskName]
         $restore.Action.Arguments | Should -Be '--restore-room'
         # Asked for by its SID, which reads the same in every language Windows comes in. Windows may answer with the name.
