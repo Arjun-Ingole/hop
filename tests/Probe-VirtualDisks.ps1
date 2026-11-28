@@ -259,7 +259,7 @@ try {
     Check 'the folder is on that drive' ($folderOnD -eq "$dLetter`:\hop") $folderOnD
     $hash = (Get-FileHash $source -Algorithm SHA256).Hash
     $download = New-Download ('file:///' + ($source -replace '\\', '/')) $hash 0
-    Get-Iso $download (Join-Path $folderOnD $download.FileName)
+    Close-IsoHold (Get-Iso $download (Join-Path $folderOnD $download.FileName))
     Check 'curl really saved it there and the checksum matched' (Test-Path (Join-Path $folderOnD $download.FileName)) ''
     Check 'nothing partial is left' (-not (Test-Path (Join-Path $folderOnD "$($download.FileName).part"))) ''
     Remove-Item $folderOnD -Recurse -Force

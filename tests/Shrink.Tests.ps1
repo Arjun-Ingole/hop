@@ -223,6 +223,8 @@ Describe 'Make room remembering it fell short' {
         Mock Resize-Partition { }
         Mock Get-LetterOf { 'C' }
         Mock Get-PartitionAt { [pscustomobject]@{ DiskNumber = 0; Offset = [int64]1GB; Size = $script:size } }
+        $script:diskNumber = 0
+        Mock Get-Disk { [pscustomobject]@{ Number = $script:diskNumber; Guid = '{disk-c}' } }
     }
     It 'remembers the drive when Windows released too little' {
         Set-RoomAside ([pscustomobject]@{ Drive = 'C:'; WantedBytes = [int64]37GB; WantedLinuxGB = 25 }) | Should -BeFalse
@@ -232,6 +234,48 @@ Describe 'Make room remembering it fell short' {
         $Sync.RoomUnfinished = $true
         Set-RoomAside ([pscustomobject]@{ Drive = 'C:'; WantedBytes = [int64]37GB; WantedLinuxGB = 25 }) | Should -BeFalse
         Get-RoomTriedLetter | Should -BeNullOrEmpty
+    }
+    It 'gives up on moving files after runs in a row that freed nothing' {
+        $state = [pscustomobject]@{ Drive = 'C:'; WantedBytes = [int64]37GB; WantedLinuxGB = 25 }
+        $Sync.RoomUnfinished = $true
+        Set-RoomAside $state | Should -BeFalse
+        Get-RoomTriedLetter | Should -BeNullOrEmpty
+        $Sync.RoomUnfinished | Should -BeTrue
+        $Sync.RoomUnfinished = $true
+        Set-RoomAside $state | Should -BeFalse
+        Get-RoomTriedLetter | Should -Be 'C'
+        $Sync.RoomUnfinished | Should -BeFalse
+    }
+    It 'counts the runs across hop closing in between, which takes Make room''s own record away' {
+        # Each run starts from a new record, as Start-MakeRoom makes one once closing hop has deleted the old one.
+        foreach ($run in 1..2) {
+            $Sync.RoomUnfinished = $true
+            Set-RoomAside ([pscustomobject]@{ Drive = 'C:'; WantedBytes = [int64]37GB; WantedLinuxGB = 25 }) | Should -BeFalse
+        }
+        Get-RoomTriedLetter | Should -Be 'C'
+        $Sync.RoomUnfinished | Should -BeFalse
+    }
+    It 'keeps offering to move files while each run frees some' {
+        $Sync.RoomUnfinished = $true
+        Set-RoomAside ([pscustomobject]@{ Drive = 'C:'; WantedBytes = [int64]37GB; WantedLinuxGB = 25 }) | Should -BeFalse
+        (Get-Content $TriedPath -Raw | ConvertFrom-Json).EmptyRuns | Should -Be 1
+        Mock Get-ShrinkableBytes { [int64]5GB }
+        $Sync.RoomUnfinished = $true
+        Set-RoomAside ([pscustomobject]@{ Drive = 'C:'; WantedBytes = [int64]37GB; WantedLinuxGB = 25 }) | Should -BeFalse
+        (Get-Content $TriedPath -Raw | ConvertFrom-Json).EmptyRuns | Should -Be 0
+        $Sync.RoomUnfinished | Should -BeTrue
+        Get-RoomTriedLetter | Should -BeNullOrEmpty
+    }
+    It 'still knows the drive when Windows numbers its disk differently after a restart' {
+        Set-RoomAside ([pscustomobject]@{ Drive = 'C:'; WantedBytes = [int64]37GB; WantedLinuxGB = 25 }) | Out-Null
+        $script:diskNumber = 1
+        Mock Get-PartitionAt { [pscustomobject]@{ DiskNumber = 1; Offset = [int64]1GB; Size = $script:size } } -ParameterFilter { $DiskNumber -eq 1 }
+        Mock Get-PartitionAt { } -ParameterFilter { $DiskNumber -ne 1 }
+        Get-RoomTriedLetter | Should -Be 'C'
+    }
+    It 'reads a record from before the count was kept as tried' {
+        Write-StateFile $TriedPath (@{ DiskNumber = 0; Offset = [int64]1GB; Drive = 'C:' } | ConvertTo-Json)
+        Get-RoomTriedLetter | Should -Be 'C'
     }
     It 'forgets it once there''s enough' {
         Set-RoomAside ([pscustomobject]@{ Drive = 'C:'; WantedBytes = [int64]37GB; WantedLinuxGB = 25 }) | Out-Null
@@ -336,5 +380,48 @@ Describe 'Finding the drive after the restart' {
         Mock Get-Partition { @([pscustomobject]@{ Guid = '{B}'; DiskNumber = 0; Offset = [int64]1GB; Size = 1 }, [pscustomobject]@{ Guid = '{A}'; DiskNumber = 1; Offset = [int64]1GB; Size = 2 }) }
         Mock Get-PartitionAt { throw 'not by number' }
         (Find-ShrinkPartition ([pscustomobject]@{ PartitionGuid = '{A}'; DiskNumber = 0; Offset = [int64]1GB })).Size | Should -Be 2
+    }
+}
+
+Describe 'Deleting restore points' {
+    BeforeEach {
+        Mock Set-Status { }
+        Mock Invoke-Defrag { }
+        Mock Set-RoomAside { $true }
+        Mock Get-CimInstance { [pscustomobject]@{ DeviceID = '\\?\Volume{c}\' } } -ParameterFilter { $ClassName -eq 'Win32_Volume' }
+        Mock Get-CimInstance {
+            [pscustomobject]@{ ID = '{1}'; VolumeName = '\\?\Volume{c}\' }
+            [pscustomobject]@{ ID = '{2}'; VolumeName = '\\?\Volume{d}\' }
+        } -ParameterFilter { $ClassName -eq 'Win32_ShadowCopy' }
+        $script:deleted = @()
+        Mock Remove-CimInstance { $script:deleted += $InputObject.ID }
+    }
+    It 'deletes only that drive''s, one by one, not every one with vssadmin' {
+        Clear-RestorePoints 'C'
+        $script:deleted | Should -Be @('{1}')
+    }
+    It 'sets the space aside straight away, so a new restore point can''t take it back' {
+        Clear-RestorePoints 'C' 60 ([int64]72GB) ([int64]8GB)
+        Should -Invoke Set-RoomAside -Times 1 -ParameterFilter { $State.WantedBytes -eq 72GB -and $State.KeepFreeBytes -eq 8GB -and $State.Drive -eq 'C:' }
+    }
+    It 'says so when Windows won''t delete one' {
+        Mock Remove-CimInstance { throw 'in use' }
+        { Clear-RestorePoints 'C' } | Should -Throw '*could not delete the restore points*'
+    }
+}
+
+Describe 'The change journal' {
+    It 'is only cleared when it may be what''s in the way' {
+        Test-JournalMayBlock 'journal' | Should -BeTrue
+        Test-JournalMayBlock 'unknown' | Should -BeTrue
+        Test-JournalMayBlock '' | Should -BeTrue
+        Test-JournalMayBlock 'ntfs' | Should -BeFalse
+        Test-JournalMayBlock 'paging' | Should -BeFalse
+    }
+    It 'isn''t promised in the steps when something else is in the way' {
+        Mock Test-EnoughMemoryWithoutPaging { $true }
+        Mock Test-OpensAgainByItself { $true }
+        ((Get-MakeRoomSteps '' 'ntfs').Steps -join ' ') | Should -Not -BeLike '*change journal*'
+        ((Get-MakeRoomSteps '' 'journal').Steps -join ' ') | Should -BeLike '*change journal*'
     }
 }

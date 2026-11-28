@@ -120,22 +120,23 @@ Describe 'Resolve-Download' {
         $download.Sha256 | Should -Be ('3' * 64)
     }
     It 'picks the newest final Fedora Workstation for this kind of PC, not a beta' {
-        Mock Invoke-RestMethod {
-            , @(
+        # Through Get-WebText, which tries again when the connection drops.
+        Mock Get-WebText {
+            ConvertTo-Json @(
                 [pscustomobject]@{ version = '45 Beta'; arch = 'x86_64'; variant = 'Workstation'; link = 'https://x/beta.iso'; sha256 = 'b'; size = '1' }
                 [pscustomobject]@{ version = '44'; arch = 'aarch64'; variant = 'Workstation'; link = 'https://x/arm.iso'; sha256 = 'c'; size = '1' }
                 [pscustomobject]@{ version = '44'; arch = 'x86_64'; variant = 'KDE'; link = 'https://x/kde.iso'; sha256 = 'd'; size = '1' }
                 [pscustomobject]@{ version = '9'; arch = 'x86_64'; variant = 'Workstation'; link = 'https://x/old.iso'; sha256 = 'e'; size = '1' }
                 [pscustomobject]@{ version = '44'; arch = 'x86_64'; variant = 'Workstation'; link = 'https://x/44.iso'; sha256 = ('f' * 64); size = '2851612672' }
             )
-        }
+        } -ParameterFilter { $Url -eq 'https://fedoraproject.org/releases.json' }
         $download = Resolve-Download (Get-Catalog | Where-Object Id -eq 'fedora')
         $download.Url | Should -Be 'https://x/44.iso'
         $download.Sha256 | Should -Be ('f' * 64)
         $download.Size | Should -Be 2851612672
     }
     It 'stops when Fedora''s list has no checksum for it, and doesn''t go on without one' {
-        Mock Invoke-RestMethod { , @([pscustomobject]@{ version = '44'; arch = 'x86_64'; variant = 'Workstation'; link = 'https://x/44.iso'; size = '2851612672' }) }
+        Mock Get-WebText { ConvertTo-Json @([pscustomobject]@{ version = '44'; arch = 'x86_64'; variant = 'Workstation'; link = 'https://x/44.iso'; size = '2851612672' }) }
         { Resolve-Download (Get-Catalog | Where-Object Id -eq 'fedora') } | Should -Throw '*checksum*'
     }
     It 'skips an Ultramarine version with no ISO yet, and reads its checksum file''s odd path' {
@@ -1256,6 +1257,10 @@ Describe 'Invoke-Cleanup' {
     BeforeEach {
         Mock Test-RemovalRenumbersLinux { $false }   # these disks can't be read for their GPT
         Mock Get-LinuxLoaders { }
+        Mock Test-LinuxStays { $true }
+        Mock Get-BootEntries { }
+        Mock Remove-FirmwareEntry { $script:entriesRemoved += $Number }
+        $script:entriesRemoved = @()
         $script:removed = @()
         $script:cleared = @()
         $state = [pscustomobject]@{ Partitions = @(); WindowsShrunk = $true; FastStartupWasOn = $false; BitLockerPaused = $false }
@@ -1344,6 +1349,21 @@ Describe 'Invoke-Cleanup' {
         @($script:removed).Count | Should -Be 0
         @($script:cleared).Count | Should -Be 0
         (@($Sync.CleanupProblems) -join ' ') | Should -BeLike "*8 GB installer partition holds Linux's boot loader*"
+    }
+    It 'takes it, and the entries that start from it, once no Linux is left to start (issue #21)' {
+        Mock Test-LinuxInstalled { $false }
+        Mock Test-LinuxStays { $false }
+        Mock Get-HopPartitions { [pscustomobject]@{ Label = 'HOPINSTALL'; Partition = [pscustomobject]@{ DiskNumber = 0; Offset = [int64]160GB; Size = [int64]8GB; Guid = '{inst}' } } }
+        Mock Get-LinuxLoaders { [pscustomobject]@{ PartitionGuid = '{inst}'; Path = '\EFI\ubuntu\shimx64.efi' } }
+        Mock Get-BootEntries {
+            [pscustomobject]@{ Number = 0; Description = 'ubuntu'; PartitionGuid = '{inst}'; Path = '\EFI\ubuntu\shimx64.efi' }
+            [pscustomobject]@{ Number = 2; Description = 'Linpus lite'; PartitionGuid = '{inst}'; Path = '\EFI\Boot\grubx64.efi' }
+            [pscustomobject]@{ Number = 5; Description = 'Windows Boot Manager'; PartitionGuid = '{esp}'; Path = '\EFI\Microsoft\Boot\bootmgfw.efi' }
+        }
+        Invoke-Cleanup
+        $script:removed | Should -Be @([int64]160GB)
+        $script:entriesRemoved | Should -Be @(0, 2)
+        (@($Sync.CleanupProblems) -join ' ') | Should -Not -BeLike "*holds Linux's boot loader*"
     }
     Context 'when the space cannot go back' {
         BeforeEach {
@@ -1544,13 +1564,13 @@ Describe 'A download with no checksum' {
     It 'uses a good copy again' {
         Mock Invoke-Download { }
         [IO.File]::WriteAllBytes($path, $iso)
-        Get-Iso $download $path
+        Close-IsoHold (Get-Iso $download $path)
         Should -Invoke Invoke-Download -Times 0
     }
     It 'replaces a saved web page rather than using it for ever' {
         [IO.File]::WriteAllBytes($path, $page)
         Mock Invoke-Download { [IO.File]::WriteAllBytes($Path, $iso) }
-        Get-Iso $download $path
+        Close-IsoHold (Get-Iso $download $path)
         Should -Invoke Invoke-Download -Times 1
         Test-IsoFile $path | Should -BeTrue
     }
@@ -1688,6 +1708,42 @@ Describe 'Putting the installer first' {
     }
 }
 
+Describe 'Get-LinuxLoaders' {
+    BeforeEach {
+        Mock Get-DiskGuids { '{inst}', '{esp}', '{root}' }
+        Mock Get-HopInstallerGuids { '{inst}' }
+        Mock Get-BootEntries {
+            [pscustomobject]@{ Number = 0; Description = 'ubuntu'; PartitionGuid = '{inst}'; Path = '\EFI\ubuntu\shimx64.efi' }
+            [pscustomobject]@{ Number = 2; Description = 'Linpus lite'; PartitionGuid = '{inst}'; Path = '\EFI\Boot\grubx64.efi' }
+            [pscustomobject]@{ Number = 3; Description = 'debian'; PartitionGuid = '{esp}'; Path = '\EFI\debian\shimx64.efi' }
+            [pscustomobject]@{ Number = 4; Description = 'Ubuntu installer (hop)'; PartitionGuid = '{esp}'; Path = '\EFI\hop\BOOTX64.EFI' }
+            [pscustomobject]@{ Number = 5; Description = 'Windows Boot Manager'; PartitionGuid = '{esp}'; Path = '\EFI\Microsoft\Boot\bootmgfw.efi' }
+        }
+    }
+    It 'ignores the entry firmware makes by itself for the ISO''s fallback loader on hop''s partition, as Acer''s does' {
+        @(Get-LinuxLoaders 0 | ForEach-Object { $_.Number }) | Should -Be @(0, 3)
+    }
+    It 'still counts a fallback loader elsewhere' {
+        Mock Get-HopInstallerGuids { }
+        @(Get-LinuxLoaders 0 | ForEach-Object { $_.Number }) | Should -Be @(0, 2, 3)
+    }
+}
+
+Describe 'Test-LinuxStays' {
+    BeforeEach {
+        Mock Get-Disk { [pscustomobject]@{ Number = 0 }; [pscustomobject]@{ Number = 1 } }
+        Mock Get-Partition { }
+    }
+    It 'is false when the only Linux partitions are the ones going' {
+        Mock Get-LinuxPartitions { [pscustomobject]@{ DiskNumber = 0; Offset = [int64]100GB } }
+        Test-LinuxStays @([pscustomobject]@{ DiskNumber = 0; Offset = [int64]100GB }) | Should -BeFalse
+    }
+    It 'is true with Linux on another disk' {
+        Mock Get-LinuxPartitions { [pscustomobject]@{ DiskNumber = 1; Offset = [int64]1GB } } -ParameterFilter { $true }
+        Test-LinuxStays @([pscustomobject]@{ DiskNumber = 0; Offset = [int64]100GB }) | Should -BeTrue
+    }
+}
+
 Describe 'What says Linux is installed' {
     BeforeEach {
         $state = [pscustomobject]@{ Copied = $true; BootNumber = 7; LoadersBefore = @('\EFI\old\shimx64.efi'); LinuxBefore = @(); DiskNumber = 0 }
@@ -1697,7 +1753,18 @@ Describe 'What says Linux is installed' {
         Mock Test-Path { $true } -ParameterFilter { $LiteralPath -like 'H:*' }
         Mock Get-StateDisk { 0 }
     }
-    It 'is a new boot loader' {
+    It 'is a new boot loader with a new Linux partition' {
+        Mock Get-LinuxLoaders { [pscustomobject]@{ Path = '\EFI\ubuntu\shimx64.efi' } }
+        Mock Test-NewLinuxPartition { $true }
+        Get-InstallStatus | Should -Be 'installed'
+    }
+    It 'is not a boot loader alone, which firmware can add by itself (issue #21)' {
+        Mock Get-LinuxLoaders { [pscustomobject]@{ Path = '\EFI\Boot\grubx64.efi' } }
+        Mock Test-NewLinuxPartition { $false }
+        Get-InstallStatus | Should -Be 'unsure'
+    }
+    It 'still takes a boot loader alone from a setup that didn''t record partitions' {
+        $state.PSObject.Properties.Remove('LinuxBefore')
         Mock Get-LinuxLoaders { [pscustomobject]@{ Path = '\EFI\ubuntu\shimx64.efi' } }
         Get-InstallStatus | Should -Be 'installed'
     }
@@ -2047,6 +2114,11 @@ Describe 'Secure Boot' {
     It 'spots a boot loader this PC does not trust, such as a PC with only the 2023 certificate' {
         Mock Get-SecureBootDb { 'Microsoft UEFI CA 2023' }
         Get-SecureBootProblem (New-Iso $ca2011 'Canonical') | Should -BeLike "*doesn't trust*"
+    }
+    It 'says to update, not to change a BIOS option, when only the 2023 certificate is missing' {
+        $reason = Get-SecureBootProblem (New-Iso 'Microsoft UEFI CA 2023' 'Canonical')
+        $reason | Should -BeLike '*newer 2023 certificate*Windows updates*BIOS*'
+        $reason | Should -Not -BeLike '*third-party certificate*'
     }
     It 'accepts a boot loader signed by two authorities when one is trusted' {
         Mock Get-SecureBootDb { 'Microsoft UEFI CA 2023' }
@@ -2860,5 +2932,138 @@ Describe 'The copy the tasks run' {
         # Asked for by its SID, which reads the same in every language Windows comes in. Windows may answer with the name.
         $restore.Principal.UserId | Should -BeIn @('S-1-5-18', 'SYSTEM', 'NT AUTHORITY\SYSTEM')
         (New-Object Security.Principal.SecurityIdentifier 'S-1-5-18').Translate([Security.Principal.NTAccount]).Value | Should -Not -BeNullOrEmpty
+    }
+}
+
+Describe 'Holding the ISO from its check to its copy' {
+    BeforeAll { $path = Join-Path $TestDrive 'held.iso' }
+    # Only Windows enforces what a handle shares.
+    It 'lets others read it, and nothing change it, until it''s let go' -Skip:([Environment]::OSVersion.Platform -ne 'Win32NT') {
+        [IO.File]::WriteAllBytes($path, [byte[]](1..64))
+        $hold = Open-IsoHold $path
+        try {
+            [IO.File]::ReadAllBytes($path).Length | Should -Be 64
+            { [IO.File]::WriteAllBytes($path, [byte[]](1..8)) } | Should -Throw
+        } finally { Close-IsoHold $hold }
+        { [IO.File]::WriteAllBytes($path, [byte[]](1..8)) } | Should -Not -Throw
+    }
+    It 'checks the checksum through the handle that holds it' {
+        [IO.File]::WriteAllBytes($path, [Text.Encoding]::ASCII.GetBytes('abc'))
+        $hold = Open-IsoHold $path
+        try { Test-Sha256 $path 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad' $hold.Stream | Should -BeTrue }
+        finally { Close-IsoHold $hold }
+    }
+}
+
+Describe 'Coming back to Windows after the restart' {
+    BeforeAll {
+        # Windows started at 08:00 UTC, before hop restarted the PC.
+        $before = [datetime]::new(2026, 11, 20, 8, 0, 0, [DateTimeKind]::Utc)
+        $state = [pscustomobject]@{ RestartedAt = '2026-11-20T14:00:00'; BootedBefore = $before.ToString('o', [Globalization.CultureInfo]::InvariantCulture) }
+    }
+    It 'is coming back once Windows has started again' {
+        Mock Get-LastBoot { $before.AddHours(7).ToLocalTime() }
+        Test-CameBack $state | Should -BeTrue
+    }
+    It 'isn''t fooled when a live Linux set the PC''s clock back by hours, as it does keeping it in UTC east of UTC' {
+        # The new start looks earlier than the restart itself, by 5.5 hours.
+        Mock Get-LastBoot { $before.AddHours(6).AddHours(-5.5).ToLocalTime() }
+        Test-CameBack $state | Should -BeTrue
+    }
+    It 'isn''t coming back while Windows hasn''t started again, even if the clock moved a little' {
+        Mock Get-LastBoot { $before.AddSeconds(30).ToLocalTime() }
+        Test-CameBack $state | Should -BeFalse
+    }
+    It 'still reads a setup restarted by an older build' {
+        Mock Get-LastBoot { [datetime]'2026-11-20T14:05:00' }
+        Test-CameBack ([pscustomobject]@{ RestartedAt = '2026-11-20T14:00:00' }) | Should -BeTrue
+    }
+}
+
+Describe 'Remove-PersonalNames, for someone who typed an administrator''s password' {
+    It 'takes out the signed-in person, their domain and a work OneDrive' {
+        Mock Get-CimInstance { [pscustomobject]@{ UserName = 'CONTOSO\priya.k' } } -ParameterFilter { $ClassName -eq 'Win32_ComputerSystem' }
+        $text = Remove-PersonalNames 'D:\Users\priya.k\OneDrive - Contoso Ltd\Downloads\ubuntu.iso, from CONTOSO'
+        $text | Should -Not -BeLike '*priya*'
+        $text | Should -Not -BeLike '*Contoso*'
+        $text | Should -BeLike '*OneDrive - <hidden>*'
+    }
+}
+
+Describe 'Steps that outlast the restart' {
+    It 'are plain numbered text' {
+        $text = Format-StepsText 'Installing Ubuntu with hop' ([pscustomobject]@{ Steps = @('Choose **Install**.', 'Pick the disk.'); Notes = @('Keep it in **English**.') })
+        $text | Should -BeLike "Installing Ubuntu with hop*1. Choose Install.*2. Pick the disk.*Keep it in English.*"
+        $text | Should -Not -BeLike '*`*`**'
+    }
+    It 'say what to do about a black screen once the PC is back' {
+        Mock Read-State { [pscustomobject]@{ Distro = 'Ubuntu'; BootNumber = 7 } }
+        Mock Get-BootMenuKey { 'F11' }
+        Mock Test-SecureBoot { $false }
+        Mock Test-BootNextIgnored { $false }
+        Mock Test-EntryDropped { $false }
+        (Get-ReturnedHelp).Notes -join ' ' | Should -BeLike '*black*safe graphics*'
+    }
+}
+
+Describe 'Someone''s own ISO, known by what''s on it' {
+    BeforeEach {
+        $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        function Add-IsoFile([string]$Relative, [string]$Text = 'x') {
+            $path = Join-Path $root $Relative
+            New-Item -ItemType Directory -Path (Split-Path $path -Parent) -Force | Out-Null
+            [IO.File]::WriteAllText($path, $Text)
+        }
+    }
+    It 'knows <id> from <what>' -ForEach @(
+        @{ id = 'mint-cinnamon'; what = 'Mint''s words and its desktop'; info = 'Linux Mint 22.2 "Zara" - Release amd64 20250901'; manifest = "cinnamon`t6.4`nnemo`t6.4" }
+        @{ id = 'mint-xfce'; what = 'Mint Xfce''s desktop'; info = 'Linux Mint 22.2 "Zara" - Release amd64'; manifest = "xfce4-session`t4.18" }
+        @{ id = 'zorin'; what = 'Zorin OS''s words'; info = 'Zorin OS 18 Core 64-bit'; manifest = '' }
+        @{ id = 'elementary'; what = 'elementary''s words'; info = 'elementary OS 8.1 "Circe" - Stable amd64'; manifest = '' }
+        @{ id = 'pop'; what = 'Pop''s words'; info = 'Pop_OS 24.04 LTS amd64'; manifest = '' }
+        @{ id = 'ubuntu'; what = 'Ubuntu''s words'; info = 'Ubuntu 26.04 LTS "Resolute Raccoon" - Release amd64 (20260423)'; manifest = '' }
+        @{ id = 'lubuntu'; what = 'Lubuntu''s words, which stay refused'; info = 'Lubuntu 26.04 LTS - Release amd64'; manifest = '' }
+    ) {
+        Add-IsoFile '.disk\info' $info
+        if ($manifest) { Add-IsoFile 'casper\filesystem.manifest' $manifest }
+        Find-IsoDistroId $root | Should -Be $id
+    }
+    It 'knows Fedora and Ultramarine by the live image their menus name' {
+        Add-IsoFile 'LiveOS\squashfs.img'
+        Add-IsoFile 'EFI\BOOT\grub.cfg' 'linux /images/pxeboot/vmlinuz root=live:LABEL=Fedora-WS-Live-44-1-1 rd.live.image quiet'
+        Find-IsoDistroId $root | Should -Be 'fedora'
+    }
+    It 'knows Omarchy 4.5 by its root image, and CachyOS and Arch by their names' {
+        Add-IsoFile 'arch\x86_64\airootfs.sfs'
+        Find-IsoDistroId $root 'CACHYOS_202611' | Should -Be 'cachyos'
+        Find-IsoDistroId $root 'ARCH_202611' | Should -Be 'arch'
+        Add-IsoFile $OmarchyRootImage
+        Find-IsoDistroId $root 'ARCH_202611' | Should -Be 'omarchy'
+    }
+    It 'doesn''t guess at <what>' -ForEach @(
+        @{ what = 'a flavour it doesn''t know'; info = 'Kubuntu 26.04 LTS - Release amd64'; manifest = '' }
+        @{ what = 'a Mint whose desktop it can''t tell'; info = 'Linux Mint 22.2 - Release amd64'; manifest = '' }
+        @{ what = 'a Debian that isn''t a live system'; info = 'Debian GNU/Linux 13 netinst'; manifest = '' }
+    ) {
+        Add-IsoFile '.disk\info' $info
+        if ($manifest) { Add-IsoFile 'casper\filesystem.manifest' $manifest }
+        Find-IsoDistroId $root | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Space Linux can have once the download is in' {
+    BeforeEach {
+        Mock Get-WindowsPartition { [pscustomobject]@{ DiskNumber = 0; PartitionNumber = 3; Offset = [int64]1GB; Size = [int64]200GB } }
+        Mock Resolve-Target { [pscustomobject]@{ Kind = 'volume'; IsWindows = $true; Partition = (Get-WindowsPartition) } }
+        Mock Get-SupportedSize { [pscustomobject]@{ SizeMin = [int64]199GB; SizeMax = [int64]200GB } }
+        Mock Get-VolumeOf { [pscustomobject]@{ Size = [int64]200GB; SizeRemaining = [int64]9GB } }
+        Mock Get-LetterOf { 'C' }
+    }
+    It 'counts all the free space after the drive, which the download inside it doesn''t touch' {
+        # 70 GB free after C:, and C: can give up nothing: Linux gets the 70 GB less the installer, as MaxLinuxGBOn says.
+        Mock Get-TailFree { [int64]70GB }
+        $plan = Get-Plan 62 8 ''
+        $plan.Shrink | Should -BeFalse
+        { Get-Plan 63 8 '' } | Should -Throw '*62 GB or less*'
     }
 }

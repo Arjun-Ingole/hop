@@ -606,3 +606,19 @@ Describe 'Get-FullDiskSteps' {
         ((Get-Steps $distro 60).Steps -join ' ') | Should -BeLike "*Don't choose **Erase disk***"
     }
 }
+
+Describe 'The memory check once the ISO is open' {
+    BeforeEach {
+        Mock Test-BootConfigKnown { $true }
+        $omarchy = [pscustomobject]@{ Name = 'Omarchy'; FullDisk = @{ IsoGB = 6.2 } }
+    }
+    It 'counts what goes on the second partition too, since it''s copied to memory with the rest' {
+        # Omarchy keeps 6 GB of its 6.2 on the second partition: alone, the first would ask for far too little.
+        Mock Get-MemoryBytes { [int64]6GB }
+        { Assert-FullDiskIso $omarchy ([pscustomobject]@{ Letter = 'Z'; Bytes = [int64]200MB; LiveBytes = [int64]6GB }) } | Should -Throw '*memory*'
+    }
+    It 'lets a PC with room for all of it go on' {
+        Mock Get-MemoryBytes { [int64]32GB }
+        { Assert-FullDiskIso $omarchy ([pscustomobject]@{ Letter = 'Z'; Bytes = [int64]200MB; LiveBytes = [int64]6GB }) } | Should -Not -Throw
+    }
+}

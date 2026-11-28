@@ -50,6 +50,12 @@ Describe 'Get-DriveBlocker' {
         Mock Get-DiskAttachment { 'external' }
         Get-DriveBlocker (New-TestDisk -Bus 'NVMe') $null | Should -BeLike '*Thunderbolt or USB4*inside this PC*'
     }
+    It 'still refuses a SATA disk on a hot-plug port, without calling it Thunderbolt' {
+        Mock Get-DiskAttachment { 'external' }
+        $why = Get-DriveBlocker (New-TestDisk -Bus 'SATA') $null
+        $why | Should -BeLike '*hot-plug*BIOS*'
+        $why | Should -Not -BeLike '*Thunderbolt*'
+    }
     It 'refuses a disk when it cannot tell where it is' {
         Mock Get-DiskAttachment { 'unclear' }
         Get-DriveBlocker (New-TestDisk -Bus 'NVMe') $null | Should -BeLike "*can't tell*inside this PC*"
