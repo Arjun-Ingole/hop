@@ -758,7 +758,8 @@ namespace Hop
         /// <summary>Said in the list, before it's chosen, when this PC would need Secure Boot off for it.</summary>
         string PickerNote(Distro d) =>
             d.Refused != null ? (d.FullDisk ? "Only to replace Windows" : "Not offered yet")
-            : d.SecureBootOff && startup.SecureBoot ? $"{d.Note} · needs Secure Boot off" : d.Note;
+            // In place of its note, not after it: both together left no room for the name, as "Cachy…" in a real Windows 11.
+            : d.SecureBootOff && startup.SecureBoot ? "Needs Secure Boot off" : d.Note;
 
         /// <summary>Windows names it by its whole path, which can be too long for the header.</summary>
         static string FileNameOf(string path) => string.IsNullOrEmpty(path) ? null : path.Substring(path.LastIndexOf('\\') + 1);
