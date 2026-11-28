@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- hop's shrink tool can see the eMMC storage of older Atom and Celeron laptops, and shows how far it has got while it shrinks. This comes with the next shrink image, shrink-2: 0.3.5 still uses shrink-1, which was tested end to end.
+
 ## 0.3.5 - 2026-11-28
 
 ### Added
@@ -19,7 +25,6 @@
 - The copy of the installer is checked from the disk itself, past Windows' memory, which only gave back what was written.
 - The bug report says which partition each startup entry starts from, and hides the signed-in person's name and domain, and a work OneDrive's organisation, as well as the account hop runs as.
 - An internal SATA drive on a hot-plug port is no longer called a Thunderbolt or USB4 drive. It's still refused, with what to change in the BIOS.
-- hop's shrink tool can see the eMMC storage of older Atom and Celeron laptops, and shows how far it has got while it shrinks.
 
 ### Fixed
 
