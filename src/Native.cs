@@ -40,6 +40,74 @@ namespace Hop
             SendMessage(hwnd, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
         }
 
+        // --- Shutting down ---------------------------------------------------------------
+
+        /// <summary>
+        /// The words Windows shows by hop's name if a shutdown has to wait for it. Only from the
+        /// window's own thread. Windows lists it only while hop is actually holding the shutdown.
+        /// </summary>
+        public static void BlockShutdown(IntPtr hwnd, string reason)
+        {
+            try { ShutdownBlockReasonCreate(hwnd, reason); } catch { }
+        }
+
+        public static void AllowShutdown(IntPtr hwnd)
+        {
+            try { ShutdownBlockReasonDestroy(hwnd); } catch { }
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        static extern bool ShutdownBlockReasonCreate(IntPtr hWnd, string reason);
+
+        [DllImport("user32.dll")]
+        static extern bool ShutdownBlockReasonDestroy(IntPtr hWnd);
+
+        // --- Taskbar progress ---------------------------------------------------------
+
+        public enum TaskbarState { NoProgress = 0, Indeterminate = 1, Normal = 2, Error = 4 }
+
+        static ITaskbarList3 taskbar;
+        static bool taskbarMissing;
+
+        /// <summary>
+        /// The bar behind hop's taskbar button, so a long download shows while hop is minimized.
+        /// Made the first time it's needed, on the UI thread. Without it (no Explorer, say) it does nothing.
+        /// </summary>
+        public static void TaskbarProgress(IntPtr hwnd, TaskbarState state, double fraction = 0)
+        {
+            if (taskbarMissing || hwnd == IntPtr.Zero) return;
+            try
+            {
+                if (taskbar == null)
+                {
+                    var list = (ITaskbarList3)new TaskbarList();
+                    list.HrInit();
+                    taskbar = list;
+                }
+                taskbar.SetProgressState(hwnd, (int)state);
+                if (state == TaskbarState.Normal || state == TaskbarState.Error)
+                    taskbar.SetProgressValue(hwnd, (ulong)Math.Round(Math.Max(0, Math.Min(1, fraction)) * 1000), 1000);
+            }
+            catch { taskbarMissing = taskbar == null; }
+        }
+
+        [ComImport, Guid("56FDF344-FD6D-11d0-958A-006097C9A090"), ClassInterface(ClassInterfaceType.None)]
+        class TaskbarList { }
+
+        // ITaskbarList, ITaskbarList2 and then ITaskbarList3's own, in vtable order. Only the ones hop uses come after.
+        [ComImport, Guid("ea1afb91-9e28-4b86-90e9-9e9f8a5eee84"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        interface ITaskbarList3
+        {
+            void HrInit();
+            void AddTab(IntPtr hwnd);
+            void DeleteTab(IntPtr hwnd);
+            void ActivateTab(IntPtr hwnd);
+            void SetActiveAlt(IntPtr hwnd);
+            void MarkFullscreenWindow(IntPtr hwnd, [MarshalAs(UnmanagedType.Bool)] bool fullscreen);
+            void SetProgressValue(IntPtr hwnd, ulong completed, ulong total);
+            void SetProgressState(IntPtr hwnd, int flags);
+        }
+
         [DllImport("dwmapi.dll")]
         static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 

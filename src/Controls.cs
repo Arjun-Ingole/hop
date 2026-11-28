@@ -65,6 +65,41 @@ namespace Hop
             }
         }
 
+        // --- Screen readers --------------------------------------------------------------
+
+        // Drawn text isn't there for a screen reader to find, so each control says what it shows.
+        protected virtual string SpokenName => Text;
+        protected virtual string SpokenValue => null;
+        protected virtual AccessibleStates SpokenStates => AccessibleStates.None;
+
+        protected void SpokenNameChanged() => AccessibilityNotifyClients(AccessibleEvents.NameChange, -1);
+
+        /// <summary>Markup without its ** emphasis, for a name.</summary>
+        protected static string Plain(string markup) => (markup ?? "").Replace("**", "");
+
+        protected override AccessibleObject CreateAccessibilityInstance() => new Spoken(this);
+
+        protected class Spoken : ControlAccessibleObject
+        {
+            readonly DrawnControl drawn;
+
+            public Spoken(DrawnControl owner) : base(owner) => drawn = owner;
+
+            public override string Name
+            {
+                get => drawn.AccessibleName ?? drawn.SpokenName;
+                set => drawn.AccessibleName = value;
+            }
+
+            public override string Value
+            {
+                get => drawn.SpokenValue ?? base.Value;
+                set { }
+            }
+
+            public override AccessibleStates State => base.State | drawn.SpokenStates;
+        }
+
         protected void DrawFocusRing(Graphics g, RectangleF r, float radius)
         {
             if (Focused && ShowFocusCues)
@@ -80,6 +115,7 @@ namespace Hop
         public PillButton(string text, bool primary)
         {
             MakeClickable();
+            AccessibleRole = AccessibleRole.PushButton;
             this.primary = primary;
             Text = text;
             Height = S(42);
@@ -89,6 +125,7 @@ namespace Hop
         {
             base.OnTextChanged(e);
             Width = (int)Math.Ceiling(Text.Length == 0 ? 0 : TextKit.Width(Text, Font(15, true)) + F(52));
+            SpokenNameChanged();
             Invalidate();
         }
 
@@ -123,7 +160,11 @@ namespace Hop
         bool clickable;
         Color color = Secondary;
 
-        public TextLink() => Height = S(24);
+        public TextLink()
+        {
+            Height = S(24);
+            AccessibleRole = AccessibleRole.StaticText;
+        }
 
         public void Set(string text, bool isClickable, Color textColor, bool strong = false)
         {
@@ -133,7 +174,10 @@ namespace Hop
             SetStyle(ControlStyles.Selectable, clickable);
             TabStop = clickable;
             Cursor = clickable ? Cursors.Hand : Cursors.Default;
+            AccessibleRole = clickable ? AccessibleRole.Link : AccessibleRole.StaticText;
+            bool renamed = Text != (text ?? "");
             Text = text;
+            if (renamed) SpokenNameChanged();
             Width = (int)Math.Ceiling(TextKit.Width(text, Font(14, strong))) + S(4);
             Visible = !string.IsNullOrEmpty(text);
             Invalidate();
@@ -165,6 +209,8 @@ namespace Hop
             this.close = close;
             Size = new Size(S(46), S(32));
             TabStop = false;
+            AccessibleRole = AccessibleRole.PushButton;
+            AccessibleName = close ? "Close" : "Minimize";
         }
 
         protected override void Draw(Graphics g)
@@ -200,9 +246,14 @@ namespace Hop
         Color color = Secondary;
         Paragraph paragraph;
 
+        public TextBlock() => AccessibleRole = AccessibleRole.StaticText;
+
+        protected override string SpokenName => Plain(markup);
+
         public void Set(string text, Color textColor, float sizePx = 15, float lineHeightPx = 22)
         {
-            markup = text ?? "";
+            // The preparing screen sets the same note many times a second, and only a new one is news.
+            if (markup != (text ?? "")) { markup = text ?? ""; SpokenNameChanged(); }
             color = textColor;
             px = sizePx;
             lineHeight = lineHeightPx;
@@ -244,12 +295,26 @@ namespace Hop
         int room = int.MaxValue;
         float contentHeight, offset, grabbed = -1;
 
+        public StepsView() => AccessibleRole = AccessibleRole.StaticText;
+
         public void Set(string[] stepTexts, string[] noteTexts)
         {
             steps = stepTexts ?? new string[0];
             notes = noteTexts ?? new string[0];
             offset = 0;
+            SpokenNameChanged();
             Relayout();
+        }
+
+        protected override string SpokenName
+        {
+            get
+            {
+                var parts = new System.Collections.Generic.List<string>();
+                for (int i = 0; i < steps.Length; i++) parts.Add($"{i + 1}. {Plain(steps[i])}");
+                foreach (string n in notes) parts.Add(Plain(n));
+                return string.Join(" ", parts);
+            }
         }
 
         /// <summary>The most it may take up, in pixels.</summary>
@@ -418,15 +483,26 @@ namespace Hop
         public OptionRow(string title, string description, int width)
         {
             MakeClickable();
+            AccessibleRole = AccessibleRole.RadioButton;
+            AccessibleDescription = description;
             this.title = title;
             this.description = description;
             Size = new Size(width, S(68));
         }
 
+        protected override string SpokenName => title;
+        protected override AccessibleStates SpokenStates => selected ? AccessibleStates.Checked : AccessibleStates.None;
+
         public bool Selected
         {
             get => selected;
-            set { selected = value; Invalidate(); }
+            set
+            {
+                bool changed = selected != value;
+                selected = value;
+                Invalidate();
+                if (changed) AccessibilityNotifyClients(AccessibleEvents.StateChange, -1);
+            }
         }
 
         protected override void OnClick(EventArgs e)
@@ -467,6 +543,8 @@ namespace Hop
         public BusyLine()
         {
             Height = S(3);
+            AccessibleRole = AccessibleRole.ProgressBar;
+            AccessibleName = "Working";
             animation.Tick += (s, e) => Invalidate();
         }
 

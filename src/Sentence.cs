@@ -34,6 +34,29 @@ namespace Hop
         /// <summary>Which picker in the sentence was clicked, counting from the start.</summary>
         public event Action<int> PickerClicked;
 
+        public Sentence() => AccessibleRole = AccessibleRole.StaticText;
+
+        protected override string SpokenName
+        {
+            get
+            {
+                var words = new List<string>();
+                foreach (var line in lines) foreach (var run in line) if (!string.IsNullOrEmpty(run.Text)) words.Add(run.Text);
+                return string.Join(" ", words);
+            }
+        }
+
+        /// <summary>With pickers, the one Enter would open, so Left and Right say where they went.</summary>
+        protected override string SpokenValue
+        {
+            get
+            {
+                var pickers = new List<string>();
+                foreach (var line in lines) foreach (var run in line) if (run.Picker) pickers.Add(run.Text);
+                return pickers.Count == 0 ? null : pickers[Math.Min(focusedPicker, pickers.Count - 1)];
+            }
+        }
+
         public void Set(params Run[][] newLines)
         {
             lines.Clear();
@@ -44,6 +67,10 @@ namespace Hop
             SetStyle(ControlStyles.Selectable, hasPicker);
             TabStop = hasPicker;
             if (!hasPicker) { pickerRects.Clear(); focusedPicker = 0; }
+            // A sentence with pickers is what opens them, so it's a group that can be focused rather than plain text.
+            AccessibleRole = hasPicker ? AccessibleRole.Grouping : AccessibleRole.StaticText;
+            AccessibleDescription = hasPicker ? "Press Enter to change it. Left and Right move between choices." : null;
+            SpokenNameChanged();
             Invalidate();
         }
 
@@ -96,6 +123,7 @@ namespace Hop
             if (pickerRects.Count > 1 && (e.KeyCode == Keys.Left || e.KeyCode == Keys.Right))
             {
                 focusedPicker = e.KeyCode == Keys.Right ? Math.Min(pickerRects.Count - 1, focusedPicker + 1) : Math.Max(0, focusedPicker - 1);
+                AccessibilityNotifyClients(AccessibleEvents.ValueChange, -1);
                 e.Handled = true;
                 Invalidate();
                 return;

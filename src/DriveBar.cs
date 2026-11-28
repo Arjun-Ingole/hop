@@ -70,6 +70,7 @@ namespace Hop
                 if (clamped == linuxGB) return;
                 linuxGB = clamped;
                 Invalidate();
+                AccessibilityNotifyClients(AccessibleEvents.ValueChange, -1);
                 ValueChanged?.Invoke(this, EventArgs.Empty);
             }
         }
@@ -84,6 +85,29 @@ namespace Hop
                 if (value <= 0) shownProgress = 0;
                 animation.Start();
             }
+        }
+
+        // --- Screen readers ------------------------------------------------------------
+
+        // The fields are set straight from the screens, so what it says is worked out when asked.
+        protected override AccessibleObject CreateAccessibilityInstance() => new SpokenBar(this);
+
+        protected override string SpokenName => Mode == DriveMode.Edit ? "Linux size"
+            : Mode == DriveMode.Progress ? $"Preparing {SystemName}"
+            : DiskName.Length > 0 ? $"{DiskName}, {DriveTitle}" : DriveTitle;
+
+        protected override string SpokenValue => Mode == DriveMode.Edit ? $"{linuxGB} GB"
+            : Mode == DriveMode.Progress ? Status
+            : Mode == DriveMode.Stuck ? $"{UsedGB} GB used, hop can use {ReleaseGB} GB" : $"{linuxGB} GB for {SystemName}";
+
+        sealed class SpokenBar : Spoken
+        {
+            readonly DriveBar bar;
+
+            public SpokenBar(DriveBar owner) : base(owner) => bar = owner;
+
+            public override AccessibleRole Role => bar.Mode == DriveMode.Edit ? AccessibleRole.Slider
+                : bar.Mode == DriveMode.Progress ? AccessibleRole.ProgressBar : AccessibleRole.Graphic;
         }
 
         // --- Geometry ----------------------------------------------------------------
@@ -140,6 +164,22 @@ namespace Hop
         {
             base.OnMouseLeave(e);
             if (!dragging) handleHot = false;
+        }
+
+        int wheelRest;
+
+        /// <summary>While the pointer is on it: a gigabyte a notch, five with Shift. Up gives Linux more.</summary>
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            base.OnMouseWheel(e);
+            if (Mode != DriveMode.Edit || !Enabled || MinLinuxGB >= MaxLinuxGB || !ClientRectangle.Contains(PointToClient(MousePosition))) return;
+            // Precise touchpads send parts of a notch, which add up.
+            wheelRest += e.Delta;
+            int notches = wheelRest / 120;
+            wheelRest -= notches * 120;
+            if (notches != 0) LinuxGB += notches * ((ModifierKeys & Keys.Shift) != 0 ? 5 : 1);
+            // Handled, so the window doesn't also scroll something with it.
+            if (e is HandledMouseEventArgs handled) handled.Handled = true;
         }
 
         protected override bool IsInputKey(Keys keyData) =>

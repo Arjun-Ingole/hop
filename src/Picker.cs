@@ -75,6 +75,7 @@ namespace Hop
         {
             MakeClickable();
             Cursor = Cursors.Default;
+            AccessibleRole = AccessibleRole.List;
             this.items = items;
             this.current = current;
             this.footerText = footerText;
@@ -134,6 +135,48 @@ namespace Hop
 
         protected override bool IsInputKey(Keys keyData) => keyData == Keys.Up || keyData == Keys.Down || base.IsInputKey(keyData);
 
+        // Letters must reach OnKeyPress, not go looking for a menu shortcut in the drop-down.
+        protected override bool IsInputChar(char charCode) => char.IsLetterOrDigit(charCode) || base.IsInputChar(charCode);
+
+        const int TypeAheadMilliseconds = 700;
+        string typed = "";
+        int typedAt;
+
+        /// <summary>
+        /// A letter goes to the next name starting with it, and the same letter again to the one after.
+        /// Letters typed quickly spell out the start of a name. Dimmed ones count: choosing one says why.
+        /// </summary>
+        protected override void OnKeyPress(KeyPressEventArgs e)
+        {
+            base.OnKeyPress(e);
+            if (!char.IsLetterOrDigit(e.KeyChar) || items.Count == 0) return;
+            e.Handled = true;
+            int now = Environment.TickCount;
+            typed = unchecked(now - typedAt) <= TypeAheadMilliseconds ? typed + e.KeyChar : e.KeyChar.ToString();
+            typedAt = now;
+            bool sameLetter = typed.Trim(typed[0]).Length == 0;
+            string prefix = sameLetter ? typed.Substring(0, 1) : typed;
+            // One letter moves on from where it is; a longer start may already be on the one it means.
+            int from = sameLetter ? hot + 1 : Math.Max(0, hot);
+            for (int n = 0; n < items.Count; n++)
+            {
+                int i = (from + n) % items.Count;
+                if (!(items[i].Name ?? "").StartsWith(prefix, StringComparison.CurrentCultureIgnoreCase)) continue;
+                MoveTo(i);
+                return;
+            }
+        }
+
+        void MoveTo(int index)
+        {
+            hot = index;
+            footerHot = false;
+            EnsureVisible(hot);
+            Invalidate();
+            AccessibilityNotifyClients(AccessibleEvents.Focus, hot);
+            AccessibilityNotifyClients(AccessibleEvents.Selection, hot);
+        }
+
         protected override void OnKeyDown(KeyEventArgs e)
         {
             switch (e.KeyCode)
@@ -153,6 +196,83 @@ namespace Hop
             EnsureVisible(hot);
             e.Handled = true;
             Invalidate();
+            if (!footerHot && hot >= 0) AccessibilityNotifyClients(AccessibleEvents.Focus, hot);
+        }
+
+        // --- Screen readers ------------------------------------------------------------
+
+        protected override string SpokenName => "Choices";
+
+        protected override AccessibleObject CreateAccessibilityInstance() => new SpokenList(this);
+
+        sealed class SpokenList : Spoken
+        {
+            readonly PickerList list;
+
+            public SpokenList(PickerList owner) : base(owner) => list = owner;
+
+            public override int GetChildCount() => list.items.Count;
+
+            public override AccessibleObject GetChild(int index) =>
+                index >= 0 && index < list.items.Count ? new SpokenItem(this, list, index) : null;
+
+            public override AccessibleObject GetFocused() =>
+                list.Focused && !list.footerHot && list.hot >= 0 && list.hot < list.items.Count ? GetChild(list.hot) : base.GetFocused();
+        }
+
+        sealed class SpokenItem : AccessibleObject
+        {
+            readonly SpokenList parent;
+            readonly PickerList list;
+            readonly int index;
+
+            public SpokenItem(SpokenList parent, PickerList list, int index)
+            {
+                this.parent = parent;
+                this.list = list;
+                this.index = index;
+            }
+
+            PickerItem Item => list.items[index];
+
+            public override string Name
+            {
+                get => string.IsNullOrEmpty(Item.Note) ? Item.Name : $"{Item.Name}, {Item.Note}";
+                set { }
+            }
+
+            public override AccessibleRole Role => AccessibleRole.ListItem;
+            public override AccessibleObject Parent => parent;
+
+            public override AccessibleStates State
+            {
+                get
+                {
+                    var state = AccessibleStates.Selectable | AccessibleStates.Focusable;
+                    if (index == list.current) state |= AccessibleStates.Checked;
+                    if (index == list.hot && !list.footerHot)
+                    {
+                        state |= AccessibleStates.Selected;
+                        if (list.Focused) state |= AccessibleStates.Focused;
+                    }
+                    if (index < list.scroll || index >= list.scroll + VisibleItems) state |= AccessibleStates.Invisible | AccessibleStates.Offscreen;
+                    return state;
+                }
+            }
+
+            public override Rectangle Bounds
+            {
+                get
+                {
+                    if (index < list.scroll || index >= list.scroll + VisibleItems) return Rectangle.Empty;
+                    var row = new Rectangle(S(Pad), (int)(list.ListTop + (index - list.scroll) * F(ItemHeight)), list.Width - 2 * S(Pad), S(ItemHeight));
+                    return list.RectangleToScreen(row);
+                }
+            }
+
+            public override string DefaultAction => "Choose";
+
+            public override void DoDefaultAction() => list.Picked?.Invoke(index);
         }
 
         protected override void Draw(Graphics g)
