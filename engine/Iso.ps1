@@ -1,14 +1,21 @@
 # --- ISO -----------------------------------------------------------------
 
-function Mount-Iso([string]$Path) {
+# $Hold is the ISO held open by Open-IsoHold, if it is. Windows has been seen to want the file to itself to clear
+# the sparse flag, and could want it to mount, so then it's let go, and the caller checks the ISO again.
+function Mount-Iso([string]$Path, $Hold = $null) {
     # Windows refuses to mount sparse files, which some download tools create.
     if ((Get-Item -LiteralPath $Path).Attributes -band [IO.FileAttributes]::SparseFile) {
+        Close-IsoHoldForWindows $Hold
         & fsutil.exe sparse setflag $Path 0 | Out-Null
         Write-Log 'Cleared the sparse flag on the ISO.'
     }
     try {
-        $image = Get-DiskImage -ImagePath $Path
-        if (-not $image.Attached) { $image = Mount-DiskImage -ImagePath $Path -PassThru }
+        $image = try { Mount-IsoImage $Path } catch {
+            if (-not ($Hold -and $Hold.Stream)) { throw }
+            Write-Log "Windows wouldn't open the ISO while hop held it ($($_.Exception.Message)), so hop lets go of it."
+            Close-IsoHoldForWindows $Hold
+            Mount-IsoImage $Path
+        }
     } catch {
         throw "Windows could not open the ISO file ($($_.Exception.Message)). It may be damaged, or stored on a network or cloud folder. Copy it to a folder on this PC and try again."
     }
@@ -18,6 +25,18 @@ function Mount-Iso([string]$Path) {
         Start-Sleep -Milliseconds 500
     }
     throw 'Windows could not open the ISO file.'
+}
+
+function Mount-IsoImage([string]$Path) {
+    $image = Get-DiskImage -ImagePath $Path
+    if (-not $image.Attached) { $image = Mount-DiskImage -ImagePath $Path -PassThru }
+    $image
+}
+
+function Close-IsoHoldForWindows($Hold) {
+    if (-not ($Hold -and $Hold.Stream)) { return }
+    Close-IsoHold $Hold
+    $Hold.Dropped = $true
 }
 
 # Whether a file goes on the second partition, by its path on the ISO, such as arch\x86_64\airootfs.sfs.
@@ -31,9 +50,9 @@ function Get-InstallerGB([int64]$Bytes) { [int][math]::Max([double]4, [math]::Ce
 
 function Get-LiveGB([int64]$Bytes) { if ($Bytes) { [int][math]::Ceiling(($Bytes + 512MB) / 1GB) } else { 0 } }
 
-function Read-Iso([string]$Path, $Distro) {
+function Read-Iso([string]$Path, $Distro, $Hold = $null) {
     Set-Status 'Checking the ISO file...'
-    $letter = Mount-Iso $Path
+    $letter = Mount-Iso $Path $Hold
     $root = "$letter`:\"
     $files = @(Get-ChildItem -LiteralPath $root -Recurse -Force -File)
     # What's too big for FAT32 gets its own partition. Everything else goes on the installer partition, as ever.
@@ -106,4 +125,57 @@ function Assert-IsoTriedThere($Distro, $Iso, [switch]$FullDisk, [switch]$SecondD
         $reason = "hop hasn't tried this version of $($Distro.Name) on a second disk, so it can't say it would work. Nothing has been changed. Choose a drive on the disk Windows is on."
     } else { return }
     if ($file -and (Test-Path -LiteralPath (Join-Path "$($Iso.Letter):\" $file))) { throw $reason }
+}
+
+# Someone's own ISO whose name doesn't say which system it is, such as mint.iso, by what's on it. Only what says so
+# plainly counts, and only systems in the catalog: anything else stays a plain Ubuntu-style ISO, which Read-Iso then
+# checks as it always has. The system's own words on it, such as .disk/info, and the files only it has.
+function Find-IsoDistroId([string]$Root, [string]$VolumeLabel = '') {
+    $read = { param($relative) $path = Join-Path $Root $relative; if (Test-Path -LiteralPath $path) { try { [IO.File]::ReadAllText($path) } catch { '' } } }
+    $info = "$(& $read '.disk\info')".Trim()
+    $id = $null
+    if ($info) {
+        $id = switch -Regex ($info) {
+            '^Linux Mint\b' { 'mint'; break }
+            '^Zorin OS\b' { 'zorin'; break }
+            '^elementary OS\b' { 'elementary'; break }
+            '^Pop[_!]?OS\b' { 'pop'; break }
+            '^Lubuntu\b' { 'lubuntu'; break }
+            '^Xubuntu\b' { 'xubuntu'; break }
+            '^Edubuntu\b' { 'edubuntu'; break }
+            '^Ubuntu[- ]Unity\b' { 'ubuntu-unity'; break }
+            '^Ubuntu[- ]Budgie\b' { 'ubuntu-budgie'; break }
+            '^Ubuntu[- ]Cinnamon\b' { 'ubuntucinnamon'; break }
+            '^Ubuntu[- ]Studio\b' { 'ubuntustudio'; break }
+            # Ubuntu itself, and not a flavour this list doesn't know, such as Kubuntu, which says Kubuntu.
+            '^Ubuntu \d' { 'ubuntu'; break }
+            '^Debian\b' { if (Test-Path -LiteralPath (Join-Path $Root 'live\filesystem.squashfs')) { 'debian' }; break }
+        }
+        # Every Mint edition says Linux Mint. Its desktop's own packages say which.
+        if ($id -eq 'mint') {
+            $manifest = "$(& $read 'casper\filesystem.manifest')"
+            $id = if ($manifest -match '(?m)^xfce4-session\s') { 'mint-xfce' } elseif ($manifest -match '(?m)^mate-session-manager\s') { 'mint-mate' } elseif ($manifest -match '(?m)^cinnamon\s') { 'mint-cinnamon' } else { $null }
+        }
+    } elseif (Test-Path -LiteralPath (Join-Path $Root 'LiveOS\squashfs.img')) {
+        # Dracut's systems name their live image in the boot menu, as root=live:LABEL=.
+        $menu = "$(& $read 'EFI\BOOT\grub.cfg')$(& $read 'boot\grub2\grub.cfg')"
+        if ($menu -match 'LABEL=Fedora-WS-Live') { $id = 'fedora' } elseif ($menu -match 'LABEL=Ultramarine') { $id = 'ultramarine' }
+    } elseif (Test-Path -LiteralPath (Join-Path $Root 'arch\x86_64\airootfs.sfs')) {
+        # Omarchy 4.5 has its root image. Omarchy 4.0 and CachyOS are known by the name their ISOs give themselves.
+        if (Test-Path -LiteralPath (Join-Path $Root $OmarchyRootImage)) { $id = 'omarchy' }
+        elseif ($VolumeLabel -match '^OMARCHY') { $id = 'omarchy' }
+        elseif ($VolumeLabel -match '^CACHYOS') { $id = 'cachyos' }
+        elseif ($VolumeLabel -match '^ARCH_\d{6}$') { $id = 'arch' }
+    }
+    if ($id -and (Get-Catalog | Where-Object Id -eq $id)) { $id }
+}
+
+# The catalog's entry for someone's own ISO, by what's on it, or nothing. Not being able to look is nothing too.
+function Find-CustomIsoDistro([string]$Path, $Hold = $null) {
+    try {
+        $letter = Mount-Iso $Path $Hold
+        $label = try { (Get-Volume -DriveLetter $letter -ErrorAction Stop).FileSystemLabel } catch { '' }
+        $id = Find-IsoDistroId "$letter`:\" $label
+        if ($id) { Get-Catalog | Where-Object Id -eq $id | Select-Object -First 1 }
+    } catch { Write-Log "Could not look inside the ISO for which system it is: $($_.Exception.Message)" }
 }

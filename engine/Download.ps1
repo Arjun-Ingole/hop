@@ -12,6 +12,11 @@ function Get-WebText([string]$Url) {
             if ($content -is [byte[]]) { $content = [Text.Encoding]::UTF8.GetString($content) }
             return $content
         } catch {
+            # A Windows whose own choice of TLS a server turns down can still speak plain TLS 1.2.
+            if ([Net.ServicePointManager]::SecurityProtocol -eq [Net.SecurityProtocolType]::SystemDefault -and "$($_.Exception.Message)" -match 'SSL/TLS|secure channel') {
+                Write-Log 'The secure connection failed, so hop uses TLS 1.2 from now on.'
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            }
             if ($attempt -ge 3) { throw }
             Write-Log "Trying $Url again: $($_.Exception.Message)"
             Start-Sleep -Seconds 3
@@ -64,7 +69,8 @@ function Resolve-Download($Distro) {
             throw 'Could not find the Linux Mint ISO on the mirror.'
         }
         'pop' {
-            $build = Invoke-RestMethod -Uri 'https://api.pop-os.org/builds/24.04/generic' -UseBasicParsing -TimeoutSec 60
+            # Through Get-WebText, which tries again when the connection drops.
+            $build = Get-WebText 'https://api.pop-os.org/builds/24.04/generic' | ConvertFrom-Json
             if ("$($build.sha_sum)" -notmatch '^[0-9a-fA-F]{64}$') { throw 'Could not find the checksum for the Pop!_OS ISO.' }
             return New-Download $build.url $build.sha_sum ([int64]$build.size)
         }
@@ -101,7 +107,7 @@ function Resolve-Download($Distro) {
         }
         'fedora' {
             # Fedora's own list has beta releases too, whose version isn't a plain number.
-            $best = @(Invoke-RestMethod -Uri 'https://fedoraproject.org/releases.json' -UseBasicParsing -TimeoutSec 60) |
+            $best = @(Get-WebText 'https://fedoraproject.org/releases.json' | ConvertFrom-Json) |
                 ForEach-Object { $_ } |
                 Where-Object { $_.variant -eq 'Workstation' -and $_.arch -eq 'x86_64' -and $_.version -match '^\d+$' -and $_.link -like '*.iso' } |
                 Sort-Object { [int]$_.version } -Descending | Select-Object -First 1
@@ -161,10 +167,28 @@ function Resolve-Download($Distro) {
 
 # --- Download ------------------------------------------------------------
 
-function Test-Sha256([string]$Path, [string]$Expected) {
+function Test-Sha256([string]$Path, [string]$Expected, [IO.Stream]$Stream) {
     Set-Stage 2
     Set-Status 'Checking the download against the official checksum (takes a minute)...'
+    # From the handle that holds the file, when there is one: what's checked is then what gets used.
+    if ($Stream) { return (Get-StreamSha256 $Stream) -eq $Expected.ToUpperInvariant() }
     (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -eq $Expected.ToUpperInvariant()
+}
+
+function Get-StreamSha256([IO.Stream]$Stream) {
+    [void]$Stream.Seek(0, 'Begin')
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { ([BitConverter]::ToString($sha.ComputeHash($Stream)) -replace '-', '') } finally { $sha.Dispose() }
+}
+
+# The downloaded ISO sits in the Downloads folder, where anything this user runs can write. Held open from the
+# checksum until the copy is done, others can still read it, but nothing can change or replace it meanwhile.
+function Open-IsoHold([string]$Path) {
+    @{ Stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read); Dropped = $false }
+}
+
+function Close-IsoHold($Hold) {
+    if ($Hold -and $Hold.Stream) { try { $Hold.Stream.Dispose() } catch { }; $Hold.Stream = $null }
 }
 
 # Refuses early rather than filling the drive and failing an hour in.
@@ -201,9 +225,11 @@ function Get-CurlMessage([int]$Code) {
 function Invoke-Curl([string]$Url, [string]$Part, [int64]$Total, [string]$Name, [switch]$NoRevocationCheck) {
     # -C - resumes a half-finished download if Install is clicked again. The speed limit
     # ends a connection that has quietly died, which --retry then reopens.
+    # Its own error message, such as the HTTP status or a TLS failure, goes to a file for the log.
+    $errors = [IO.Path]::GetTempFileName()
     $curlArgs = @('-L', '--fail', '--silent', '--show-error', '--retry', '5', '--retry-delay', '5',
         '--connect-timeout', '30', '--speed-limit', '1024', '--speed-time', '120',
-        '-C', '-', '-o', "`"$Part`"", "`"$Url`"")
+        '--stderr', "`"$errors`"", '-C', '-', '-o', "`"$Part`"", "`"$Url`"")
     if ($NoRevocationCheck) { $curlArgs = @('--ssl-no-revoke') + $curlArgs }
     $proxy = Get-CurlProxy $Url
     # An empty -U : means sign in to the proxy as the current Windows user.
@@ -213,17 +239,28 @@ function Invoke-Curl([string]$Url, [string]$Part, [int64]$Total, [string]$Name, 
     $null = $proc.Handle   # keeps ExitCode readable after the process exits
     $Sync.ChildPid = $proc.Id   # lets the app stop the download if it is closed
     Set-Status "Downloading $Name..."
-    while (-not $proc.HasExited) {
-        if ($Total -and (Test-Path -LiteralPath $Part)) {
-            $done = (Get-Item -LiteralPath $Part).Length
-            # In MB for something small, which in GB would read 0.0 of 0.0.
-            $Sync.Status = if ($Total -lt 1GB) { 'Downloading {0}... {1:N0} of {2:N0} MB' -f $Name, ($done / 1MB), ($Total / 1MB) } else { 'Downloading {0}... {1:N1} of {2:N1} GB' -f $Name, ($done / 1GB), ($Total / 1GB) }
-            Set-ByteProgress $done $Total
+    try {
+        while (-not $proc.HasExited) {
+            if (Test-Path -LiteralPath $Part) {
+                $done = (Get-Item -LiteralPath $Part).Length
+                # In MB for something small, which in GB would read 0.0 of 0.0. A server that doesn't say the size still gets how far it's got.
+                $Sync.Status = if (-not $Total) { 'Downloading {0}... {1:N1} GB so far' -f $Name, ($done / 1GB) }
+                    elseif ($Total -lt 1GB) { 'Downloading {0}... {1:N0} of {2:N0} MB' -f $Name, ($done / 1MB), ($Total / 1MB) }
+                    else { 'Downloading {0}... {1:N1} of {2:N1} GB' -f $Name, ($done / 1GB), ($Total / 1GB) }
+                Set-ByteProgress $done $Total
+            }
+            Start-Sleep -Milliseconds 700
         }
-        Start-Sleep -Milliseconds 700
+        $code = $proc.ExitCode
+        if ($code -ne 0) {
+            $said = try { @(Get-Content -LiteralPath $errors -ErrorAction Stop | Where-Object { $_.Trim() }) | Select-Object -Last 1 } catch { $null }
+            if ($said) { Write-Log "curl: $($said.Trim())" }
+        }
+        $code
+    } finally {
+        $Sync.ChildPid = $null   # that number can go to another process now
+        Remove-Item -LiteralPath $errors -Force -ErrorAction SilentlyContinue
     }
-    $Sync.ChildPid = $null   # that number can go to another process now
-    $proc.ExitCode
 }
 
 function Test-ServerAnswers([string]$Url) {
@@ -290,28 +327,45 @@ function Test-IsoFile([string]$Path) {
     } finally { $stream.Dispose() }
 }
 
+# Returns the ISO held open (see Open-IsoHold), checked through that same handle. The caller closes it.
 function Get-Iso($Download, [string]$Path) {
     if (Test-Path -LiteralPath $Path) {
-        $good = if ($Download.Sha256) { Test-Sha256 $Path $Download.Sha256 } else { Test-IsoFile $Path }
-        if ($good) {
-            Write-Log "Using the copy already in $Path"
-            return
+        $hold = Open-IsoHold $Path
+        try {
+            $good = if ($Download.Sha256) { Test-Sha256 $Path $Download.Sha256 $hold.Stream } else { Test-IsoFile $Path }
+            if ($good) {
+                Write-Log "Using the copy already in $Path"
+                return $hold
+            }
+            Close-IsoHold $hold
+        } catch {
+            Close-IsoHold $hold
+            throw
         }
         Write-Log 'The file already downloaded is damaged; downloading it again.'
         Remove-Item -LiteralPath $Path -Force
     }
     Invoke-Download $Download $Path
-    if ($Download.Sha256) {
-        if (-not (Test-Sha256 $Path $Download.Sha256)) {
-            Remove-Item -LiteralPath $Path -Force
-            throw 'The downloaded file is damaged (checksum does not match). Click Install to download it again.'
+    $hold = Open-IsoHold $Path
+    try {
+        if ($Download.Sha256) {
+            if (-not (Test-Sha256 $Path $Download.Sha256 $hold.Stream)) {
+                Close-IsoHold $hold
+                Remove-Item -LiteralPath $Path -Force
+                throw 'The downloaded file is damaged (checksum does not match). Click Install to download it again.'
+            }
+            Write-Log 'Checksum matches the official one.'
+        } else {
+            if (-not (Test-IsoFile $Path)) {
+                Close-IsoHold $hold
+                Remove-Item -LiteralPath $Path -Force
+                throw 'What downloaded isn''t an ISO. A network filter or a busy server may have sent a web page instead. Click Install to try again.'
+            }
+            Write-Log 'This project does not publish a checksum. The file came over a secure HTTPS connection from its official server.'
         }
-        Write-Log 'Checksum matches the official one.'
-    } else {
-        if (-not (Test-IsoFile $Path)) {
-            Remove-Item -LiteralPath $Path -Force
-            throw 'What downloaded isn''t an ISO. A network filter or a busy server may have sent a web page instead. Click Install to try again.'
-        }
-        Write-Log 'This project does not publish a checksum. The file came over a secure HTTPS connection from its official server.'
+    } catch {
+        Close-IsoHold $hold
+        throw
     }
+    $hold
 }

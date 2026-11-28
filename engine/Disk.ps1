@@ -302,12 +302,29 @@ function Invoke-CopyWatched([string[]]$Arguments, [string]$Target, [int64]$Total
     if ($proc.ExitCode -ge 8) { throw "Copying $What failed (robocopy code $($proc.ExitCode))." }
 }
 
-# The same size can still be damaged, which only shows up as the installer failing after the restart.
+# The same size can still be damaged, which only shows up as the installer failing after the restart. The copy is read
+# from the disk itself: read the ordinary way, it would come back from Windows' memory, just as it was written.
 function Assert-SameFile([string]$Source, [string]$Copy) {
-    $Sync.Status = "Checking the copy: $(Split-Path $Source -Leaf)"   # not the log: an ISO has thousands of files
-    if ((Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $Copy -Algorithm SHA256).Hash) {
+    if ((Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash -ne (Get-DiskSha256 $Copy)) {
         throw "$(Split-Path $Source -Leaf) copied with damage. The drive may be failing. Check it for errors, then try again."
     }
+}
+
+function Get-DiskSha256([string]$Path) {
+    if (-not $Sync.CacheReadsOnly) {
+        try { return [Hop.FileCheck]::Sha256FromDisk($Path) } catch {
+            # Checking it the ordinary way is still worth something.
+            Write-Log "Could not read the copy from the disk itself, so hop checks it the ordinary way: $($_.Exception.Message)"
+            $Sync.CacheReadsOnly = $true
+        }
+    }
+    (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+}
+
+# Says how far the check has got, by size, without the copy's own byte count, which would read as copying again.
+function Set-CheckProgress([int64]$Done, [int64]$Total) {
+    $Sync.Status = 'Checking the copy... {0:N1} of {1:N1} GB' -f ($Done / 1GB), ($Total / 1GB)
+    $Sync.Percent = if ($Total -gt 0) { [int][math]::Min([double]100, 100.0 * $Done / $Total) } else { -1 }
 }
 
 # The files that went on the second partition instead of the installer's, where the ISO has them.
@@ -317,10 +334,14 @@ function Copy-LiveFiles($Iso, [string]$Target) {
     $folder = Split-Path $Iso.LiveFiles[0].FullName.Substring($sourceRoot.Length) -Parent
     $names = @($Iso.LiveFiles | ForEach-Object { $_.Name })
     Invoke-CopyWatched (@((Join-Path $sourceRoot $folder), (Join-Path $targetRoot $folder)) + $names + @('/R:2', '/W:2', '/NP', '/NFL', '/NDL', '/NJH', '/NJS')) $Target $Iso.LiveBytes 'the live system'
+    Set-ByteProgress 0 0
+    [int64]$checked = 0
     foreach ($file in $Iso.LiveFiles) {
         $copy = Get-Item -LiteralPath (Join-Path $targetRoot $file.FullName.Substring($sourceRoot.Length)) -Force -ErrorAction SilentlyContinue
         if (-not $copy -or $copy.Length -ne $file.Length) { throw "$($file.Name) did not copy to the second installer partition." }
+        Set-CheckProgress $checked $Iso.LiveBytes
         Assert-SameFile $file.FullName $copy.FullName
+        $checked += $file.Length
     }
     Write-Log 'Live system copied and checked.'
 }
@@ -337,12 +358,18 @@ function Copy-Installer($Iso, [string]$Target) {
     $sourceRoot = "$($Iso.Letter):\"
     $targetRoot = "$Target`:\"
     $missing = New-Object System.Collections.Generic.List[string]
+    Set-ByteProgress 0 0
+    [int64]$checked = 0
     foreach ($file in Get-ChildItem -LiteralPath $sourceRoot -Recurse -Force -File) {
         if ($file.FullName -in $live) { continue }
         $relative = $file.FullName.Substring($sourceRoot.Length)
         $copy = Get-Item -LiteralPath (Join-Path $targetRoot $relative) -Force -ErrorAction SilentlyContinue
         if (-not $copy -or $copy.Length -ne $file.Length) { $missing.Add($relative) }
-        else { Assert-SameFile $file.FullName $copy.FullName }
+        else {
+            Set-CheckProgress $checked $Iso.Bytes
+            Assert-SameFile $file.FullName $copy.FullName
+            $checked += $file.Length
+        }
     }
     if ($missing.Count) {
         foreach ($name in $missing) { Write-Log "Not copied: $name" }

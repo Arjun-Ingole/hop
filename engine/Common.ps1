@@ -41,7 +41,8 @@ $WindowsReserve = 8GB    # free space Windows keeps on top of what it already us
 $MinLinuxGB = 25
 $ShrinkMargin = 1GB       # kept between what's planned and how far Windows says it can shrink a drive
 
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+# Whatever this Windows offers, which on Windows 11 includes TLS 1.3. Get-WebText falls back on TLS 1.2 alone if that fails.
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::SystemDefault } catch { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 }
 # Work proxies usually want the Windows sign-in, which isn't sent unless asked for.
 try { [Net.WebRequest]::DefaultWebProxy.Credentials = [Net.CredentialCache]::DefaultNetworkCredentials } catch { }
 

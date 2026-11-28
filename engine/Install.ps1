@@ -22,6 +22,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         Assert-NoBitLocker $distro $Target
     }
     $diskChanged = $false
+    $hold = $null
 
     if (-not $IsoPath) {
         Set-Stage 1
@@ -31,15 +32,39 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         }
         Write-Log "Official download: $($download.Url)"
         $IsoPath = Join-Path (Get-DownloadFolder $DownloadDrive) $download.FileName
-        Get-Iso $download $IsoPath
+        $hold = Get-Iso $download $IsoPath
     } elseif (-not (Test-Path -LiteralPath $IsoPath)) {
         throw "Can't find $IsoPath. Pick the ISO file again."
+    } else {
+        # Someone's own ISO has no checksum to go on, but it still mustn't change between being read and being copied.
+        $hold = try { Open-IsoHold $IsoPath } catch { Write-Log "Could not hold $IsoPath open: $($_.Exception.Message)"; $null }
     }
 
     try {
         # Nothing on the disk changes until New-LinuxSpace.
         Set-Stage 2
-        $iso = Read-Iso $IsoPath $distro
+        # Someone's own ISO whose name says nothing gets its system's own route if what's on it says which it is.
+        # Everything checked for the system so far is checked again for that one.
+        if ($distro.Id -eq 'custom') {
+            $known = Find-CustomIsoDistro $IsoPath $hold
+            if ($known) {
+                Write-Log "This ISO is $($known.Name), by what's on it, so it gets $($known.Name)'s steps."
+                $distro = $known
+                Assert-SecureBootAllows $distro
+                if ($FullDisk) { Assert-FullDisk $distro }
+                else {
+                    $strategy = $distro.Strategy
+                    Assert-SystemFitsDrive $distro $Target $IsoPath
+                    Assert-SystemFitsSpace $distro $LinuxGB
+                    Assert-NoBitLocker $distro $Target
+                }
+            }
+        }
+        $iso = Read-Iso $IsoPath $distro $hold
+        # Windows wouldn't open the ISO while hop held it, so it was let go for a moment: what's open has to be checked again.
+        if ($hold -and $hold.Dropped -and $download -and $download.Sha256 -and -not (Test-Sha256 $IsoPath $download.Sha256)) {
+            throw 'The ISO file changed after it was checked, so hop stopped. Nothing has been changed. Click Install to download it again.'
+        }
         if ($FullDisk) { Assert-FullDiskIso $distro $iso }
         $plan = Get-Plan $LinuxGB $iso.InstallerGB $Target $iso.LiveGB
         Assert-IsoTriedThere $distro $iso -FullDisk:$FullDisk -SecondDisk:($plan.DiskNumber -ne (Get-WindowsPartition).DiskNumber)
@@ -120,6 +145,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         throw
     } finally {
         try { Dismount-DiskImage -ImagePath $IsoPath | Out-Null } catch { }
+        Close-IsoHold $hold
     }
 
     # From here a failure doesn't undo anything: the installer is complete, and Restart
