@@ -61,7 +61,22 @@ shrink_partition() {
         return 1
     fi
     say "Moving files and shrinking $DRIVE. Don't turn off the PC."
-    if ! printf 'y\n' | ntfsresize --no-progress-bar --size "$new" "$dev"; then
+    # This can take half an hour, and a silent screen for that long looks stuck. So its progress shows, every 5% of each
+    # step it names, as a line of its own: ntfsresize redraws one line with carriage returns, which would fill the log.
+    # Its status goes through a file, since busybox's sh has no pipefail.
+    rc=${TMPDIR:-/tmp}/hop-ntfsresize.$$
+    rm -f "$rc"
+    { printf 'y\n' | ntfsresize --size "$new" "$dev" 2>&1; echo $? > "$rc"; } | tr '\r' '\n' | awk '
+        BEGIN { step = "Working"; last = -5 }
+        / percent completed/ {
+            p = int($1); if (p < last) last = -5
+            if (p >= last + 5) { last = p - p % 5; print "hop: " step ", " last "%"; fflush() }
+            next
+        }
+        / \.\.\.$/ { step = $0; sub(/ *\.\.\.$/, "", step); last = -5 }
+        NF { print; fflush() }'
+    status=$(cat "$rc" 2>/dev/null); rm -f "$rc"
+    if [ "$status" != 0 ]; then
         echo "partial: shrinking stopped part way through. The partition is the size it was, and Windows needs to check the drive"
         return 1
     fi

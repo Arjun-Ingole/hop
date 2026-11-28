@@ -26,7 +26,7 @@ echo
 
 PART=$(arg hop.part); START=$(arg hop.start); WAS=$(arg hop.was); NEW=$(arg hop.size); ESP=$(arg hop.esp); ID=$(arg hop.id)
 
-for module in nvme vmd ahci sd_mod virtio_blk virtio_scsi virtio_pci mmc_block sdhci_pci vfat nls_cp437 nls_iso8859_1 nls_ascii; do
+for module in nvme vmd ahci sd_mod virtio_blk virtio_scsi virtio_pci mmc_block sdhci_pci sdhci_acpi vfat nls_cp437 nls_iso8859_1 nls_ascii; do
     modprobe -q "$module" 2>/dev/null
 done
 

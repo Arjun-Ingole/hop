@@ -34,7 +34,7 @@ for tool in ntfsresize ntfsfix ntfscat sfdisk blkid blockdev; do copy_bin "$tool
 # The drivers for the disks a PC might have and for the EFI partition, with what they need.
 MODS=$WORK/lib/modules/$KVER
 depmod -b "$WORK" "$KVER"
-for module in nvme vmd ahci sd_mod virtio_blk virtio_scsi virtio_pci mmc_block sdhci_pci vfat nls_cp437 nls_iso8859_1 nls_ascii; do
+for module in nvme vmd ahci sd_mod virtio_blk virtio_scsi virtio_pci mmc_block sdhci_pci sdhci_acpi vfat nls_cp437 nls_iso8859_1 nls_ascii; do
     modprobe -d "$WORK" -S "$KVER" --show-depends "$module" 2>/dev/null | awk '$1 == "insmod" { print $2 }' || true
 done | sort -u | while read -r path; do
     # Uncompressed, so busybox's modprobe needn't read xz or zstd.
