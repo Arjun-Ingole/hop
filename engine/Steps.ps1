@@ -54,6 +54,8 @@ function Get-ReturnedHelp {
         if ($canPutFirst) { $steps += 'Or click **Try another way**, which puts the installer first in the startup order until you open hop again in Windows.' }
         $notes = @("If it isn't listed, this PC's firmware removed it. Click **Try again** and hop adds it back.")
     }
+    # A black screen after choosing the installer is usually the graphics driver. The installer's own menu has a way round it.
+    $notes = @($notes) + "If the installer started but the screen stayed black, restart, and in its first menu choose the entry with **safe graphics** or **basic graphics** in its name."
     if ($stillFirst) { $notes = @("**This PC wouldn't let hop put Windows first again**, so restarts still start the installer. To reach Windows, keep tapping **$key** as the PC powers on, then use **Undo changes** or install Linux.") + @($notes) }
     [pscustomobject]@{ Steps = $steps; Notes = $notes; CanPutFirst = $canPutFirst }
 }
@@ -167,4 +169,26 @@ function Get-OtherDiskSteps($Distro, [int]$LinuxGB, [string]$Disk) {
     }
     "When asked how to install, choose **$($Distro.Manual)**.$bootLoader"
     "Select the $LinuxGB GB of free space on **$Disk**, click **+** and create an ext4 partition mounted at **/**."
+}
+
+# The steps as plain text, numbered, for the clipboard and for HOP-STEPS.txt on the installer partition, which can be
+# opened from the live system once this screen has gone with the restart.
+function Format-StepsText([string]$Title, $Steps) {
+    $lines = New-Object Collections.Generic.List[string]
+    if ($Title) { $lines.Add($Title); $lines.Add('') }
+    $n = 0
+    foreach ($step in @($Steps.Steps)) { $n++; $lines.Add("$n. $($step -replace '\*\*', '')") }
+    if (@($Steps.Notes).Count) { $lines.Add('') }
+    foreach ($note in @($Steps.Notes)) { if ($note) { $lines.Add(($note -replace '\*\*', '')) } }
+    $lines -join "`r`n"
+}
+
+# A convenience: not managing it must never cost a finished installer.
+function Write-StepsFile([string]$Root) {
+    try {
+        $state = Read-State
+        $text = Format-StepsText "Installing $($state.Distro) with hop" (Get-StateSteps)
+        [IO.File]::WriteAllText((Join-Path $Root 'HOP-STEPS.txt'), $text + "`r`n", (New-Object Text.UTF8Encoding($true)))
+        Write-Log 'Wrote the steps to HOP-STEPS.txt on the installer partition.'
+    } catch { Write-Log "Could not write the steps to the installer partition: $($_.Exception.Message)" }
 }

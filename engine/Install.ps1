@@ -124,6 +124,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
         }
         $state.Copied = $true
         Save-State $state
+        Write-StepsFile "$letter`:\"
     } catch {
         # Leave the PC as it was: a half-made installer is worse than none.
         if ($diskChanged) {
