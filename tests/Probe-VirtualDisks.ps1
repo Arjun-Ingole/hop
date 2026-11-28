@@ -302,7 +302,12 @@ try {
     $beforeLive = Get-Layout $a
     $omarchy = Get-Distro 'omarchy' ''
     $target = "volume:$($vdiskA.Guid):$([int64]$d.Offset)"
-    $isoInfo = Read-Iso $iso $omarchy
+    # Held open, as Invoke-Install holds it from its checksum to its copy. Windows should mount it all the same.
+    Dismount-DiskImage -ImagePath $iso -ErrorAction SilentlyContinue | Out-Null
+    $hold = Open-IsoHold $iso
+    $Sync.CacheReadsOnly = $false
+    $isoInfo = Read-Iso $iso $omarchy $hold
+    Check 'Windows mounts the ISO while hop holds it' (-not $hold.Dropped) 'hop had to let go of it'
     Check 'its big file is kept off FAT32' ($isoInfo.LiveGB -eq 1 -and @($isoInfo.LiveFiles).Count -eq 2) $isoInfo.LiveGB
     $plan = Get-Plan 6 $isoInfo.InstallerGB $target $isoInfo.LiveGB
     $liveState = [pscustomobject]@{ Partitions = @(); DiskGuid = $vdiskA.Guid; DiskNumber = $plan.DiskNumber; WindowsShrunk = $false; TargetKind = $plan.Kind; TargetOffset = $plan.TargetOffset; TargetLetter = $plan.Letter; OnWindowsDisk = $true; InstallerNextToWindows = $true; FastStartupWasOn = $false; BitLockerPaused = $false }
@@ -313,6 +318,19 @@ try {
     $live = Get-PartitionAt $plan.DiskNumber $plan.LiveOffset
     $liveLetter = Get-DriveLetter $live
     Copy-LiveFiles $isoInfo $liveLetter
+    Check 'the copies were checked from the disk itself' ($Sync.CacheReadsOnly -ne $true) 'it fell back on reading through the cache'
+    # Reading past the cache takes whole sectors, so files that end part way through one, or are empty, are the ones to try.
+    foreach ($size in 0, 1, 511, 4097, (1MB + 3)) {
+        foreach ($drive in $letter, $liveLetter) {
+            $path = "$drive`:\hop-check-$size.bin"
+            $bytes = New-Object byte[] $size
+            (New-Object Random $size).NextBytes($bytes)
+            [IO.File]::WriteAllBytes($path, $bytes)
+            Check "a $size-byte file reads the same past the cache on $((Get-Volume -DriveLetter $drive).FileSystemType)" ([Hop.FileCheck]::Sha256FromDisk($path) -eq (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash) ''
+            Remove-Item -LiteralPath $path -Force
+        }
+    }
+    Close-IsoHold $hold
     Check 'the second partition is exFAT, with its label' ((Get-Volume -DriveLetter $liveLetter).FileSystemType -eq 'exFAT' -and (Get-Volume -DriveLetter $liveLetter).FileSystemLabel -eq $LiveLabel) ''
     Check 'the big file is on it, whole' ((Get-FileHash "$liveLetter`:\arch\x86_64\airootfs.sfs").Hash -eq (Get-FileHash "$($isoInfo.Letter):\arch\x86_64\airootfs.sfs").Hash) ''
     Check 'and not on the installer partition' (-not (Test-Path "$letter`:\arch\x86_64\airootfs.sfs")) ''
