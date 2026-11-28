@@ -107,8 +107,10 @@ namespace Hop
         }
 
         /// <summary>
-        /// A running file can't delete itself, so something has to do it once hop has gone. The tasks still
-        /// need the copy while Make room's settings are off, which is what that file saying so means.
+        /// A running file can't delete itself, so Windows deletes it as it next starts, and hop sweeps up any left when it
+        /// next opens. Not a command line that waits and then deletes, which is what malware does to cover its tracks, and
+        /// security software says so. The tasks still need the copy while Make room's settings are off, which is what
+        /// that file saying so means.
         /// </summary>
         public static void RemoveOwnAfterExit()
         {
@@ -118,13 +120,7 @@ namespace Hop
                 // The shrink tool's tasks start from the same copy, until hop has been back to see what it did.
                 string data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "hop");
                 if (folder == null || File.Exists(Path.Combine(data, "make-room.json")) || File.Exists(Path.Combine(data, "shrink.json"))) return;
-                string cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
-                Process.Start(new ProcessStartInfo(cmd, $"/c ping -n 6 127.0.0.1 >nul & rmdir /s /q \"{folder}\"")
-                {
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    WorkingDirectory = Environment.SystemDirectory,
-                });
+                RemoveAtNextStart(folder);
             }
             catch (Exception) { }
         }

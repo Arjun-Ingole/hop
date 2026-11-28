@@ -14,6 +14,13 @@
     <ApplicationIcon>assets\hop.ico</ApplicationIcon>
     <Version>0.3.4</Version>
     <Product>hop</Product>
+    <!-- Filled in so the file's properties say who made it, which security software also looks at. -->
+    <Company>Arjun Ingole</Company>
+    <Authors>Arjun Ingole</Authors>
+    <AssemblyTitle>hop</AssemblyTitle>
+    <NeutralLanguage>en</NeutralLanguage>
+    <RepositoryUrl>https://github.com/Arjun-Ingole/hop</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
     <Description>Install Linux next to Windows without a USB stick</Description>
     <Copyright>Copyright 2026 Arjun Ingole</Copyright>
     <DebugType>none</DebugType>

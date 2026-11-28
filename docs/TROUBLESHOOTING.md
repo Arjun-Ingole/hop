@@ -130,7 +130,7 @@ drive with hundreds of GB free can still give up very little, and deleting files
 paging and restore point files are the usual cause. The same applies to "Windows could not shrink C: that far".
 
 Click **Make room** and hop clears the usual causes. It turns off hibernation and the paging file, clears the
-change journal, restarts, moves what it can, and turns them back on once Linux has its space or you close hop.
+change journal unless Windows has said something else is in the way, restarts, moves what it can, and turns them back on once Linux has its space or you close hop.
 hop opens again by itself after the restart, without asking. If you close it some other way, or never get back to it, Windows
 turns them back on by itself about 20 minutes after it starts. The paging file returns at the next restart.
 It asks first if restore points are in the way, because deleting those can't be undone.

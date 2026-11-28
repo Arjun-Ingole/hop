@@ -137,6 +137,10 @@ function Set-Hibernation([bool]$On) {
 
 function Get-RoomDrive([string]$Letter) { if ($Letter) { "$($Letter.TrimEnd(':')):" } else { $env:SystemDrive } }
 
+# The change journal is only cleared when it may be what's in the way: deleting it is also what ransomware does to hide,
+# so security software watches for it. When Windows hasn't said what's in the way, it still might be.
+function Test-JournalMayBlock([string]$BlockerKind) { -not $BlockerKind -or $BlockerKind -in @('journal', 'unknown') }
+
 function Clear-ChangeJournal([string]$Drive) {
     & fsutil.exe usn deletejournal /d (Get-RoomDrive $Drive) 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { Write-Log 'Could not clear the change journal.' }
@@ -196,12 +200,13 @@ function Get-SignedInUser {
     try { (Get-CimInstance Win32_ComputerSystem).UserName } catch { $null }
 }
 
-function Get-MakeRoomSteps([string]$Drive) {
+function Get-MakeRoomSteps([string]$Drive, [string]$BlockerKind = '') {
     $room = Get-RoomDrive $Drive
     $isWindows = $room -eq $env:SystemDrive
     $pagingOff = (Test-EnoughMemoryWithoutPaging) -and ($isWindows -or (Test-PagingFileOn $room))
     $restart = $isWindows -or $pagingOff
-    $steps = @(if ($isWindows) { "On drive $room turns off **hibernation** and clears the **change journal**." } else { "On drive $room clears the **change journal**." })
+    $journal = Test-JournalMayBlock $BlockerKind
+    $steps = @(if ($isWindows) { "On drive $room turns off **hibernation**$(if ($journal) { ' and clears the **change journal**' })." } elseif ($journal) { "On drive $room clears the **change journal**." })
     if ($pagingOff) { $steps += "On drive $room turns off the **paging file**." }
     $byItself = Test-OpensAgainByItself
     $steps += if ($restart -and -not $byItself) { 'Restarts this PC. Open hop again within 20 minutes, and it moves what''s left out of the way.' } elseif ($restart) { 'Restarts this PC, opens again, and moves what''s left out of the way.' } else { 'Moves files out of the way, which can take 15 minutes or more.' }
@@ -216,7 +221,7 @@ function Get-MakeRoomSteps([string]$Drive) {
 # Says 'restarting' when the PC is on its way down, or 'done' when another drive didn't need it to be.
 # $WantedBytes is what Linux and its installer need after the drive, and $KeepFreeBytes what has to stay
 # free inside it, for a download going there. Without them, nothing is set aside.
-function Start-MakeRoom([string]$Drive, [int]$WantedLinuxGB = 0, [int64]$WantedBytes = 0, [int64]$KeepFreeBytes = 0) {
+function Start-MakeRoom([string]$Drive, [int]$WantedLinuxGB = 0, [int64]$WantedBytes = 0, [int64]$KeepFreeBytes = 0, [string]$BlockerKind = '') {
     # An earlier run on another drive saved its settings in the same file. They go back first, so
     # none are lost and what's saved next is what's really there.
     if (Test-RoomFileDamaged) {
@@ -240,7 +245,7 @@ function Start-MakeRoom([string]$Drive, [int]$WantedLinuxGB = 0, [int64]$WantedB
             Set-Status 'Turning off hibernation...'
             Set-Hibernation $false
         }
-        Clear-ChangeJournal $room
+        if (Test-JournalMayBlock $BlockerKind) { Clear-ChangeJournal $room }
         if ($isWindows -or $pagingOff) {
             if ($state.PagingOff) {
                 Set-Status 'Turning off the paging file...'
@@ -357,6 +362,19 @@ function Remove-RestartCopy([string]$Folder) {
         if ((Get-Item -LiteralPath $Folder -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { return }
         [IO.Directory]::Delete($Folder, $true)
     } catch { Write-Log "Could not remove $Folder`: $($_.Exception.Message)" }
+}
+
+# Copies an earlier hop left, when Windows didn't get to delete them: only folders hop made, that no task starts and no
+# record still names, and never the one running. Remove-RestartCopy checks again before each goes.
+function Remove-StaleRestartCopies {
+    $own = [Hop.RestartCopy]::OwnFolder()
+    $named = @((Read-RoomState).CopyFolder, (Read-ShrinkState).CopyFolder) | Where-Object { $_ }
+    foreach ($folder in @(Get-ChildItem -LiteralPath $ProgramData -Directory -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name.StartsWith([Hop.RestartCopy]::FolderPrefix) })) {
+        $path = $folder.FullName
+        if ($path -eq $own -or $named -contains $path -or -not [Hop.RestartCopy]::IsCopyFolder($path, $ProgramData)) { continue }
+        Remove-RestartCopy $path
+        if (-not (Test-Path -LiteralPath $path)) { Write-Log "Removed $path, a copy of hop nothing needs any more." }
+    }
 }
 
 function Test-TaskUsesFolder([string]$Folder) {
@@ -644,13 +662,22 @@ function Move-SystemFiles([string]$Room, $Partition, [datetime]$Deadline = [date
     $moved.Count -gt 0
 }
 
-function Clear-RestorePoints([string]$Drive) {
+# Only this drive's, one by one through WMI, as System Protection does. With the sizes, the space goes aside straight
+# away, as Make room's does, so a new restore point can't take it back before the install.
+function Clear-RestorePoints([string]$Drive, [int]$WantedLinuxGB = 0, [int64]$WantedBytes = 0, [int64]$KeepFreeBytes = 0) {
     $room = Get-RoomDrive $Drive
     Set-Status "Deleting restore points on drive $room..."
-    $ErrorActionPreference = 'Continue'   # under 'Stop', its stderr would replace the check below
-    & vssadmin.exe delete shadows "/for=$room" /all /quiet 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Windows could not delete the restore points on drive $room." }
+    $volume = Get-CimInstance -ClassName Win32_Volume -Filter "DriveLetter='$room'" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $volume) { throw "Windows could not delete the restore points on drive $room." }
+    $failed = 0
+    foreach ($shadow in @(Get-CimInstance -ClassName Win32_ShadowCopy -ErrorAction SilentlyContinue | Where-Object { $_.VolumeName -eq $volume.DeviceID })) {
+        try { Remove-CimInstance -InputObject $shadow -ErrorAction Stop } catch { $failed++; Write-Log "Could not delete restore point $($shadow.ID): $($_.Exception.Message)" }
+    }
+    if ($failed) { throw "Windows could not delete the restore points on drive $room." }
     Invoke-Defrag $room
+    if ($WantedBytes) {
+        [void](Set-RoomAside ([pscustomobject]@{ Drive = $room; WantedLinuxGB = $WantedLinuxGB; WantedBytes = $WantedBytes; KeepFreeBytes = $KeepFreeBytes }))
+    }
 }
 
 # Puts back whatever Make room changed. One failure must not stop the rest. The file and the safety

@@ -141,6 +141,7 @@ function Invoke-Install([string]$DistroId, [string]$IsoPath, [int]$LinuxGB, [str
 
 function Get-StartupInfo {
     Restore-InstallerOrder (Read-State)
+    try { Remove-StaleRestartCopies } catch { Write-Log "Could not look for old copies of hop: $($_.Exception.Message)" }
     # A shrink tool with no record of it, left by a crash, would shrink the drive if someone chose it from the boot menu.
     if (-not (Test-Path -LiteralPath $ShrinkStatePath)) {
         # Its folder on the EFI partition, when taking it away failed once: nothing else would try again.

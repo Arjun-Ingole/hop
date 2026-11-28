@@ -326,7 +326,7 @@ what Make room is for. Working that limit out can take minutes on a big drive, s
 free space and hop asks Windows once a drive is chosen, with a limit of five minutes.
 
 Make room needs less on another drive. It has no hibernation file, and usually no paging file. So hop clears
-the change journal and moves files, with the same 15 minute limit, and restarts only if that drive has a
+the change journal, only when it may be what's in the way, and moves files, with the same 15 minute limit, and restarts only if that drive has a
 paging file of its own. A paging file left to "Windows chooses" isn't touched, because hop can't tell where
 it will go next.
 
